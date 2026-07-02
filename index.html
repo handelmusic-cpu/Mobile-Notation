@@ -182,7 +182,7 @@ body { font-family:-apple-system,BlinkMacSystemFont,sans-serif; background:#1212
     <button class="chip"    id="a-ss" onclick="setAcc('##')" style="font-size:10px">𝄪</button>
     <button class="chip"    id="a-ff" onclick="setAcc('bb')" style="font-size:10px">𝄫</button>
   </div>
-  <div class="hint">Movable do — Do is always the tonic of the current key. “Key” sings the diatonic pitch; ♯/♭/♮ alter it chromatically.</div>
+  <div class="hint">Note buttons show the current key's scale in order, tonic first. “Key” enters the in-key pitch; ♯/♭/♮ force an accidental.</div>
 </div>
 
 <!-- Parts panel -->
@@ -322,13 +322,13 @@ body { font-family:-apple-system,BlinkMacSystemFont,sans-serif; background:#1212
 
 <!-- Note grid -->
 <div id="note-grid">
-  <button class="nbtn np" onclick="handleSolfegeBtn(0)">Do</button>
-  <button class="nbtn np" onclick="handleSolfegeBtn(1)">Re</button>
-  <button class="nbtn np" onclick="handleSolfegeBtn(2)">Mi</button>
-  <button class="nbtn np" onclick="handleSolfegeBtn(3)">Fa</button>
-  <button class="nbtn np" onclick="handleSolfegeBtn(4)">Sol</button>
-  <button class="nbtn np" onclick="handleSolfegeBtn(5)">La</button>
-  <button class="nbtn np" onclick="handleSolfegeBtn(6)">Ti</button>
+  <button class="nbtn np" onclick="handleScaleBtn(0)">C</button>
+  <button class="nbtn np" onclick="handleScaleBtn(1)">D</button>
+  <button class="nbtn np" onclick="handleScaleBtn(2)">E</button>
+  <button class="nbtn np" onclick="handleScaleBtn(3)">F</button>
+  <button class="nbtn np" onclick="handleScaleBtn(4)">G</button>
+  <button class="nbtn np" onclick="handleScaleBtn(5)">A</button>
+  <button class="nbtn np" onclick="handleScaleBtn(6)">B</button>
   <button class="nbtn nr" id="rest-btn" onclick="addRest()"></button>
 </div>
 
@@ -545,6 +545,7 @@ function setKey(kid){
   currentKeyId=kid;
   document.querySelectorAll('.key-btn').forEach(b=>b.classList.toggle('on',b.dataset.kid===kid));
   document.getElementById('key-pill').textContent=KMAP[kid]?.label||kid;
+  relabelNoteButtons();
   renderDiatonicChords();
   render();
 }
@@ -755,7 +756,6 @@ function enterPitch(name, acc, oct, vfAcc){
   render();
 }
 
-const SOLFEGE=['Do','Re','Mi','Fa','Sol','La','Ti'];
 // Scale degrees ascend by letter from the tonic; once the letter cycle wraps
 // past B back to C the pitch class drops, so bump the octave at that point.
 function scaleDegreeOct(kd, deg, baseOct){
@@ -768,7 +768,15 @@ function scaleDegreeOct(kd, deg, baseOct){
   }
   return oct;
 }
-function handleSolfegeBtn(deg){
+function relabelNoteButtons(){
+  const kd=KMAP[currentKeyId];
+  const glyph={'#':'♯','b':'♭','##':'𝄪','bb':'𝄫'};
+  document.querySelectorAll('#note-grid .np').forEach((b,i)=>{
+    const [name,acc]=kd.scale[i];
+    b.textContent=name+(glyph[acc]||'');
+  });
+}
+function handleScaleBtn(deg){
   const kd=KMAP[currentKeyId];
   const [letter, scaleAcc]=kd.scale[deg];
   const oct=scaleDegreeOct(kd, deg, selOct);
@@ -1171,6 +1179,7 @@ function applyProject(d){
   document.querySelectorAll('.key-btn').forEach(b=>b.classList.toggle('on',b.dataset.kid===currentKeyId));
   document.querySelectorAll('.time-btn').forEach(b=>b.classList.toggle('on',b.dataset.sig===currentTimeSig.sig));
   document.getElementById('key-pill').textContent=KMAP[currentKeyId]?.label||currentKeyId;
+  relabelNoteButtons();
   renderDiatonicChords();
   selectedNote=null; updateSelectionUI(); updateProjPill();
   renderPartsList(); render();
@@ -1491,6 +1500,7 @@ document.getElementById('import-file').addEventListener('change', async function
 // ═══════════════════════════════════════════════════════
 setAcc('key');setArt(null);setDyn(null);setTempo(null);
 refreshDurIcons();
+relabelNoteButtons();
 renderDiatonicChords();
 initProjects();
 render();
