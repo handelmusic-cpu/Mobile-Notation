@@ -289,11 +289,20 @@ body { font-family:-apple-system,BlinkMacSystemFont,sans-serif; background:#1212
 <div id="panel-proj" class="panel">
   <div class="row" style="gap:6px">
     <button class="chip on2" onclick="newProjectPrompt()" style="font-size:11px">+ New Song</button>
+  </div>
+  <div class="sec">Import</div>
+  <div class="row" style="gap:6px">
+    <button class="chip" onclick="importFile('midi')" style="font-size:11px">⇧ MIDI (.mid)</button>
+    <button class="chip" onclick="importFile('xml')" style="font-size:11px">⇧ MusicXML</button>
+  </div>
+  <div class="sec">Export current song</div>
+  <div class="row" style="gap:6px">
     <button class="chip" onclick="exportMIDI()" style="font-size:11px">⇩ MIDI</button>
     <button class="chip" onclick="exportPDF()" style="font-size:11px">🖨 Print / PDF</button>
   </div>
   <div class="sec">Your songs — autosaved</div>
   <div id="proj-list"></div>
+  <input type="file" id="import-file" style="display:none">
 </div>
 
 <!-- Diatonic chord palette — always visible -->
@@ -883,7 +892,7 @@ function calcMW(allM, mi){
 // ═══════════════════════════════════════════════════════
 function render(){
   const VF=Vex.Flow;
-  const{Renderer,Stave,StaveNote,Voice,Formatter,Accidental,StaveConnector,Beam,Annotation,Articulation,StaveHairpin}=VF;
+  const{Renderer,Stave,StaveNote,Voice,Formatter,Accidental,StaveConnector,Beam,Annotation,Articulation,StaveHairpin,Dot}=VF;
   const div=document.getElementById('score-div');
   div.innerHTML='';
   notePositions=[];
@@ -955,7 +964,7 @@ function render(){
 }
 
 function drawVoice(ctx,stave,noteData,mw,VF,partIdx,partOffset){
-  const{StaveNote,Voice,Formatter,Accidental,Beam,Annotation,Articulation}=VF;
+  const{StaveNote,Voice,Formatter,Accidental,Beam,Annotation,Articulation,Dot}=VF;
   if(!noteData.length)return[];
   let vfNotes;
   try{
@@ -966,6 +975,7 @@ function drawVoice(ctx,stave,noteData,mw,VF,partIdx,partOffset){
       if(isSelected) sn.setStyle({fillStyle:'#2980b9',strokeStyle:'#2980b9'});
       const accs=n.vfAccs||[];
       accs.forEach((acc,i)=>{if(acc)try{sn.addModifier(new Accidental(acc),i);}catch(e){};});
+      if(n.dur.includes('d'))try{Dot.buildAndAttach([sn],{all:true});}catch(e){}
       if(n.lyric)try{const a=new Annotation(n.lyric);a.setVerticalJustification(Annotation.VerticalJustify.BOTTOM);a.setFont({family:'Arial',size:9});sn.addModifier(a,0);}catch(e){}
       if(n.dyn)try{const a=new Annotation(n.dyn);a.setVerticalJustification(Annotation.VerticalJustify.BOTTOM);a.setFont({family:'serif',size:10,style:'italic bold'});sn.addModifier(a,0);}catch(e){}
       if(n.tempo)try{const a=new Annotation(n.tempo);a.setVerticalJustification(Annotation.VerticalJustify.TOP);a.setFont({family:'serif',size:10,style:'italic'});sn.addModifier(a,0);}catch(e){}
@@ -1023,23 +1033,80 @@ const BVP={w:4,h:2,q:1,'8':.5,'16':.25,'32':.125};
 function durSecs(dur,bpm){const b=dur.replace(/[dr]/g,''),dot=dur.includes('d');return(BVP[b]??1)*(dot?1.5:1)*(60/bpm);}
 function toToneDur(dur){const b=dur.replace(/[dr]/g,''),dot=dur.includes('d');return({w:'1n',h:'2n',q:'4n','8':'8n','16':'16n','32':'32n'}[b]||'4n')+(dot?'.':'');}
 
-function makeSynth(inst){
-  const{osc,env,vol}=inst;const e={attack:env.a,decay:env.d,sustain:env.s,release:env.r};
-  if(osc==='membrane')return new Tone.MembraneSynth({pitchDecay:.08,octaves:6,envelope:e,volume:vol}).toDestination();
-  if(osc==='noise')return new Tone.NoiseSynth({noise:{type:'white'},envelope:e,volume:vol}).toDestination();
-  if(osc==='fm')return new Tone.PolySynth(Tone.FMSynth,{harmonicity:3,modulationIndex:10,envelope:e,volume:vol}).toDestination();
-  return new Tone.PolySynth(Tone.Synth,{oscillator:{type:osc},envelope:e,volume:vol}).toDestination();
+// ── Sample-based instruments (real recordings) ──────────
+// Salamander grand piano (Tone.js official) + tonejs-instruments library.
+const TI='https://nbrosowsky.github.io/tonejs-instruments/samples/';
+const SALAMANDER={
+  base:'https://tonejs.github.io/audio/salamander/',
+  map:{'A0':'A0.mp3','C1':'C1.mp3','D#1':'Ds1.mp3','F#1':'Fs1.mp3','A1':'A1.mp3','C2':'C2.mp3','D#2':'Ds2.mp3','F#2':'Fs2.mp3','A2':'A2.mp3','C3':'C3.mp3','D#3':'Ds3.mp3','F#3':'Fs3.mp3','A3':'A3.mp3','C4':'C4.mp3','D#4':'Ds4.mp3','F#4':'Fs4.mp3','A4':'A4.mp3','C5':'C5.mp3','D#5':'Ds5.mp3','F#5':'Fs5.mp3','A5':'A5.mp3','C6':'C6.mp3','D#6':'Ds6.mp3','F#6':'Fs6.mp3','A6':'A6.mp3','C7':'C7.mp3','D#7':'Ds7.mp3','F#7':'Fs7.mp3','A7':'A7.mp3','C8':'C8.mp3'}
+};
+// folder -> sampled pitches (Sampler pitch-shifts to fill the gaps; '#' -> 's' in filename)
+const SAMP={
+  piano:SALAMANDER,
+  violin:{base:TI+'violin/', pitches:['C4','A4','C5','C6']},
+  cello:{base:TI+'cello/', pitches:['C2','C3','C4','C#4']},
+  contrabass:{base:TI+'contrabass/', pitches:['C2','E2','G1']},
+  flute:{base:TI+'flute/', pitches:['C4','C5','C6','A5']},
+  clarinet:{base:TI+'clarinet/', pitches:['D4','D5','F4']},
+  bassoon:{base:TI+'bassoon/', pitches:['C3','C4','G2','A3']},
+  saxophone:{base:TI+'saxophone/', pitches:['A4','C5','D5','E4']},
+  trumpet:{base:TI+'trumpet/', pitches:['C4','F4','G4']},
+  frenchhorn:{base:TI+'french-horn/', pitches:['C4','D3','F3']},
+  trombone:{base:TI+'trombone/', pitches:['C3','D3','F3','A#2']},
+  tuba:{base:TI+'tuba/', pitches:['A#1','F2','A#2','D3']},
+  organ:{base:TI+'organ/', pitches:['C3','C4','C5','A4']},
+  xylophone:{base:TI+'xylophone/', pitches:['C5','C6','G5']},
+  guitar:{base:TI+'guitar-acoustic/', pitches:['C3','C4','C5']}
+};
+// instrument id -> sample folder (missing => piano; unpitched => synth drum)
+const INST_SAMPLE={
+  piano:'piano', organ:'organ', harpsi:'guitar',
+  violin:'violin', viola:'cello', cello:'cello', dbass:'contrabass',
+  flute:'flute', oboe:'flute', clarinet:'clarinet', bassoon:'bassoon', sax:'saxophone',
+  trumpet:'trumpet', horn:'frenchhorn', trombone:'trombone', tuba:'tuba',
+  soprano:'organ', mezzo:'organ', altov:'organ', tenorv:'organ', baritonev:'organ', bassv:'organ',
+  timpani:'piano', xyloph:'xylophone', marimba:'xylophone'
+};
+const _samplerCache={}, _drumCache={};
+function getSampler(instId){
+  const key=INST_SAMPLE[instId]||'piano';
+  if(_samplerCache[key])return _samplerCache[key];
+  const def=SAMP[key]||SALAMANDER;
+  const urls={};
+  if(def.map)Object.assign(urls,def.map);
+  else def.pitches.forEach(p=>{urls[p]=p.replace('#','s')+'.mp3';});
+  const s=new Tone.Sampler({urls,baseUrl:def.base,release:1,volume:-4}).toDestination();
+  _samplerCache[key]=s;return s;
 }
-let playing=false,_synths=[];
+function getDrum(instId){
+  if(_drumCache[instId])return _drumCache[instId];
+  const inst=IMAP[instId];const e={attack:inst.env.a,decay:inst.env.d,sustain:inst.env.s,release:inst.env.r};
+  let s;
+  if(inst.osc==='noise')s=new Tone.NoiseSynth({noise:{type:'white'},envelope:e,volume:inst.vol}).toDestination();
+  else s=new Tone.MembraneSynth({pitchDecay:.05,octaves:5,envelope:e,volume:inst.vol}).toDestination();
+  _drumCache[instId]=s;return s;
+}
+
+let playing=false,_activeVoices=[];
 async function playScore(){
-  if(playing)return;await Tone.start();playing=true;stopScore(true);
+  if(playing)return;await Tone.start();
+  const playBtn=document.querySelector('.tb.play');
   const bpm=parseInt(document.getElementById('bpm-inp').value)||80;
+  // Pre-create + load all samplers needed
+  const usedInst=[...new Set(parts.filter(p=>p.notes.length).map(p=>p.instId))];
+  let needLoad=false;
+  usedInst.forEach(id=>{const inst=IMAP[id];if(inst&&inst.unpitched){getDrum(id);}else{const key=INST_SAMPLE[id]||'piano';if(!_samplerCache[key])needLoad=true;getSampler(id);}});
+  if(needLoad){ if(playBtn)playBtn.textContent='…'; }
+  await Tone.loaded();
+  if(playBtn)playBtn.textContent='▶';
+  playing=true;stopScore(true);
   Tone.getTransport().bpm.value=bpm;Tone.getTransport().cancel();
-  _synths=[];let maxT=0;
+  _activeVoices=[];let maxT=0;
   parts.forEach(part=>{
     if(!part.notes.length)return;
     const inst=IMAP[part.instId]||IMAP['piano'];
-    const synth=makeSynth(inst);_synths.push(synth);
+    const voice=inst.unpitched?getDrum(part.instId):getSampler(part.instId);
+    _activeVoices.push(voice);
     let t=0;
     part.notes.forEach(n=>{
       const secs=durSecs(n.dur,bpm);
@@ -1047,22 +1114,25 @@ async function playScore(){
         const td=toToneDur(n.dur),abs=t;
         const toneNotes=n.midiVals.map(m=>Tone.Frequency(m,'midi').toNote());
         Tone.getTransport().schedule(time=>{
-          try{if(inst.unpitched)synth.triggerAttackRelease(td,time);
-          else synth.triggerAttackRelease(toneNotes.length===1?toneNotes[0]:toneNotes,td,time);}catch(e){}
+          try{
+            if(inst.unpitched){ if(inst.osc==='noise')voice.triggerAttackRelease(td,time); else voice.triggerAttackRelease('C2',td,time); }
+            else voice.triggerAttackRelease(toneNotes.length===1?toneNotes[0]:toneNotes,td,time);
+          }catch(e){}
         },'+'+abs);
       }
       t+=secs;
     });
     maxT=Math.max(maxT,t);
   });
-  if(!_synths.length){playing=false;return;}
+  if(!_activeVoices.length){playing=false;return;}
   Tone.getTransport().schedule(()=>stopScore(),'+' +(maxT+.8));
   Tone.getTransport().start();
 }
 function stopScore(s){
   Tone.getTransport().stop();Tone.getTransport().cancel();
-  _synths.forEach(x=>{try{x.releaseAll?.();x.dispose();}catch(e){}});
-  _synths=[];playing=false;
+  _activeVoices.forEach(x=>{try{x.releaseAll?.();}catch(e){}});
+  _activeVoices=[];playing=false;
+  const playBtn=document.querySelector('.tb.play');if(playBtn)playBtn.textContent='▶';
 }
 
 // ═══════════════════════════════════════════════════════
@@ -1247,6 +1317,173 @@ function exportPDF(){
   w.document.close();
   setTimeout(()=>{ w.focus(); w.print(); },350);
 }
+
+// ═══════════════════════════════════════════════════════
+// Import — MIDI & MusicXML
+// ═══════════════════════════════════════════════════════
+// Quantize a duration in quarter-note beats to the nearest notatable value.
+const DUR_TABLE=[[4,'w'],[3,'hd'],[2,'h'],[1.5,'qd'],[1,'q'],[0.75,'8d'],[0.5,'8'],[0.375,'16d'],[0.25,'16'],[0.1875,'32d'],[0.125,'32']];
+function beatsToDur(qb){
+  let best='q', bd=1e9;
+  for(const [b,d] of DUR_TABLE){ const diff=Math.abs(b-qb); if(diff<bd){bd=diff;best=d;} }
+  return best;
+}
+function restNote(qb){return{keys:['b/4'],dur:beatsToDur(qb)+'r',vfAccs:[null],midiVals:[],rest:true,lyric:null,dyn:null,art:null,tempo:null};}
+
+// ---- MIDI (Standard MIDI File) ----
+function parseMIDI(buf){
+  const dv=new DataView(buf); let p=0;
+  const rd8=()=>dv.getUint8(p++);
+  const rd16=()=>{const v=dv.getUint16(p);p+=2;return v;};
+  const rd32=()=>{const v=dv.getUint32(p);p+=4;return v;};
+  const rstr=(n)=>{let s='';for(let i=0;i<n;i++)s+=String.fromCharCode(rd8());return s;};
+  const vlqRead=()=>{let d=0,b;do{b=rd8();d=(d<<7)|(b&0x7F);}while(b&0x80);return d;};
+  if(rstr(4)!=='MThd')throw new Error('Not a MIDI file');
+  rd32(); rd16(); const ntrk=rd16(); const div=rd16();
+  const ppq=(div&0x8000)?480:div;
+  let tempo=500000, timeSig='4/4';
+  const tracks=[];
+  for(let t=0;t<ntrk;t++){
+    if(rstr(4)!=='MTrk')throw new Error('Bad MIDI track');
+    const len=rd32(); const end=p+len;
+    let tick=0, running=0; const events=[];
+    while(p<end){
+      tick+=vlqRead();
+      let status=dv.getUint8(p);
+      if(status<0x80){status=running;}else{p++;running=status;}
+      const type=status&0xF0;
+      if(status===0xFF){ const mt=rd8(); const ml=vlqRead(); const ms=p;
+        if(mt===0x51)tempo=(dv.getUint8(p)<<16)|(dv.getUint8(p+1)<<8)|dv.getUint8(p+2);
+        else if(mt===0x58){const nn=dv.getUint8(p),dd=dv.getUint8(p+1);timeSig=nn+'/'+Math.pow(2,dd);}
+        p=ms+ml;
+      } else if(status===0xF0||status===0xF7){ const sl=vlqRead(); p+=sl; }
+      else if(type===0x90||type===0x80){ const note=rd8(),vel=rd8(); events.push({tick,on:(type===0x90&&vel>0),note}); }
+      else if(type===0xA0||type===0xB0||type===0xE0){ p+=2; }
+      else if(type===0xC0||type===0xD0){ p+=1; }
+      else { p++; }
+    }
+    p=end; if(events.length)tracks.push(events);
+  }
+  return {ppq,tempo,timeSig,tracks};
+}
+function midiToData(parsed){
+  const bpm=Math.max(20,Math.min(320,Math.round(60000000/parsed.tempo)));
+  const ppq=parsed.ppq||480, tol=ppq*0.12;
+  const outParts=[];
+  parsed.tracks.forEach(events=>{
+    const active={}, notes=[];
+    events.forEach(e=>{
+      if(e.on){(active[e.note]=active[e.note]||[]).push(e.tick);}
+      else{const a=active[e.note];if(a&&a.length){const st=a.shift();if(e.tick>st)notes.push({start:st,end:e.tick,midi:e.note});}}
+    });
+    if(!notes.length)return;
+    notes.sort((a,b)=>a.start-b.start||a.midi-b.midi);
+    const nd=[]; let cursor=notes[0].start, i=0;
+    if(cursor>tol)nd.push(restNote(cursor/ppq));
+    while(i<notes.length){
+      const start=notes[i].start; const group=[]; let j=i;
+      while(j<notes.length&&Math.abs(notes[j].start-start)<tol){group.push(notes[j]);j++;}
+      if(start-cursor>tol)nd.push(restNote((start-cursor)/ppq));
+      const dur=Math.max(...group.map(g=>g.end-g.start));
+      const midis=group.map(g=>g.midi).sort((a,b)=>a-b);
+      const res=midis.map(m=>midiToNote(m));
+      nd.push({keys:res.map(r=>r.name+'/'+r.oct),dur:beatsToDur(dur/ppq),vfAccs:res.map(r=>r.acc),midiVals:midis,rest:false,lyric:null,dyn:null,art:null,tempo:null});
+      cursor=start+dur; i=j;
+    }
+    outParts.push({notes:nd});
+  });
+  return {bpm,timeSig:parsed.timeSig,keyId:'C',parts:outParts};
+}
+
+// ---- MusicXML ----
+const FIFTHS_MAJOR={'0':'C','1':'G','2':'D','3':'A','4':'E','5':'B','6':'Fs','-1':'F','-2':'Bb','-3':'Eb','-4':'Ab','-5':'Db','-6':'Fs'};
+const FIFTHS_MINOR={'0':'Am','1':'Em','2':'Bm','3':'Fsm','4':'Csm','-1':'Dm','-2':'Gm','-3':'Cm','-4':'Fm','-5':'Bbm'};
+function fifthsToKey(f,mode){return (mode==='minor'?FIFTHS_MINOR:FIFTHS_MAJOR)[String(f)]||'C';}
+const XML_TYPE={'whole':'w','half':'h','quarter':'q','eighth':'8','16th':'16','32nd':'32','breve':'w','64th':'32'};
+function xmlAcc(el){ const a=el.querySelector(':scope > accidental'); if(!a)return null; return {'sharp':'#','flat':'b','natural':'n','double-sharp':'##','sharp-sharp':'##','flat-flat':'bb','double-flat':'bb'}[a.textContent.trim()]||null; }
+function xmlAlter(pitchEl){ const a=pitchEl.querySelector('alter'); const v=a?parseInt(a.textContent):0; return v; }
+function alterToAcc(v){return v===1?'#':v===-1?'b':v===2?'##':v===-2?'bb':null;}
+function parseMusicXML(text){
+  const doc=new DOMParser().parseFromString(text,'application/xml');
+  if(doc.querySelector('parsererror'))throw new Error('Invalid MusicXML');
+  const partEls=[...doc.querySelectorAll('score-partwise > part, part')];
+  if(!partEls.length)throw new Error('No parts found (timewise MusicXML not supported)');
+  let keyId='C', timeSig='4/4', bpm=80;
+  const kf=doc.querySelector('key fifths');
+  if(kf){const modeEl=doc.querySelector('key mode');keyId=fifthsToKey(parseInt(kf.textContent),modeEl?modeEl.textContent.trim():'major');}
+  const te=doc.querySelector('time');
+  if(te){const b=te.querySelector('beats'),bt=te.querySelector('beat-type');if(b&&bt)timeSig=b.textContent.trim()+'/'+bt.textContent.trim();}
+  const se=doc.querySelector('sound[tempo]');if(se)bpm=Math.max(20,Math.min(320,Math.round(parseFloat(se.getAttribute('tempo')))));
+  const outParts=[];
+  partEls.forEach(partEl=>{
+    const staves={};
+    [...partEl.querySelectorAll('measure')].forEach(m=>{
+      [...m.children].filter(c=>c.tagName==='note').forEach(nEl=>{
+        const staff=nEl.querySelector('staff')?.textContent.trim()||'1';
+        staves[staff]=staves[staff]||[];
+        const arr=staves[staff];
+        const isRest=!!nEl.querySelector('rest');
+        const isChord=!!nEl.querySelector('chord');
+        const typeT=nEl.querySelector('type')?.textContent.trim();
+        const dots=nEl.querySelectorAll('dot').length;
+        const dur=(XML_TYPE[typeT]||'q')+(dots>0?'d':'');
+        if(isChord){
+          const prev=arr[arr.length-1];
+          const pit=nEl.querySelector('pitch');
+          if(prev&&!prev.rest&&pit){
+            const step=pit.querySelector('step').textContent.trim();
+            const oct=parseInt(pit.querySelector('octave').textContent);
+            const acc=alterToAcc(xmlAlter(pit));
+            prev.keys.push(step+'/'+oct); prev.vfAccs.push(xmlAcc(nEl)); prev.midiVals.push(noteToMidi(step,acc,oct));
+          }
+          return;
+        }
+        if(isRest){ arr.push(restNote(durBeats(dur))); return; }
+        const pit=nEl.querySelector('pitch'); if(!pit)return;
+        const step=pit.querySelector('step').textContent.trim();
+        const oct=parseInt(pit.querySelector('octave').textContent);
+        const acc=alterToAcc(xmlAlter(pit));
+        const lyr=nEl.querySelector('lyric text')?.textContent.trim()||null;
+        arr.push({keys:[step+'/'+oct],dur,vfAccs:[xmlAcc(nEl)],midiVals:[noteToMidi(step,acc,oct)],rest:false,lyric:lyr,dyn:null,art:null,tempo:null});
+      });
+    });
+    Object.keys(staves).sort().forEach(sk=>outParts.push({notes:staves[sk],staff:sk}));
+  });
+  return {keyId,timeSig,bpm,parts:outParts};
+}
+
+function importToProject(name,data){
+  if(!data.parts.length||!data.parts.some(p=>p.notes.length))throw new Error('No notes found in file');
+  const newParts=data.parts.filter(p=>p.notes.length).map((pp,i)=>{
+    let clef=pp.staff==='2'?'bass':pp.staff==='1'?'treble':null;
+    if(!clef){const mids=pp.notes.flatMap(n=>n.midiVals);const avg=mids.length?mids.reduce((a,b)=>a+b,0)/mids.length:64;clef=avg<57?'bass':'treble';}
+    return {id:i+1,name:clef==='bass'?'Bass':(i===0?'Treble':'Part '+(i+1)),instId:'piano',clef,notes:pp.notes,hairpins:[]};
+  });
+  const proj={parts:newParts,pid:newParts.length+1,apIdx:0,keyId:data.keyId||'C',timeSig:data.timeSig||'4/4',bpm:data.bpm||80};
+  const id='p'+Date.now();
+  projects.push({id,name:name||'Imported',data:proj,updated:Date.now()});
+  currentProjId=id; saveAll(); applyProject(proj); renderProjectsList(); switchTab('notes');
+}
+function importFile(kind){
+  const inp=document.getElementById('import-file');
+  inp.dataset.kind=kind;
+  inp.accept=kind==='midi'?'.mid,.midi':'.xml,.musicxml,.mxl';
+  inp.value=''; inp.click();
+}
+document.getElementById('import-file').addEventListener('change', async function(){
+  const f=this.files[0]; if(!f)return;
+  const kind=this.dataset.kind;
+  try{
+    if(kind==='midi'){
+      const buf=await f.arrayBuffer();
+      importToProject(f.name.replace(/\.midi?$/i,''), midiToData(parseMIDI(buf)));
+    } else {
+      if(/\.mxl$/i.test(f.name)){alert('Compressed .mxl not supported — please export as uncompressed MusicXML (.xml / .musicxml).');return;}
+      const text=await f.text();
+      importToProject(f.name.replace(/\.(xml|musicxml)$/i,''), parseMusicXML(text));
+    }
+  }catch(e){ alert('Import failed: '+e.message); console.error(e); }
+});
 
 // ═══════════════════════════════════════════════════════
 // Boot
