@@ -1,0 +1,844 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Music Notation</title>
+<style>
+* { box-sizing:border-box; margin:0; padding:0; -webkit-tap-highlight-color:transparent; }
+html,body { height:100%; overflow:hidden; }
+body { font-family:-apple-system,BlinkMacSystemFont,sans-serif; background:#12121f; color:#e0e4ef; display:flex; flex-direction:column; height:100dvh; }
+
+#score-wrap { flex:1 1 0; min-height:0; background:#f4efe4; overflow:auto; -webkit-overflow-scrolling:touch; padding:8px; }
+
+#toolbar { display:flex; gap:4px; padding:5px 7px; background:#1e1e35; flex-shrink:0; align-items:center; }
+.tb { flex:1; padding:6px 2px; border:none; border-radius:7px; font-size:11px; font-weight:700; cursor:pointer; max-width:68px; touch-action:manipulation; }
+.tb:active{opacity:.75;}
+.play{background:#2ecc71;color:#fff;} .stop{background:#e74c3c;color:#fff;}
+.undo{background:#e67e22;color:#fff;} .clear{background:#9b59b6;color:#fff;}
+#bpm-wrap{display:flex;align-items:center;gap:3px;font-size:10px;color:#778;margin-left:4px;}
+#bpm-inp{width:42px;background:#2a2a40;border:none;border-radius:5px;color:#dde;padding:3px 4px;font-size:11px;}
+#midi-pill{margin-left:auto;font-size:9px;padding:3px 7px;border-radius:10px;background:#2a2a40;color:#778;white-space:nowrap;}
+#midi-pill.on{background:#27ae60;color:#fff;}
+
+#tab-bar{display:flex;background:#16162a;border-top:1px solid #2a2a45;flex-shrink:0;}
+.tab-btn{flex:1;padding:6px 1px;border:none;background:transparent;color:#445;font-size:9px;font-weight:700;cursor:pointer;border-bottom:2px solid transparent;letter-spacing:.2px;}
+.tab-btn.on{color:#e94560;border-bottom-color:#e94560;}
+
+.panel{display:none;padding:6px 8px;background:#1a1a30;flex-shrink:0;}
+.panel.on{display:block;}
+.row{display:flex;align-items:center;gap:4px;margin-bottom:4px;flex-wrap:wrap;}
+.lbl{font-size:10px;color:#778;min-width:28px;flex-shrink:0;}
+.sec{font-size:9px;color:#556;margin:5px 0 3px;letter-spacing:.5px;text-transform:uppercase;}
+
+.chip{padding:4px 7px;border:1.5px solid #2a2a45;border-radius:6px;background:#12121f;color:#bbc;font-size:13px;cursor:pointer;min-height:28px;min-width:28px;display:inline-flex;align-items:center;justify-content:center;touch-action:manipulation;line-height:1;user-select:none;}
+.chip:active{opacity:.7;}
+.chip.on{background:#e94560;border-color:#e94560;color:#fff;}
+.chip.on2{background:#2980b9;border-color:#2980b9;color:#fff;}
+.chip.on3{background:#27ae60;border-color:#27ae60;color:#fff;}
+
+/* Parts panel */
+#parts-list{display:flex;flex-direction:column;gap:4px;max-height:100px;overflow-y:auto;margin-bottom:5px;}
+.prow{display:flex;align-items:center;gap:5px;background:#12121f;border-radius:7px;padding:5px 7px;border:1.5px solid #2a2a45;cursor:pointer;}
+.prow.ap{border-color:#2980b9;background:#0d1f35;}
+.pdot{width:7px;height:7px;border-radius:50%;background:#334;flex-shrink:0;}
+.prow.ap .pdot{background:#2980b9;}
+.pname{font-size:12px;font-weight:700;color:#ccd;flex:0 0 auto;}
+.pinst{font-size:10px;color:#778;flex:1;}
+.pdel{background:none;border:none;color:#e74c3c;font-size:13px;cursor:pointer;padding:0 3px;}
+.cat-grid{display:flex;gap:3px;flex-wrap:wrap;margin-bottom:4px;}
+#inst-grid{display:flex;gap:3px;flex-wrap:wrap;min-height:0;margin-bottom:4px;}
+
+/* Dyn */
+.dyn-grid{display:grid;grid-template-columns:repeat(6,1fr);gap:3px;margin-bottom:5px;}
+.dyn-btn{padding:5px 2px;border:1.5px solid #2a2a45;border-radius:6px;background:#12121f;color:#dde;font-size:11px;font-style:italic;font-weight:700;cursor:pointer;min-height:28px;touch-action:manipulation;}
+.dyn-btn:active{opacity:.7;}
+.dyn-btn.on{background:#e94560;border-color:#e94560;color:#fff;}
+.hp-row{display:flex;gap:5px;align-items:center;margin-bottom:3px;}
+#hp-status{font-size:9px;color:#27ae60;min-height:11px;}
+
+/* Art */
+.art-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:3px;}
+.art-btn{padding:5px 2px;border:1.5px solid #2a2a45;border-radius:6px;background:#12121f;color:#dde;font-size:16px;cursor:pointer;min-height:34px;touch-action:manipulation;}
+.art-btn:active{opacity:.7;}
+.art-btn.on{background:#e94560;border-color:#e94560;color:#fff;}
+
+/* Tempo */
+.tempo-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:3px;margin-bottom:4px;}
+.tempo-btn{padding:5px 2px;border:1.5px solid #2a2a45;border-radius:6px;background:#12121f;color:#dde;font-size:9px;font-style:italic;cursor:pointer;min-height:28px;touch-action:manipulation;}
+.tempo-btn:active{opacity:.7;}
+.tempo-btn.on{background:#e94560;border-color:#e94560;color:#fff;}
+
+/* Score setup */
+.key-major-grid{display:grid;grid-template-columns:repeat(6,1fr);gap:3px;margin-bottom:3px;}
+.key-minor-grid{display:grid;grid-template-columns:repeat(6,1fr);gap:3px;margin-bottom:5px;}
+.key-btn{padding:4px 2px;border:1.5px solid #2a2a45;border-radius:6px;background:#12121f;color:#dde;font-size:10px;cursor:pointer;min-height:26px;touch-action:manipulation;text-align:center;}
+.key-btn:active{opacity:.7;}
+.key-btn.on{background:#e94560;border-color:#e94560;color:#fff;}
+.time-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:3px;}
+.time-btn{padding:5px 2px;border:1.5px solid #2a2a45;border-radius:6px;background:#12121f;color:#dde;font-size:11px;cursor:pointer;min-height:28px;touch-action:manipulation;text-align:center;}
+.time-btn.on{background:#e94560;border-color:#e94560;color:#fff;}
+
+/* Chord row */
+#chord-row{display:none;flex-shrink:0;background:#101020;padding:5px 7px;border-top:1px solid #2a2a45;}
+#diatonic-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:3px;margin-bottom:4px;}
+.dchord-btn{padding:5px 2px;border:1.5px solid #2a2a45;border-radius:7px;background:#1a1a30;color:#dde;cursor:pointer;min-height:40px;text-align:center;touch-action:manipulation;}
+.dchord-btn:active{opacity:.7;}
+.dchord-btn .roman{font-size:9px;color:#778;}
+.dchord-btn .cname{font-size:12px;font-weight:700;}
+#pending-row{display:flex;align-items:center;gap:5px;}
+#pending-display{font-size:10px;color:#e94560;flex:1;min-height:14px;}
+
+/* Note grid */
+#note-grid{display:grid;grid-template-columns:repeat(8,1fr);gap:4px;padding:5px 7px;background:#16162a;flex-shrink:0;border-top:1px solid #2a2a45;}
+.nbtn{padding:9px 2px;border:none;border-radius:9px;font-size:17px;font-weight:800;cursor:pointer;min-height:42px;color:#fff;touch-action:manipulation;user-select:none;}
+.nbtn:active{transform:scale(.91);}
+.np{background:#e94560;} .nr{background:#3a3f55;font-size:20px;}
+
+.hint{font-size:9px;color:#445;margin-top:3px;}
+</style>
+</head>
+<body>
+
+<div id="score-wrap"><div id="score-div"></div></div>
+
+<div id="toolbar">
+  <button class="tb play"  onclick="playScore()">▶ Play</button>
+  <button class="tb stop"  onclick="stopScore()">■ Stop</button>
+  <button class="tb undo"  onclick="undoNote()">⌫ Undo</button>
+  <button class="tb clear" onclick="clearAll()">✕ Clear</button>
+  <div id="bpm-wrap"><span>BPM</span><input type="number" id="bpm-inp" value="80" min="20" max="320"></div>
+  <span id="midi-pill">No MIDI</span>
+</div>
+
+<div id="tab-bar">
+  <button class="tab-btn on"  onclick="switchTab('notes')">♪ Notes</button>
+  <button class="tab-btn"     onclick="switchTab('parts')">≡ Parts</button>
+  <button class="tab-btn"     onclick="switchTab('lyrics')">Lyrics</button>
+  <button class="tab-btn"     onclick="switchTab('dyn')">Dyn</button>
+  <button class="tab-btn"     onclick="switchTab('art')">Art</button>
+  <button class="tab-btn"     onclick="switchTab('tempo')">Tempo</button>
+  <button class="tab-btn"     onclick="switchTab('score')">Score</button>
+</div>
+
+<!-- Notes panel -->
+<div id="panel-notes" class="panel on">
+  <div class="row">
+    <span class="lbl">Dur</span>
+    <button class="chip on" id="d-w"   onclick="setDur('w')">𝅝</button>
+    <button class="chip"    id="d-h"   onclick="setDur('h')">𝅗</button>
+    <button class="chip"    id="d-q"   onclick="setDur('q')">♩</button>
+    <button class="chip"    id="d-8"   onclick="setDur('8')">♪</button>
+    <button class="chip"    id="d-16"  onclick="setDur('16')" style="font-size:10px">16</button>
+    <button class="chip"    id="d-32"  onclick="setDur('32')" style="font-size:9px">32</button>
+    <button class="chip"    id="d-dot" onclick="toggleDot()">·</button>
+    <span class="lbl" style="margin-left:4px">Oct</span>
+    <button class="chip" onclick="changeOct(-1)">−</button>
+    <span id="oct-val" style="font-size:15px;font-weight:700;color:#fff;min-width:14px;text-align:center">4</span>
+    <button class="chip" onclick="changeOct(1)">+</button>
+    <button class="chip" id="btn-chord" onclick="toggleChordMode()" style="margin-left:6px;font-size:11px">♫ Chord</button>
+  </div>
+  <div class="row">
+    <span class="lbl">Acc</span>
+    <button class="chip on" id="a-n"  onclick="setAcc(null)">♮</button>
+    <button class="chip"    id="a-s"  onclick="setAcc('#')">♯</button>
+    <button class="chip"    id="a-f"  onclick="setAcc('b')">♭</button>
+    <button class="chip"    id="a-ss" onclick="setAcc('##')" style="font-size:10px">𝄪</button>
+    <button class="chip"    id="a-ff" onclick="setAcc('bb')" style="font-size:10px">𝄫</button>
+  </div>
+</div>
+
+<!-- Parts panel -->
+<div id="panel-parts" class="panel">
+  <div style="font-size:9px;color:#556;margin-bottom:3px">TAP TO SELECT ACTIVE PART FOR NOTE ENTRY</div>
+  <div id="parts-list"></div>
+  <div class="sec">Add new part</div>
+  <div class="cat-grid" id="cat-grid"></div>
+  <div id="inst-grid"></div>
+  <button class="chip on2" id="btn-add-confirm" onclick="confirmAddPart()" style="display:none">+ Add This Part</button>
+</div>
+
+<!-- Lyrics panel -->
+<div id="panel-lyrics" class="panel">
+  <div class="row"><span style="font-size:10px;color:#778">Syllable for next note:</span></div>
+  <input type="text" id="lyric-inp" style="width:100%;padding:7px 9px;background:#12121f;border:1.5px solid #2a2a45;border-radius:7px;color:#dde;font-size:14px;" placeholder="Type syllable…" maxlength="24">
+  <div class="hint">Attaches to next note. <span onclick="clearPending()" style="color:#e94560;cursor:pointer">Clear all pending</span></div>
+</div>
+
+<!-- Dynamics panel -->
+<div id="panel-dyn" class="panel">
+  <div class="dyn-grid">
+    <button class="dyn-btn" id="dyn-ppp" onclick="setDyn('ppp')">ppp</button>
+    <button class="dyn-btn" id="dyn-pp"  onclick="setDyn('pp')">pp</button>
+    <button class="dyn-btn" id="dyn-p"   onclick="setDyn('p')">p</button>
+    <button class="dyn-btn" id="dyn-mp"  onclick="setDyn('mp')">mp</button>
+    <button class="dyn-btn" id="dyn-mf"  onclick="setDyn('mf')">mf</button>
+    <button class="dyn-btn" id="dyn-f"   onclick="setDyn('f')">f</button>
+    <button class="dyn-btn" id="dyn-ff"  onclick="setDyn('ff')">ff</button>
+    <button class="dyn-btn" id="dyn-fff" onclick="setDyn('fff')">fff</button>
+    <button class="dyn-btn" id="dyn-sfz" onclick="setDyn('sfz')">sfz</button>
+    <button class="dyn-btn" id="dyn-sfp" onclick="setDyn('sfp')">sfp</button>
+    <button class="dyn-btn" id="dyn-fz"  onclick="setDyn('fz')">fz</button>
+    <button class="dyn-btn" id="dyn-0"   onclick="setDyn(null)" style="font-style:normal;font-size:9px">none</button>
+  </div>
+  <div class="sec">Hairpins</div>
+  <div class="hp-row">
+    <span style="font-size:10px;color:#aab;min-width:52px">Cresc &lt;</span>
+    <button class="chip on3" onclick="startHairpin('cresc')" style="font-size:10px">▸ Start</button>
+    <button class="chip"     onclick="endHairpin('cresc')"  style="font-size:10px">▪ End</button>
+  </div>
+  <div class="hp-row">
+    <span style="font-size:10px;color:#aab;min-width:52px">Decresc &gt;</span>
+    <button class="chip on3" onclick="startHairpin('decresc')" style="font-size:10px">▸ Start</button>
+    <button class="chip"     onclick="endHairpin('decresc')"  style="font-size:10px">▪ End</button>
+  </div>
+  <div id="hp-status"></div>
+</div>
+
+<!-- Articulations panel -->
+<div id="panel-art" class="panel">
+  <div class="art-grid">
+    <button class="art-btn" id="art-0"  onclick="setArt(null)"  style="font-size:10px">none</button>
+    <button class="art-btn" id="art-st" onclick="setArt('a.')">·</button>
+    <button class="art-btn" id="art-ac" onclick="setArt('a>')">></button>
+    <button class="art-btn" id="art-te" onclick="setArt('a-')">—</button>
+    <button class="art-btn" id="art-ma" onclick="setArt('a^')">^</button>
+    <button class="art-btn" id="art-fe" onclick="setArt('ao')">𝄐</button>
+    <button class="art-btn" id="art-tr" onclick="setArt('tr')" style="font-size:12px;font-style:italic">tr</button>
+    <button class="art-btn" id="art-pz" onclick="setArt('a+')" style="font-size:12px">+</button>
+  </div>
+  <div class="hint" style="margin-top:4px">Applies to next note.</div>
+</div>
+
+<!-- Tempo panel -->
+<div id="panel-tempo" class="panel">
+  <div class="sec">Tempo words</div>
+  <div class="tempo-grid">
+    <button class="tempo-btn" id="tw-Grave"       onclick="setTempo('Grave')">Grave</button>
+    <button class="tempo-btn" id="tw-Largo"       onclick="setTempo('Largo')">Largo</button>
+    <button class="tempo-btn" id="tw-Adagio"      onclick="setTempo('Adagio')">Adagio</button>
+    <button class="tempo-btn" id="tw-Andante"     onclick="setTempo('Andante')">Andante</button>
+    <button class="tempo-btn" id="tw-Moderato"    onclick="setTempo('Moderato')">Moderato</button>
+    <button class="tempo-btn" id="tw-Allegretto"  onclick="setTempo('Allegretto')" style="font-size:8px">Allegretto</button>
+    <button class="tempo-btn" id="tw-Allegro"     onclick="setTempo('Allegro')">Allegro</button>
+    <button class="tempo-btn" id="tw-Vivace"      onclick="setTempo('Vivace')">Vivace</button>
+    <button class="tempo-btn" id="tw-Presto"      onclick="setTempo('Presto')">Presto</button>
+    <button class="tempo-btn" id="tw-Prestissimo" onclick="setTempo('Prestissimo')" style="font-size:7px">Prestissimo</button>
+    <button class="tempo-btn" id="tw-none"        onclick="setTempo(null)" style="font-style:normal;font-size:9px">none</button>
+  </div>
+  <div class="sec">Tempo changes</div>
+  <div class="tempo-grid">
+    <button class="tempo-btn" id="tc-accel."      onclick="setTempo('accel.')">accel.</button>
+    <button class="tempo-btn" id="tc-poco accel." onclick="setTempo('poco accel.')" style="font-size:7px">poco accel.</button>
+    <button class="tempo-btn" id="tc-rit."        onclick="setTempo('rit.')">rit.</button>
+    <button class="tempo-btn" id="tc-ritard."     onclick="setTempo('ritard.')">ritard.</button>
+    <button class="tempo-btn" id="tc-rall."       onclick="setTempo('rall.')">rall.</button>
+    <button class="tempo-btn" id="tc-a tempo"     onclick="setTempo('a tempo')" style="font-style:normal">a tempo</button>
+  </div>
+  <div class="hint">Attaches above staff on next note.</div>
+</div>
+
+<!-- Score setup panel -->
+<div id="panel-score" class="panel">
+  <div class="sec">Key signature — Major</div>
+  <div class="key-major-grid" id="key-major-grid"></div>
+  <div class="sec">Key signature — Minor</div>
+  <div class="key-minor-grid" id="key-minor-grid"></div>
+  <div class="sec">Time signature</div>
+  <div class="time-grid" id="time-grid"></div>
+</div>
+
+<!-- Chord row (diatonic palette + pending) -->
+<div id="chord-row">
+  <div id="diatonic-grid"></div>
+  <div id="pending-row">
+    <span id="pending-display"></span>
+    <button class="chip on3" onclick="commitChord()" style="font-size:10px">✓ Add Chord</button>
+    <button class="chip"     onclick="cancelChord()" style="font-size:10px">✗</button>
+  </div>
+</div>
+
+<!-- Note grid -->
+<div id="note-grid">
+  <button class="nbtn np" onclick="handleNoteBtn('C')">C</button>
+  <button class="nbtn np" onclick="handleNoteBtn('D')">D</button>
+  <button class="nbtn np" onclick="handleNoteBtn('E')">E</button>
+  <button class="nbtn np" onclick="handleNoteBtn('F')">F</button>
+  <button class="nbtn np" onclick="handleNoteBtn('G')">G</button>
+  <button class="nbtn np" onclick="handleNoteBtn('A')">A</button>
+  <button class="nbtn np" onclick="handleNoteBtn('B')">B</button>
+  <button class="nbtn nr" onclick="addRest()">𝄽</button>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/vexflow@4.2.2/build/cjs/vexflow.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/tone@14.7.77/build/Tone.js"></script>
+<script>
+// ═══════════════════════════════════════════════════════
+// Instruments
+// ═══════════════════════════════════════════════════════
+const INSTRUMENTS = [
+  {id:'piano',   label:'Piano',       cat:'Keyboard',  clef:'treble',     osc:'triangle',  env:{a:.01,d:.3,s:.3,r:1},   vol:-6},
+  {id:'organ',   label:'Organ',       cat:'Keyboard',  clef:'treble',     osc:'sine4',     env:{a:.02,d:0,s:1,r:.04},   vol:-8},
+  {id:'harpsi',  label:'Harpsichord', cat:'Keyboard',  clef:'treble',     osc:'sawtooth',  env:{a:.005,d:.4,s:0,r:.1},  vol:-8},
+  {id:'violin',  label:'Violin',      cat:'Strings',   clef:'treble',     osc:'sawtooth4', env:{a:.1,d:.05,s:1,r:.5},   vol:-8},
+  {id:'viola',   label:'Viola',       cat:'Strings',   clef:'alto',       osc:'sawtooth4', env:{a:.12,d:.05,s:1,r:.5},  vol:-8},
+  {id:'cello',   label:'Cello',       cat:'Strings',   clef:'bass',       osc:'sawtooth4', env:{a:.14,d:.05,s:1,r:.6},  vol:-8},
+  {id:'dbass',   label:'Dbl Bass',    cat:'Strings',   clef:'bass',       osc:'sawtooth2', env:{a:.15,d:.1,s:.9,r:.7},  vol:-6},
+  {id:'flute',   label:'Flute',       cat:'Woodwinds', clef:'treble',     osc:'sine',      env:{a:.06,d:.05,s:.9,r:.4}, vol:-10},
+  {id:'oboe',    label:'Oboe',        cat:'Woodwinds', clef:'treble',     osc:'sawtooth8', env:{a:.04,d:.1,s:.85,r:.3}, vol:-10},
+  {id:'clarinet',label:'Clarinet',    cat:'Woodwinds', clef:'treble',     osc:'square',    env:{a:.04,d:.05,s:.85,r:.35},vol:-10},
+  {id:'bassoon', label:'Bassoon',     cat:'Woodwinds', clef:'bass',       osc:'sawtooth',  env:{a:.08,d:.1,s:.85,r:.5}, vol:-8},
+  {id:'sax',     label:'Saxophone',   cat:'Woodwinds', clef:'treble',     osc:'sawtooth8', env:{a:.05,d:.1,s:.9,r:.4},  vol:-8},
+  {id:'trumpet', label:'Trumpet',     cat:'Brass',     clef:'treble',     osc:'square',    env:{a:.04,d:.1,s:.85,r:.3}, vol:-8},
+  {id:'horn',    label:'Fr. Horn',    cat:'Brass',     clef:'treble',     osc:'triangle8', env:{a:.1,d:.1,s:.8,r:.6},   vol:-8},
+  {id:'trombone',label:'Trombone',    cat:'Brass',     clef:'bass',       osc:'sawtooth',  env:{a:.06,d:.1,s:.85,r:.5}, vol:-8},
+  {id:'tuba',    label:'Tuba',        cat:'Brass',     clef:'bass',       osc:'square',    env:{a:.08,d:.1,s:.85,r:.6}, vol:-6},
+  {id:'soprano', label:'Soprano',     cat:'Vocal',     clef:'treble',     osc:'sine',      env:{a:.1,d:.1,s:.9,r:.8},   vol:-8},
+  {id:'mezzo',   label:'Mezzo',       cat:'Vocal',     clef:'treble',     osc:'sine',      env:{a:.1,d:.1,s:.88,r:.8},  vol:-8},
+  {id:'altov',   label:'Alto',        cat:'Vocal',     clef:'treble',     osc:'sine',      env:{a:.1,d:.1,s:.85,r:.8},  vol:-8},
+  {id:'tenorv',  label:'Tenor',       cat:'Vocal',     clef:'treble',     osc:'triangle',  env:{a:.08,d:.1,s:.85,r:.7}, vol:-8},
+  {id:'baritonev',label:'Baritone',   cat:'Vocal',     clef:'bass',       osc:'triangle',  env:{a:.09,d:.1,s:.85,r:.8}, vol:-8},
+  {id:'bassv',   label:'Bass Voice',  cat:'Vocal',     clef:'bass',       osc:'triangle',  env:{a:.1,d:.1,s:.85,r:.8},  vol:-8},
+  {id:'timpani', label:'Timpani',     cat:'Percussion',clef:'bass',       osc:'membrane',  env:{a:.001,d:.5,s:0,r:.5},  vol:-4},
+  {id:'xyloph',  label:'Xylophone',   cat:'Percussion',clef:'treble',     osc:'fm',        env:{a:.001,d:.3,s:0,r:.1},  vol:-8},
+  {id:'marimba', label:'Marimba',     cat:'Percussion',clef:'treble',     osc:'fm',        env:{a:.001,d:.6,s:0,r:.2},  vol:-6},
+  {id:'snare',   label:'Snare',       cat:'Percussion',clef:'percussion', osc:'noise',     env:{a:.001,d:.2,s:0,r:.1},  vol:-6, unpitched:true},
+  {id:'bassdrum',label:'Bass Drum',   cat:'Percussion',clef:'percussion', osc:'membrane',  env:{a:.001,d:.4,s:0,r:.2},  vol:-4, unpitched:true},
+];
+const IMAP = Object.fromEntries(INSTRUMENTS.map(i=>[i.id,i]));
+const CATS  = [...new Set(INSTRUMENTS.map(i=>i.cat))];
+
+// ═══════════════════════════════════════════════════════
+// Key / Scale data
+// ═══════════════════════════════════════════════════════
+// Each scale entry: [noteName, accidental|null]
+const KEYS_DATA = [
+  // ── Major ──
+  {id:'C', label:'C',  vfSig:'C',  mode:'major', scale:[['C',null],['D',null],['E',null],['F',null],['G',null],['A',null],['B',null]]},
+  {id:'G', label:'G',  vfSig:'G',  mode:'major', scale:[['G',null],['A',null],['B',null],['C',null],['D',null],['E',null],['F','#']]},
+  {id:'D', label:'D',  vfSig:'D',  mode:'major', scale:[['D',null],['E',null],['F','#'],['G',null],['A',null],['B',null],['C','#']]},
+  {id:'A', label:'A',  vfSig:'A',  mode:'major', scale:[['A',null],['B',null],['C','#'],['D',null],['E',null],['F','#'],['G','#']]},
+  {id:'E', label:'E',  vfSig:'E',  mode:'major', scale:[['E',null],['F','#'],['G','#'],['A',null],['B',null],['C','#'],['D','#']]},
+  {id:'B', label:'B',  vfSig:'B',  mode:'major', scale:[['B',null],['C','#'],['D','#'],['E',null],['F','#'],['G','#'],['A','#']]},
+  {id:'Fs',label:'F#', vfSig:'F#', mode:'major', scale:[['F','#'],['G','#'],['A','#'],['B',null],['C','#'],['D','#'],['E','#']]},
+  {id:'F', label:'F',  vfSig:'F',  mode:'major', scale:[['F',null],['G',null],['A',null],['B','b'],['C',null],['D',null],['E',null]]},
+  {id:'Bb',label:'Bb', vfSig:'Bb', mode:'major', scale:[['B','b'],['C',null],['D',null],['E','b'],['F',null],['G',null],['A',null]]},
+  {id:'Eb',label:'Eb', vfSig:'Eb', mode:'major', scale:[['E','b'],['F',null],['G',null],['A','b'],['B','b'],['C',null],['D',null]]},
+  {id:'Ab',label:'Ab', vfSig:'Ab', mode:'major', scale:[['A','b'],['B','b'],['C',null],['D','b'],['E','b'],['F',null],['G',null]]},
+  {id:'Db',label:'Db', vfSig:'Db', mode:'major', scale:[['D','b'],['E','b'],['F',null],['G','b'],['A','b'],['B','b'],['C',null]]},
+  // ── Minor (natural) ──
+  {id:'Am', label:'Am', vfSig:'C',  mode:'minor', scale:[['A',null],['B',null],['C',null],['D',null],['E',null],['F',null],['G',null]]},
+  {id:'Em', label:'Em', vfSig:'G',  mode:'minor', scale:[['E',null],['F','#'],['G',null],['A',null],['B',null],['C',null],['D',null]]},
+  {id:'Bm', label:'Bm', vfSig:'D',  mode:'minor', scale:[['B',null],['C','#'],['D',null],['E',null],['F','#'],['G',null],['A',null]]},
+  {id:'Fsm',label:'F#m',vfSig:'A',  mode:'minor', scale:[['F','#'],['G','#'],['A',null],['B',null],['C','#'],['D',null],['E',null]]},
+  {id:'Csm',label:'C#m',vfSig:'E',  mode:'minor', scale:[['C','#'],['D','#'],['E',null],['F','#'],['G','#'],['A',null],['B',null]]},
+  {id:'Dm', label:'Dm', vfSig:'F',  mode:'minor', scale:[['D',null],['E',null],['F',null],['G',null],['A',null],['B','b'],['C',null]]},
+  {id:'Gm', label:'Gm', vfSig:'Bb', mode:'minor', scale:[['G',null],['A',null],['B','b'],['C',null],['D',null],['E','b'],['F',null]]},
+  {id:'Cm', label:'Cm', vfSig:'Eb', mode:'minor', scale:[['C',null],['D',null],['E','b'],['F',null],['G',null],['A','b'],['B','b']]},
+  {id:'Fm', label:'Fm', vfSig:'Ab', mode:'minor', scale:[['F',null],['G',null],['A','b'],['B','b'],['C',null],['D','b'],['E','b']]},
+  {id:'Bbm',label:'Bbm',vfSig:'Db', mode:'minor', scale:[['B','b'],['C',null],['D','b'],['E','b'],['F',null],['G','b'],['A','b']]},
+];
+const KMAP = Object.fromEntries(KEYS_DATA.map(k=>[k.id,k]));
+
+const MAJ_ROMANS = ['I','ii','iii','IV','V','vi','vii°'];
+const MIN_ROMANS = ['i','ii°','III','iv','v','VI','VII'];
+
+const NOTE_SEMI = {C:0,D:2,E:4,F:5,G:7,A:9,B:11};
+function noteToMidi(name, acc, oct) {
+  let s = NOTE_SEMI[name]??0;
+  if(acc==='#') s+=1; else if(acc==='b') s-=1;
+  else if(acc==='##') s+=2; else if(acc==='bb') s-=2;
+  return (oct+1)*12+s;
+}
+
+function buildChordTones(degree, scale, rootOct) {
+  const idxs = [degree,(degree+2)%7,(degree+4)%7];
+  let prevMidi=-999, oct=rootOct;
+  return idxs.map(idx=>{
+    const [name,acc]=scale[idx];
+    let o=oct, m=noteToMidi(name,acc,o);
+    while(m<=prevMidi){o++;m=noteToMidi(name,acc,o);}
+    prevMidi=m; oct=o;
+    return {name,acc,oct:o,midi:m};
+  });
+}
+
+// ═══════════════════════════════════════════════════════
+// Time signature data
+// ═══════════════════════════════════════════════════════
+const TIME_SIGS = [
+  {sig:'4/4', beats:4,   vfB:4,  vfV:4},
+  {sig:'3/4', beats:3,   vfB:3,  vfV:4},
+  {sig:'2/4', beats:2,   vfB:2,  vfV:4},
+  {sig:'2/2', beats:4,   vfB:2,  vfV:2},
+  {sig:'6/8', beats:3,   vfB:6,  vfV:8},
+  {sig:'9/8', beats:4.5, vfB:9,  vfV:8},
+  {sig:'12/8',beats:6,   vfB:12, vfV:8},
+  {sig:'3/8', beats:1.5, vfB:3,  vfV:8},
+];
+let currentTimeSig = TIME_SIGS[0];
+
+// ═══════════════════════════════════════════════════════
+// State
+// ═══════════════════════════════════════════════════════
+let pid=1;
+function mkPart(name,instId,clef){return{id:pid++,name,instId,clef:clef||null,notes:[],hairpins:[]};}
+let parts=[mkPart('Treble','piano','treble'), mkPart('Bass','piano','bass')];
+let apIdx=0;
+
+let currentKeyId='C';
+let selDur='w', selAcc=null, selOct=4, dotted=false;
+let pendingLyric='', pendingDyn=null, pendingArt=null, pendingTempo=null;
+let hairpinPending=null;
+let chordMode=false;
+let pendingChordNotes=[];  // [{name,acc,oct,midi}]
+let newInstId=null;
+
+const BV={w:4,h:2,q:1,'8':.5,'16':.25,'32':.125};
+function durBeats(dur){const b=dur.replace(/[dr]/g,''),dot=dur.includes('d');return(BV[b]??1)*(dot?1.5:1);}
+
+// ═══════════════════════════════════════════════════════
+// Score setup panel init
+// ═══════════════════════════════════════════════════════
+(function initScorePanel(){
+  // Key buttons
+  const majGrid=document.getElementById('key-major-grid');
+  const minGrid=document.getElementById('key-minor-grid');
+  KEYS_DATA.filter(k=>k.mode==='major').forEach(k=>{
+    const b=document.createElement('button');
+    b.className='key-btn'+(k.id==='C'?' on':'');
+    b.textContent=k.label; b.dataset.kid=k.id;
+    b.onclick=()=>setKey(k.id);
+    majGrid.appendChild(b);
+  });
+  KEYS_DATA.filter(k=>k.mode==='minor').forEach(k=>{
+    const b=document.createElement('button');
+    b.className='key-btn'; b.textContent=k.label; b.dataset.kid=k.id;
+    b.onclick=()=>setKey(k.id);
+    minGrid.appendChild(b);
+  });
+  // Time sig buttons
+  const tg=document.getElementById('time-grid');
+  TIME_SIGS.forEach((ts,i)=>{
+    const b=document.createElement('button');
+    b.className='time-btn'+(i===0?' on':''); b.textContent=ts.sig; b.dataset.sig=ts.sig;
+    b.onclick=()=>setTimeSig(ts.sig);
+    tg.appendChild(b);
+  });
+})();
+
+function setKey(kid){
+  currentKeyId=kid;
+  document.querySelectorAll('.key-btn').forEach(b=>b.classList.toggle('on',b.dataset.kid===kid));
+  renderDiatonicChords();
+  render();
+}
+function setTimeSig(sig){
+  currentTimeSig=TIME_SIGS.find(t=>t.sig===sig)||TIME_SIGS[0];
+  document.querySelectorAll('.time-btn').forEach(b=>b.classList.toggle('on',b.dataset.sig===sig));
+  render();
+}
+
+// ═══════════════════════════════════════════════════════
+// Parts panel
+// ═══════════════════════════════════════════════════════
+(function initCatGrid(){
+  const cg=document.getElementById('cat-grid');
+  CATS.forEach(cat=>{
+    const b=document.createElement('button');
+    b.className='chip'; b.textContent=cat; b.dataset.cat=cat;
+    b.onclick=()=>selectCat(cat);
+    cg.appendChild(b);
+  });
+})();
+
+function selectCat(cat){
+  document.querySelectorAll('#cat-grid .chip').forEach(b=>b.classList.toggle('on',b.dataset.cat===cat));
+  const ig=document.getElementById('inst-grid');
+  ig.innerHTML=''; newInstId=null;
+  document.getElementById('btn-add-confirm').style.display='none';
+  INSTRUMENTS.filter(i=>i.cat===cat).forEach(inst=>{
+    const b=document.createElement('button');
+    b.className='chip'; b.textContent=inst.label; b.dataset.id=inst.id;
+    b.onclick=()=>{newInstId=inst.id;document.querySelectorAll('#inst-grid .chip').forEach(x=>x.classList.toggle('on',x.dataset.id===inst.id));document.getElementById('btn-add-confirm').style.display='inline-flex';};
+    ig.appendChild(b);
+  });
+}
+function confirmAddPart(){
+  if(!newInstId)return;
+  const inst=IMAP[newInstId];
+  parts.push(mkPart(inst.label,newInstId,inst.clef||'treble'));
+  apIdx=parts.length-1;
+  newInstId=null;
+  document.querySelectorAll('#cat-grid .chip').forEach(b=>b.classList.remove('on'));
+  document.getElementById('inst-grid').innerHTML='';
+  document.getElementById('btn-add-confirm').style.display='none';
+  renderPartsList(); render();
+}
+function deletePart(i){
+  if(parts.length<=1)return;
+  parts.splice(i,1);
+  if(apIdx>=parts.length)apIdx=parts.length-1;
+  renderPartsList(); render();
+}
+function renderPartsList(){
+  const ul=document.getElementById('parts-list');
+  ul.innerHTML='';
+  parts.forEach((p,i)=>{
+    const inst=IMAP[p.instId]||IMAP['piano'];
+    const row=document.createElement('div');
+    row.className='prow'+(i===apIdx?' ap':'');
+    row.innerHTML=`<div class="pdot"></div><span class="pname">${p.name}</span><span class="pinst">${inst.label}</span>${parts.length>1?`<button class="pdel" onclick="event.stopPropagation();deletePart(${i})">✕</button>`:''}`;
+    row.onclick=()=>{apIdx=i;renderPartsList();};
+    ul.appendChild(row);
+  });
+}
+
+// ═══════════════════════════════════════════════════════
+// Tab switching
+// ═══════════════════════════════════════════════════════
+const TABS=['notes','parts','lyrics','dyn','art','tempo','score'];
+function switchTab(name){
+  document.querySelectorAll('.tab-btn').forEach((b,i)=>b.classList.toggle('on',TABS[i]===name));
+  document.querySelectorAll('.panel').forEach(p=>p.classList.remove('on'));
+  document.getElementById('panel-'+name).classList.add('on');
+  if(name==='parts')renderPartsList();
+}
+
+// ═══════════════════════════════════════════════════════
+// Notes controls
+// ═══════════════════════════════════════════════════════
+function setDur(d){selDur=d;['w','h','q','8','16','32'].forEach(x=>document.getElementById('d-'+x).classList.toggle('on',x===d));}
+function toggleDot(){dotted=!dotted;document.getElementById('d-dot').classList.toggle('on',dotted);}
+function setAcc(a){
+  selAcc=a;
+  const m={null:'a-n','#':'a-s','b':'a-f','##':'a-ss','bb':'a-ff'};
+  Object.values(m).forEach(id=>document.getElementById(id).classList.remove('on'));
+  const k=a===null?'null':a;
+  if(m[k])document.getElementById(m[k]).classList.add('on');
+}
+function changeOct(d){selOct=Math.max(0,Math.min(8,selOct+d));document.getElementById('oct-val').textContent=selOct;}
+function setDyn(d){pendingDyn=d;document.querySelectorAll('.dyn-btn').forEach(b=>b.classList.remove('on'));const el=d?document.getElementById('dyn-'+d):document.getElementById('dyn-0');if(el)el.classList.add('on');}
+function setArt(a){
+  pendingArt=a;
+  document.querySelectorAll('.art-btn').forEach(b=>b.classList.remove('on'));
+  if(!a){document.getElementById('art-0').classList.add('on');return;}
+  const m={'a.':'art-st','a>':'art-ac','a-':'art-te','a^':'art-ma','ao':'art-fe','tr':'art-tr','a+':'art-pz'};
+  if(m[a])document.getElementById(m[a]).classList.add('on');
+}
+function setTempo(t){
+  pendingTempo=t;
+  document.querySelectorAll('.tempo-btn').forEach(b=>b.classList.remove('on'));
+  if(!t){document.getElementById('tw-none').classList.add('on');return;}
+  const el=document.getElementById('tw-'+t)||document.getElementById('tc-'+t);
+  if(el)el.classList.add('on');
+}
+function clearPending(){pendingLyric='';pendingDyn=null;pendingArt=null;pendingTempo=null;document.getElementById('lyric-inp').value='';setDyn(null);setArt(null);setTempo(null);}
+
+// ═══════════════════════════════════════════════════════
+// Hairpins
+// ═══════════════════════════════════════════════════════
+function startHairpin(type){hairpinPending={type,partIdx:apIdx,startIdx:parts[apIdx].notes.length};document.getElementById('hp-status').textContent=`${type==='cresc'?'Cresc':'Decresc'} started — enter notes then tap End`;}
+function endHairpin(type){
+  if(!hairpinPending||hairpinPending.partIdx!==apIdx)hairpinPending={type,partIdx:apIdx,startIdx:0};
+  const end=parts[apIdx].notes.length-1;
+  if(end>hairpinPending.startIdx){parts[apIdx].hairpins.push({type:hairpinPending.type,start:hairpinPending.startIdx,end});render();}
+  hairpinPending=null;document.getElementById('hp-status').textContent='';
+}
+
+// ═══════════════════════════════════════════════════════
+// Chord mode
+// ═══════════════════════════════════════════════════════
+function toggleChordMode(){chordMode=!chordMode;document.getElementById('btn-chord').classList.toggle('on',chordMode);document.getElementById('chord-row').style.display=chordMode?'block':'none';pendingChordNotes=[];updatePendingDisplay();}
+function cancelChord(){pendingChordNotes=[];updatePendingDisplay();}
+function commitChord(){
+  if(!pendingChordNotes.length)return;
+  const {lyric,dyn,art,tempo}=grabPending();
+  parts[apIdx].notes.push({
+    keys:pendingChordNotes.map(n=>n.name+'/'+n.oct),
+    dur:buildDur(), vfAccs:pendingChordNotes.map(n=>n.acc),
+    midiVals:pendingChordNotes.map(n=>n.midi),
+    rest:false,lyric,dyn,art,tempo
+  });
+  pendingChordNotes=[];updatePendingDisplay();render();
+}
+function updatePendingDisplay(){
+  const s=pendingChordNotes.map(n=>n.name+(n.acc||'')+n.oct).join(' ');
+  document.getElementById('pending-display').textContent=s?'Pending: '+s:'';
+}
+
+// Diatonic chord palette
+function renderDiatonicChords(){
+  const kd=KMAP[currentKeyId];
+  if(!kd)return;
+  const grid=document.getElementById('diatonic-grid');
+  grid.innerHTML='';
+  const romans=kd.mode==='major'?MAJ_ROMANS:MIN_ROMANS;
+  for(let deg=0;deg<7;deg++){
+    const tones=buildChordTones(deg,kd.scale,3); // build in low octave for label
+    const rootName=tones[0].name+(tones[0].acc||'');
+    const b=document.createElement('button');
+    b.className='dchord-btn';
+    b.innerHTML=`<div class="roman">${romans[deg]}</div><div class="cname">${rootName}</div>`;
+    b.onclick=()=>enterDiatonicChord(deg,kd);
+    grid.appendChild(b);
+  }
+}
+
+function enterDiatonicChord(deg,kd){
+  const tones=buildChordTones(deg,kd.scale,selOct);
+  const {lyric,dyn,art,tempo}=grabPending();
+  parts[apIdx].notes.push({
+    keys:tones.map(t=>t.name+'/'+t.oct),
+    dur:buildDur(),
+    vfAccs:tones.map(()=>null), // key sig handles display
+    midiVals:tones.map(t=>t.midi),
+    rest:false,lyric,dyn,art,tempo
+  });
+  pendingChordNotes=[];updatePendingDisplay();render();
+}
+
+// ═══════════════════════════════════════════════════════
+// Note entry
+// ═══════════════════════════════════════════════════════
+function buildDur(rest=false){return selDur+(dotted?'d':'')+(rest?'r':'');}
+function grabPending(){return{lyric:document.getElementById('lyric-inp').value.trim()||null,dyn:pendingDyn,art:pendingArt,tempo:pendingTempo};}
+
+function handleNoteBtn(name){
+  const oct=selOct, midi=noteToMidi(name,selAcc,oct);
+  if(chordMode){
+    pendingChordNotes.push({name,acc:selAcc,oct,midi});
+    updatePendingDisplay();
+  } else {
+    const {lyric,dyn,art,tempo}=grabPending();
+    parts[apIdx].notes.push({keys:[name+'/'+oct],dur:buildDur(),vfAccs:[selAcc],midiVals:[midi],rest:false,lyric,dyn,art,tempo});
+    render();
+  }
+}
+
+function addRest(){
+  const rk=(IMAP[parts[apIdx].instId]?.clef==='bass')||(parts[apIdx].clef==='bass')?'d/3':'b/4';
+  parts[apIdx].notes.push({keys:[rk],dur:buildDur(true),vfAccs:[null],midiVals:[],rest:true,lyric:null,dyn:null,art:null,tempo:null});
+  render();
+}
+
+function undoNote(){
+  const arr=parts[apIdx].notes;
+  if(arr.length)arr.pop();
+  parts[apIdx].hairpins=parts[apIdx].hairpins.filter(hp=>hp.end<arr.length);
+  render();
+}
+function clearAll(){
+  if(!parts.some(p=>p.notes.length)||!confirm('Clear all notes?'))return;
+  parts.forEach(p=>{p.notes=[];p.hairpins=[];});render();
+}
+
+// ═══════════════════════════════════════════════════════
+// Measure grouping
+// ═══════════════════════════════════════════════════════
+function toMeasures(notes){
+  const BMAX=currentTimeSig.beats;
+  const ms=[]; let cur=[],beats=0;
+  for(const n of notes){cur.push(n);beats+=durBeats(n.dur);if(beats>=BMAX-.001){ms.push(cur);cur=[];beats=0;}}
+  if(cur.length)ms.push(cur);
+  return ms;
+}
+
+// ═══════════════════════════════════════════════════════
+// Rendering
+// ═══════════════════════════════════════════════════════
+const MW=220, FX=110, PG=90, TP=22;
+
+function render(){
+  const VF=Vex.Flow;
+  const{Renderer,Stave,StaveNote,Voice,Formatter,Accidental,StaveConnector,Beam,Annotation,Articulation,StaveHairpin}=VF;
+  const div=document.getElementById('score-div');
+  div.innerHTML='';
+
+  const allM=parts.map(p=>toMeasures(p.notes));
+  const numM=Math.max(...allM.map(m=>m.length),1);
+  const numP=parts.length;
+  const kd=KMAP[currentKeyId];
+
+  const totalW=FX+numM*MW+40;
+  const totalH=TP+numP*PG+30;
+  const renderer=new Renderer(div,Renderer.Backends.SVG);
+  renderer.resize(totalW,totalH);
+  const ctx=renderer.getContext();
+
+  const vfRefs=parts.map(()=>({}));
+  const partOff=new Array(numP).fill(0);
+
+  let x=10;
+  for(let mi=0;mi<numM;mi++){
+    const first=mi===0;
+    const mw=first?MW+FX:MW;
+
+    const staves=parts.map((p,pi)=>{
+      const inst=IMAP[p.instId]||IMAP['piano'];
+      const cl=p.clef||(inst.clef==='percussion'?'percussion':(inst.clef||'treble'));
+      const sy=TP+pi*PG;
+      const st=new Stave(x,sy,mw);
+      if(first){
+        st.addClef(cl).addKeySignature(kd.vfSig).addTimeSignature(currentTimeSig.sig);
+      }
+      st.setContext(ctx).draw();
+      return st;
+    });
+
+    if(numP>=2){
+      if(first){
+        // Brace for first two parts if both Keyboard
+        const i0=IMAP[parts[0].instId],i1=IMAP[parts[1].instId];
+        if(i0&&i1&&i0.cat==='Keyboard'&&i1.cat==='Keyboard'&&parts[0].clef!==parts[1].clef){
+          try{new StaveConnector(staves[0],staves[1]).setType('brace').setContext(ctx).draw();}catch(e){}
+        }
+        new StaveConnector(staves[0],staves[numP-1]).setType('singleLeft').setContext(ctx).draw();
+      }
+      new StaveConnector(staves[0],staves[numP-1]).setType('singleRight').setContext(ctx).draw();
+    }
+
+    staves.forEach((st,pi)=>{
+      const noteData=allM[pi][mi]||[];
+      const vfNotes=drawVoice(ctx,st,noteData,mw,VF);
+      noteData.forEach((_,li)=>{if(vfNotes[li])vfRefs[pi][partOff[pi]+li]={vfNote:vfNotes[li],stave:st};});
+      partOff[pi]+=noteData.length;
+    });
+    x+=mw;
+  }
+
+  // Hairpins
+  parts.forEach((part,pi)=>{
+    (part.hairpins||[]).forEach(hp=>{
+      const s=vfRefs[pi][hp.start],e=vfRefs[pi][hp.end];
+      if(!s||!e)return;
+      try{
+        const h=new StaveHairpin({first_note:s.vfNote,last_note:e.vfNote,first_indices:[0],last_indices:[0]},
+          hp.type==='cresc'?StaveHairpin.type.CRESC:StaveHairpin.type.DECRESC);
+        h.setContext(ctx).setStave(s.stave).draw();
+      }catch(err){console.warn('Hairpin:',err.message);}
+    });
+  });
+}
+
+function drawVoice(ctx,stave,noteData,mw,VF){
+  const{StaveNote,Voice,Formatter,Accidental,Beam,Annotation,Articulation}=VF;
+  if(!noteData.length)return[];
+  let vfNotes;
+  try{
+    vfNotes=noteData.map(n=>{
+      const sn=new StaveNote({keys:n.keys,duration:n.dur});
+      // Per-key accidentals (explicit overrides for non-key-sig notes)
+      const accs=n.vfAccs||[n.acc];
+      accs.forEach((acc,i)=>{if(acc)try{sn.addModifier(new Accidental(acc),i);}catch(e){};});
+      // Lyric
+      if(n.lyric)try{const a=new Annotation(n.lyric);a.setVerticalJustification(Annotation.VerticalJustify.BOTTOM);a.setFont({family:'Arial',size:9});sn.addModifier(a,0);}catch(e){}
+      // Dynamic
+      if(n.dyn)try{const a=new Annotation(n.dyn);a.setVerticalJustification(Annotation.VerticalJustify.BOTTOM);a.setFont({family:'serif',size:10,style:'italic bold'});sn.addModifier(a,0);}catch(e){}
+      // Tempo
+      if(n.tempo)try{const a=new Annotation(n.tempo);a.setVerticalJustification(Annotation.VerticalJustify.TOP);a.setFont({family:'serif',size:10,style:'italic'});sn.addModifier(a,0);}catch(e){}
+      // Articulation
+      if(n.art&&n.art!=='tr')try{sn.addModifier(new Articulation(n.art),0);}catch(e){}
+      if(n.art==='tr')try{const a=new Annotation('tr');a.setFont({family:'serif',size:10,style:'italic'});sn.addModifier(a,0);}catch(e){}
+      return sn;
+    });
+  }catch(e){console.warn('Note create:',e.message);return[];}
+  try{
+    const voice=new Voice({numBeats:currentTimeSig.vfB,beatValue:currentTimeSig.vfV}).setMode(2);
+    voice.addTickables(vfNotes);
+    new Formatter().joinVoices([voice]).format([voice],mw-24);
+    // Beams created BEFORE draw to suppress flags
+    const beamable=vfNotes.filter((_,i)=>{const b=noteData[i].dur.replace(/[dr]/g,'');return !noteData[i].rest&&['8','16','32'].includes(b);});
+    const beams=beamable.length>=2?Beam.generateBeams(beamable):[];
+    voice.draw(ctx,stave);
+    beams.forEach(b=>b.setContext(ctx).draw());
+  }catch(e){console.warn('Voice draw:',e.message);}
+  return vfNotes;
+}
+
+// ═══════════════════════════════════════════════════════
+// MIDI
+// ═══════════════════════════════════════════════════════
+const MN=['C','C','D','D','E','F','F','G','G','A','A','B'];
+const MA=[null,'#',null,'#',null,null,'#',null,'#',null,'#',null];
+async function initMidi(){
+  if(!navigator.requestMIDIAccess)return;
+  try{
+    const ma=await navigator.requestMIDIAccess();
+    const pill=document.getElementById('midi-pill');
+    const attach=inp=>{inp.onmidimessage=e=>{
+      const[st,note,vel]=e.data;
+      if((st&0xf0)===0x90&&vel>0){
+        const name=MN[note%12],acc=MA[note%12],oct=Math.floor(note/12)-1;
+        const pa=selAcc,po=selOct;
+        selAcc=acc;selOct=oct;
+        handleNoteBtn(name);
+        selAcc=pa;selOct=po;setAcc(pa);
+        document.getElementById('oct-val').textContent=po;
+      }
+    };};
+    ma.inputs.forEach(attach);
+    if(ma.inputs.size){pill.textContent='MIDI ●';pill.classList.add('on');}
+    ma.onstatechange=e=>{if(e.port.type==='input'&&e.port.state==='connected'){attach(e.port);pill.textContent='MIDI ●';pill.classList.add('on');}};
+  }catch(e){}
+}
+
+// ═══════════════════════════════════════════════════════
+// Playback
+// ═══════════════════════════════════════════════════════
+const BVP={w:4,h:2,q:1,'8':.5,'16':.25,'32':.125};
+function durSecs(dur,bpm){const b=dur.replace(/[dr]/g,''),dot=dur.includes('d');return(BVP[b]??1)*(dot?1.5:1)*(60/bpm);}
+function toToneDur(dur){const b=dur.replace(/[dr]/g,''),dot=dur.includes('d');return({w:'1n',h:'2n',q:'4n','8':'8n','16':'16n','32':'32n'}[b]||'4n')+(dot?'.':'');}
+
+function makeSynth(inst){
+  const{osc,env,vol}=inst;const e={attack:env.a,decay:env.d,sustain:env.s,release:env.r};
+  if(osc==='membrane')return new Tone.MembraneSynth({pitchDecay:.08,octaves:6,envelope:e,volume:vol}).toDestination();
+  if(osc==='noise')return new Tone.NoiseSynth({noise:{type:'white'},envelope:e,volume:vol}).toDestination();
+  if(osc==='fm')return new Tone.PolySynth(Tone.FMSynth,{harmonicity:3,modulationIndex:10,envelope:e,volume:vol}).toDestination();
+  return new Tone.PolySynth(Tone.Synth,{oscillator:{type:osc},envelope:e,volume:vol}).toDestination();
+}
+let playing=false,_synths=[];
+async function playScore(){
+  if(playing)return;await Tone.start();playing=true;stopScore(true);
+  const bpm=parseInt(document.getElementById('bpm-inp').value)||80;
+  Tone.getTransport().bpm.value=bpm;Tone.getTransport().cancel();
+  _synths=[];let maxT=0;
+  parts.forEach(part=>{
+    if(!part.notes.length)return;
+    const inst=IMAP[part.instId]||IMAP['piano'];
+    const synth=makeSynth(inst);_synths.push(synth);
+    let t=0;
+    part.notes.forEach(n=>{
+      const secs=durSecs(n.dur,bpm);
+      if(!n.rest&&(n.midiVals||[]).length){
+        const td=toToneDur(n.dur),abs=t;
+        const toneNotes=n.midiVals.map(m=>Tone.Frequency(m,'midi').toNote());
+        Tone.getTransport().schedule(time=>{
+          try{if(inst.unpitched)synth.triggerAttackRelease(td,time);
+          else synth.triggerAttackRelease(toneNotes.length===1?toneNotes[0]:toneNotes,td,time);}catch(e){}
+        },'+'+abs);
+      }
+      t+=secs;
+    });
+    maxT=Math.max(maxT,t);
+  });
+  if(!_synths.length){playing=false;return;}
+  Tone.getTransport().schedule(()=>stopScore(),'+' +(maxT+.8));
+  Tone.getTransport().start();
+}
+function stopScore(s){
+  Tone.getTransport().stop();Tone.getTransport().cancel();
+  _synths.forEach(x=>{try{x.releaseAll?.();x.dispose();}catch(e){}});
+  _synths=[];playing=false;
+}
+
+// ═══════════════════════════════════════════════════════
+// Boot
+// ═══════════════════════════════════════════════════════
+setAcc(null);setArt(null);setDyn(null);setTempo(null);
+renderDiatonicChords();
+render();
+initMidi();
+</script>
+</body>
+</html>
