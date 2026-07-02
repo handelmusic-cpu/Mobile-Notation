@@ -182,7 +182,7 @@ body { font-family:-apple-system,BlinkMacSystemFont,sans-serif; background:#1212
     <button class="chip"    id="a-ss" onclick="setAcc('##')" style="font-size:10px">𝄪</button>
     <button class="chip"    id="a-ff" onclick="setAcc('bb')" style="font-size:10px">𝄫</button>
   </div>
-  <div class="hint">Note buttons follow the key. “Key” enters the in-key pitch; ♯/♭/♮ force an accidental.</div>
+  <div class="hint">Movable do — Do is always the tonic of the current key. “Key” sings the diatonic pitch; ♯/♭/♮ alter it chromatically.</div>
 </div>
 
 <!-- Parts panel -->
@@ -322,13 +322,13 @@ body { font-family:-apple-system,BlinkMacSystemFont,sans-serif; background:#1212
 
 <!-- Note grid -->
 <div id="note-grid">
-  <button class="nbtn np" onclick="handleNoteBtn('C')">C</button>
-  <button class="nbtn np" onclick="handleNoteBtn('D')">D</button>
-  <button class="nbtn np" onclick="handleNoteBtn('E')">E</button>
-  <button class="nbtn np" onclick="handleNoteBtn('F')">F</button>
-  <button class="nbtn np" onclick="handleNoteBtn('G')">G</button>
-  <button class="nbtn np" onclick="handleNoteBtn('A')">A</button>
-  <button class="nbtn np" onclick="handleNoteBtn('B')">B</button>
+  <button class="nbtn np" onclick="handleSolfegeBtn(0)">Do</button>
+  <button class="nbtn np" onclick="handleSolfegeBtn(1)">Re</button>
+  <button class="nbtn np" onclick="handleSolfegeBtn(2)">Mi</button>
+  <button class="nbtn np" onclick="handleSolfegeBtn(3)">Fa</button>
+  <button class="nbtn np" onclick="handleSolfegeBtn(4)">Sol</button>
+  <button class="nbtn np" onclick="handleSolfegeBtn(5)">La</button>
+  <button class="nbtn np" onclick="handleSolfegeBtn(6)">Ti</button>
   <button class="nbtn nr" id="rest-btn" onclick="addRest()"></button>
 </div>
 
@@ -463,7 +463,6 @@ let parts=[mkPart('Treble','piano','treble'), mkPart('Bass','piano','bass')];
 let apIdx=0;
 
 let currentKeyId='C';
-let scaleAccMap={};
 let selDur='w', selAcc='key', selOct=4, dotted=false;
 let pendingLyric='', pendingDyn=null, pendingArt=null, pendingTempo=null;
 let hairpinPending=null;
@@ -542,24 +541,10 @@ function refreshDurIcons(){
   });
 })();
 
-function buildScaleAccMap(){
-  scaleAccMap={};
-  const kd=KMAP[currentKeyId];
-  (kd?.scale||[]).forEach(([n,a])=>{scaleAccMap[n]=a;});
-}
-function relabelNoteButtons(){
-  const letters=['C','D','E','F','G','A','B'];
-  document.querySelectorAll('#note-grid .np').forEach((b,i)=>{
-    const L=letters[i], a=scaleAccMap[L];
-    b.textContent=L+(a==='#'?'♯':a==='b'?'♭':'');
-  });
-}
-
 function setKey(kid){
   currentKeyId=kid;
   document.querySelectorAll('.key-btn').forEach(b=>b.classList.toggle('on',b.dataset.kid===kid));
   document.getElementById('key-pill').textContent=KMAP[kid]?.label||kid;
-  buildScaleAccMap(); relabelNoteButtons();
   renderDiatonicChords();
   render();
 }
@@ -770,12 +755,28 @@ function enterPitch(name, acc, oct, vfAcc){
   render();
 }
 
-function handleNoteBtn(letter){
+const SOLFEGE=['Do','Re','Mi','Fa','Sol','La','Ti'];
+// Scale degrees ascend by letter from the tonic; once the letter cycle wraps
+// past B back to C the pitch class drops, so bump the octave at that point.
+function scaleDegreeOct(kd, deg, baseOct){
+  let oct=baseOct, prevPc=null;
+  for(let i=0;i<=deg;i++){
+    const [n,a]=kd.scale[i];
+    const pc=((NOTE_SEMI[n]+accSemi(a))+120)%12;
+    if(prevPc!==null && pc<=prevPc) oct++;
+    prevPc=pc;
+  }
+  return oct;
+}
+function handleSolfegeBtn(deg){
+  const kd=KMAP[currentKeyId];
+  const [letter, scaleAcc]=kd.scale[deg];
+  const oct=scaleDegreeOct(kd, deg, selOct);
   let acc, vfAcc;
-  if(selAcc==='key'){ acc=scaleAccMap[letter]||null; vfAcc=null; }        // key sig draws it
-  else if(selAcc==='n'){ acc=null; vfAcc='n'; }                            // force natural
-  else { acc=selAcc; vfAcc=selAcc; }                                       // #, b, ##, bb
-  enterPitch(letter, acc, selOct, vfAcc);
+  if(selAcc==='key'){ acc=scaleAcc; vfAcc=null; }        // key sig draws it
+  else if(selAcc==='n'){ acc=null; vfAcc='n'; }            // force natural
+  else { acc=selAcc; vfAcc=selAcc; }                       // #, b, ##, bb
+  enterPitch(letter, acc, oct, vfAcc);
 }
 
 function addRest(){
@@ -1170,7 +1171,7 @@ function applyProject(d){
   document.querySelectorAll('.key-btn').forEach(b=>b.classList.toggle('on',b.dataset.kid===currentKeyId));
   document.querySelectorAll('.time-btn').forEach(b=>b.classList.toggle('on',b.dataset.sig===currentTimeSig.sig));
   document.getElementById('key-pill').textContent=KMAP[currentKeyId]?.label||currentKeyId;
-  buildScaleAccMap(); relabelNoteButtons(); renderDiatonicChords();
+  renderDiatonicChords();
   selectedNote=null; updateSelectionUI(); updateProjPill();
   renderPartsList(); render();
 }
@@ -1490,7 +1491,6 @@ document.getElementById('import-file').addEventListener('change', async function
 // ═══════════════════════════════════════════════════════
 setAcc('key');setArt(null);setDyn(null);setTempo(null);
 refreshDurIcons();
-buildScaleAccMap();relabelNoteButtons();
 renderDiatonicChords();
 initProjects();
 render();
