@@ -33,6 +33,12 @@ body { font-family:-apple-system,BlinkMacSystemFont,sans-serif; background:#1212
 .lbl{font-size:10px;color:#778;min-width:28px;flex-shrink:0;}
 .sec{font-size:9px;color:#556;margin:5px 0 3px;letter-spacing:.5px;text-transform:uppercase;}
 
+.subtab-bar{display:flex;gap:3px;margin-bottom:7px;}
+.subtab-btn{flex:1;padding:7px 2px;border:1.5px solid #2a2a45;border-radius:6px;background:#12121f;color:#aab;font-size:10px;font-weight:700;cursor:pointer;touch-action:manipulation;}
+.subtab-btn.on{background:#e94560;border-color:#e94560;color:#fff;}
+.subpanel{display:none;}
+.subpanel.on{display:block;}
+
 .chip{padding:4px 7px;border:1.5px solid #2a2a45;border-radius:6px;background:#12121f;color:#bbc;font-size:13px;cursor:pointer;min-height:28px;min-width:28px;display:inline-flex;align-items:center;justify-content:center;touch-action:manipulation;line-height:1;user-select:none;}
 .chip:active{opacity:.7;}
 .chip.on{background:#e94560;border-color:#e94560;color:#fff;}
@@ -134,13 +140,10 @@ body { font-family:-apple-system,BlinkMacSystemFont,sans-serif; background:#1212
 
 <div id="tab-bar">
   <button class="tab-btn on"  onclick="switchTab('notes')">♪ Notes</button>
-  <button class="tab-btn"     onclick="switchTab('parts')">≡ Parts</button>
-  <button class="tab-btn"     onclick="switchTab('lyrics')">Lyrics</button>
-  <button class="tab-btn"     onclick="switchTab('dyn')">Dyn</button>
-  <button class="tab-btn"     onclick="switchTab('art')">Art</button>
-  <button class="tab-btn"     onclick="switchTab('tempo')">Tempo</button>
-  <button class="tab-btn"     onclick="switchTab('score')">Score</button>
-  <button class="tab-btn"     onclick="switchTab('proj')">⁝ Files</button>
+  <button class="tab-btn"     onclick="switchTab('parts')">≡ Instruments</button>
+  <button class="tab-btn"     onclick="switchTab('markings')">✎ Markings</button>
+  <button class="tab-btn"     onclick="switchTab('score')">♭ Key/Time</button>
+  <button class="tab-btn"     onclick="switchTab('proj')">⁝ Songs</button>
 </div>
 
 <!-- Notes panel -->
@@ -158,6 +161,7 @@ body { font-family:-apple-system,BlinkMacSystemFont,sans-serif; background:#1212
       <button class="chip" onclick="setSelAcc('n')">♮</button>
       <button class="chip" onclick="deleteSelected()" style="color:#e67e22;border-color:#e67e22;font-size:10px">⇢Rest</button>
     </div>
+    <div class="hint">To add/change a lyric, dynamic, articulation, or tempo mark on this note, open the ✎ Markings tab above.</div>
   </div>
   <div class="row">
     <span class="lbl">Dur</span>
@@ -195,84 +199,90 @@ body { font-family:-apple-system,BlinkMacSystemFont,sans-serif; background:#1212
   <button class="chip on2" id="btn-add-confirm" onclick="confirmAddPart()" style="display:none">+ Add This Part</button>
 </div>
 
-<!-- Lyrics panel -->
-<div id="panel-lyrics" class="panel">
-  <div class="row"><span style="font-size:10px;color:#778">Syllable for next note:</span></div>
-  <input type="text" id="lyric-inp" style="width:100%;padding:7px 9px;background:#12121f;border:1.5px solid #2a2a45;border-radius:7px;color:#dde;font-size:14px;" placeholder="Type syllable…" maxlength="24">
-  <div class="hint">Attaches to next note. <span onclick="clearPending()" style="color:#e94560;cursor:pointer">Clear all pending</span></div>
-</div>
+<!-- Markings panel (Lyrics / Dynamics / Articulation / Tempo, grouped) -->
+<div id="panel-markings" class="panel">
+  <div class="subtab-bar">
+    <button class="subtab-btn on" onclick="switchSubTab('lyrics')">Lyrics</button>
+    <button class="subtab-btn"    onclick="switchSubTab('dyn')">Dynamics</button>
+    <button class="subtab-btn"    onclick="switchSubTab('art')">Articulation</button>
+    <button class="subtab-btn"    onclick="switchSubTab('tempo')">Tempo</button>
+  </div>
+  <div class="hint" style="margin-bottom:6px">If a note is selected on the staff, these apply to that note. Otherwise they'll attach to the next note you enter.</div>
 
-<!-- Dynamics panel -->
-<div id="panel-dyn" class="panel">
-  <div class="dyn-grid">
-    <button class="dyn-btn" id="dyn-ppp" onclick="setDyn('ppp')">ppp</button>
-    <button class="dyn-btn" id="dyn-pp"  onclick="setDyn('pp')">pp</button>
-    <button class="dyn-btn" id="dyn-p"   onclick="setDyn('p')">p</button>
-    <button class="dyn-btn" id="dyn-mp"  onclick="setDyn('mp')">mp</button>
-    <button class="dyn-btn" id="dyn-mf"  onclick="setDyn('mf')">mf</button>
-    <button class="dyn-btn" id="dyn-f"   onclick="setDyn('f')">f</button>
-    <button class="dyn-btn" id="dyn-ff"  onclick="setDyn('ff')">ff</button>
-    <button class="dyn-btn" id="dyn-fff" onclick="setDyn('fff')">fff</button>
-    <button class="dyn-btn" id="dyn-sfz" onclick="setDyn('sfz')">sfz</button>
-    <button class="dyn-btn" id="dyn-sfp" onclick="setDyn('sfp')">sfp</button>
-    <button class="dyn-btn" id="dyn-fz"  onclick="setDyn('fz')">fz</button>
-    <button class="dyn-btn" id="dyn-0"   onclick="setDyn(null)" style="font-style:normal;font-size:9px">none</button>
+  <div id="sub-lyrics" class="subpanel on">
+    <div class="row"><span style="font-size:10px;color:#778">Syllable:</span></div>
+    <input type="text" id="lyric-inp" style="width:100%;padding:7px 9px;background:#12121f;border:1.5px solid #2a2a45;border-radius:7px;color:#dde;font-size:14px;" placeholder="Type syllable…" maxlength="24">
+    <div class="hint"><span onclick="clearPending()" style="color:#e94560;cursor:pointer">Clear all pending</span></div>
   </div>
-  <div class="sec">Hairpins</div>
-  <div class="hp-row">
-    <span style="font-size:10px;color:#aab;min-width:52px">Cresc &lt;</span>
-    <button class="chip on3" onclick="startHairpin('cresc')" style="font-size:10px">▸ Start</button>
-    <button class="chip"     onclick="endHairpin('cresc')"  style="font-size:10px">▪ End</button>
-  </div>
-  <div class="hp-row">
-    <span style="font-size:10px;color:#aab;min-width:52px">Decresc &gt;</span>
-    <button class="chip on3" onclick="startHairpin('decresc')" style="font-size:10px">▸ Start</button>
-    <button class="chip"     onclick="endHairpin('decresc')"  style="font-size:10px">▪ End</button>
-  </div>
-  <div id="hp-status"></div>
-</div>
 
-<!-- Articulations panel -->
-<div id="panel-art" class="panel">
-  <div class="art-grid">
-    <button class="art-btn" id="art-0"  onclick="setArt(null)"  style="font-size:10px">none</button>
-    <button class="art-btn" id="art-st" onclick="setArt('a.')">·</button>
-    <button class="art-btn" id="art-ac" onclick="setArt('a>')">></button>
-    <button class="art-btn" id="art-te" onclick="setArt('a-')">—</button>
-    <button class="art-btn" id="art-ma" onclick="setArt('a^')">^</button>
-    <button class="art-btn" id="art-fe" onclick="setArt('ao')">𝄐</button>
-    <button class="art-btn" id="art-tr" onclick="setArt('tr')" style="font-size:12px;font-style:italic">tr</button>
-    <button class="art-btn" id="art-pz" onclick="setArt('a+')" style="font-size:12px">+</button>
+  <div id="sub-dyn" class="subpanel">
+    <div class="dyn-grid">
+      <button class="dyn-btn" id="dyn-ppp" onclick="setDyn('ppp')">ppp</button>
+      <button class="dyn-btn" id="dyn-pp"  onclick="setDyn('pp')">pp</button>
+      <button class="dyn-btn" id="dyn-p"   onclick="setDyn('p')">p</button>
+      <button class="dyn-btn" id="dyn-mp"  onclick="setDyn('mp')">mp</button>
+      <button class="dyn-btn" id="dyn-mf"  onclick="setDyn('mf')">mf</button>
+      <button class="dyn-btn" id="dyn-f"   onclick="setDyn('f')">f</button>
+      <button class="dyn-btn" id="dyn-ff"  onclick="setDyn('ff')">ff</button>
+      <button class="dyn-btn" id="dyn-fff" onclick="setDyn('fff')">fff</button>
+      <button class="dyn-btn" id="dyn-sfz" onclick="setDyn('sfz')">sfz</button>
+      <button class="dyn-btn" id="dyn-sfp" onclick="setDyn('sfp')">sfp</button>
+      <button class="dyn-btn" id="dyn-fz"  onclick="setDyn('fz')">fz</button>
+      <button class="dyn-btn" id="dyn-0"   onclick="setDyn(null)" style="font-style:normal;font-size:9px">none</button>
+    </div>
+    <div class="sec">Hairpins</div>
+    <div class="hp-row">
+      <span style="font-size:10px;color:#aab;min-width:52px">Cresc &lt;</span>
+      <button class="chip on3" onclick="startHairpin('cresc')" style="font-size:10px">▸ Start</button>
+      <button class="chip"     onclick="endHairpin('cresc')"  style="font-size:10px">▪ End</button>
+    </div>
+    <div class="hp-row">
+      <span style="font-size:10px;color:#aab;min-width:52px">Decresc &gt;</span>
+      <button class="chip on3" onclick="startHairpin('decresc')" style="font-size:10px">▸ Start</button>
+      <button class="chip"     onclick="endHairpin('decresc')"  style="font-size:10px">▪ End</button>
+    </div>
+    <div id="hp-status"></div>
   </div>
-  <div class="hint" style="margin-top:4px">Applies to next note.</div>
-</div>
 
-<!-- Tempo panel -->
-<div id="panel-tempo" class="panel">
-  <div class="sec">Tempo words</div>
-  <div class="tempo-grid">
-    <button class="tempo-btn" id="tw-Grave"       onclick="setTempo('Grave')">Grave</button>
-    <button class="tempo-btn" id="tw-Largo"       onclick="setTempo('Largo')">Largo</button>
-    <button class="tempo-btn" id="tw-Adagio"      onclick="setTempo('Adagio')">Adagio</button>
-    <button class="tempo-btn" id="tw-Andante"     onclick="setTempo('Andante')">Andante</button>
-    <button class="tempo-btn" id="tw-Moderato"    onclick="setTempo('Moderato')">Moderato</button>
-    <button class="tempo-btn" id="tw-Allegretto"  onclick="setTempo('Allegretto')" style="font-size:8px">Allegretto</button>
-    <button class="tempo-btn" id="tw-Allegro"     onclick="setTempo('Allegro')">Allegro</button>
-    <button class="tempo-btn" id="tw-Vivace"      onclick="setTempo('Vivace')">Vivace</button>
-    <button class="tempo-btn" id="tw-Presto"      onclick="setTempo('Presto')">Presto</button>
-    <button class="tempo-btn" id="tw-Prestissimo" onclick="setTempo('Prestissimo')" style="font-size:7px">Prestissimo</button>
-    <button class="tempo-btn" id="tw-none"        onclick="setTempo(null)" style="font-style:normal;font-size:9px">none</button>
+  <div id="sub-art" class="subpanel">
+    <div class="art-grid">
+      <button class="art-btn" id="art-0"  onclick="clearArts()"  style="font-size:10px">none</button>
+      <button class="art-btn" id="art-st" onclick="toggleArt('a.')">·</button>
+      <button class="art-btn" id="art-ac" onclick="toggleArt('a>')">></button>
+      <button class="art-btn" id="art-te" onclick="toggleArt('a-')">—</button>
+      <button class="art-btn" id="art-ma" onclick="toggleArt('a^')">^</button>
+      <button class="art-btn" id="art-fe" onclick="toggleArt('ao')">𝄐</button>
+      <button class="art-btn" id="art-tr" onclick="toggleArt('tr')" style="font-size:12px;font-style:italic">tr</button>
+      <button class="art-btn" id="art-pz" onclick="toggleArt('a+')" style="font-size:12px">+</button>
+    </div>
+    <div class="hint" style="margin-top:4px">Tap to add or remove — a note can have more than one (e.g. accent + staccato).</div>
   </div>
-  <div class="sec">Tempo changes</div>
-  <div class="tempo-grid">
-    <button class="tempo-btn" id="tc-accel."      onclick="setTempo('accel.')">accel.</button>
-    <button class="tempo-btn" id="tc-poco accel." onclick="setTempo('poco accel.')" style="font-size:7px">poco accel.</button>
-    <button class="tempo-btn" id="tc-rit."        onclick="setTempo('rit.')">rit.</button>
-    <button class="tempo-btn" id="tc-ritard."     onclick="setTempo('ritard.')">ritard.</button>
-    <button class="tempo-btn" id="tc-rall."       onclick="setTempo('rall.')">rall.</button>
-    <button class="tempo-btn" id="tc-a tempo"     onclick="setTempo('a tempo')" style="font-style:normal">a tempo</button>
+
+  <div id="sub-tempo" class="subpanel">
+    <div class="sec">Tempo words</div>
+    <div class="tempo-grid">
+      <button class="tempo-btn" id="tw-Grave"       onclick="setTempo('Grave')">Grave</button>
+      <button class="tempo-btn" id="tw-Largo"       onclick="setTempo('Largo')">Largo</button>
+      <button class="tempo-btn" id="tw-Adagio"      onclick="setTempo('Adagio')">Adagio</button>
+      <button class="tempo-btn" id="tw-Andante"     onclick="setTempo('Andante')">Andante</button>
+      <button class="tempo-btn" id="tw-Moderato"    onclick="setTempo('Moderato')">Moderato</button>
+      <button class="tempo-btn" id="tw-Allegretto"  onclick="setTempo('Allegretto')" style="font-size:8px">Allegretto</button>
+      <button class="tempo-btn" id="tw-Allegro"     onclick="setTempo('Allegro')">Allegro</button>
+      <button class="tempo-btn" id="tw-Vivace"      onclick="setTempo('Vivace')">Vivace</button>
+      <button class="tempo-btn" id="tw-Presto"      onclick="setTempo('Presto')">Presto</button>
+      <button class="tempo-btn" id="tw-Prestissimo" onclick="setTempo('Prestissimo')" style="font-size:7px">Prestissimo</button>
+      <button class="tempo-btn" id="tw-none"        onclick="setTempo(null)" style="font-style:normal;font-size:9px">none</button>
+    </div>
+    <div class="sec">Tempo changes</div>
+    <div class="tempo-grid">
+      <button class="tempo-btn" id="tc-accel."      onclick="setTempo('accel.')">accel.</button>
+      <button class="tempo-btn" id="tc-poco accel." onclick="setTempo('poco accel.')" style="font-size:7px">poco accel.</button>
+      <button class="tempo-btn" id="tc-rit."        onclick="setTempo('rit.')">rit.</button>
+      <button class="tempo-btn" id="tc-ritard."     onclick="setTempo('ritard.')">ritard.</button>
+      <button class="tempo-btn" id="tc-rall."       onclick="setTempo('rall.')">rall.</button>
+      <button class="tempo-btn" id="tc-a tempo"     onclick="setTempo('a tempo')" style="font-style:normal">a tempo</button>
+    </div>
   </div>
-  <div class="hint">Attaches above staff on next note.</div>
 </div>
 
 <!-- Score setup panel -->
@@ -464,7 +474,7 @@ let apIdx=0;
 
 let currentKeyId='C';
 let selDur='w', selAcc='key', selOct=4, dotted=false;
-let pendingLyric='', pendingDyn=null, pendingArt=null, pendingTempo=null;
+let pendingLyric='', pendingDyn=null, pendingArts=[], pendingTempo=null;
 let hairpinPending=null;
 let chordBuildMode=false;
 let chord7Mode=false;
@@ -613,13 +623,22 @@ function renderPartsList(){
 // ═══════════════════════════════════════════════════════
 // Tab switching
 // ═══════════════════════════════════════════════════════
-const TABS=['notes','parts','lyrics','dyn','art','tempo','score','proj'];
+const TABS=['notes','parts','markings','score','proj'];
 function switchTab(name){
   document.querySelectorAll('.tab-btn').forEach((b,i)=>b.classList.toggle('on',TABS[i]===name));
   document.querySelectorAll('.panel').forEach(p=>p.classList.remove('on'));
   document.getElementById('panel-'+name).classList.add('on');
   if(name==='parts')renderPartsList();
   if(name==='proj')renderProjectsList();
+  syncEditorsToSelection();
+}
+
+const SUBTABS=['lyrics','dyn','art','tempo'];
+function switchSubTab(name){
+  document.querySelectorAll('.subtab-btn').forEach((b,i)=>b.classList.toggle('on',SUBTABS[i]===name));
+  document.querySelectorAll('.subpanel').forEach(p=>p.classList.remove('on'));
+  document.getElementById('sub-'+name).classList.add('on');
+  syncEditorsToSelection();
 }
 
 // ═══════════════════════════════════════════════════════
@@ -634,22 +653,73 @@ function setAcc(a){
   if(m[a])document.getElementById(m[a]).classList.add('on');
 }
 function changeOct(d){selOct=Math.max(0,Math.min(8,selOct+d));document.getElementById('oct-val').textContent=selOct;}
-function setDyn(d){pendingDyn=d;document.querySelectorAll('.dyn-btn').forEach(b=>b.classList.remove('on'));const el=d?document.getElementById('dyn-'+d):document.getElementById('dyn-0');if(el)el.classList.add('on');}
-function setArt(a){
-  pendingArt=a;
-  document.querySelectorAll('.art-btn').forEach(b=>b.classList.remove('on'));
-  if(!a){document.getElementById('art-0').classList.add('on');return;}
-  const m={'a.':'art-st','a>':'art-ac','a-':'art-te','a^':'art-ma','ao':'art-fe','tr':'art-tr','a+':'art-pz'};
-  if(m[a])document.getElementById(m[a]).classList.add('on');
+
+// If a (non-rest) note is selected on the staff, Markings edits apply to it directly;
+// otherwise they're "pending" and get attached to the next note entered.
+function currentEditableNote(){
+  if(!selectedNote)return null;
+  const n=parts[selectedNote.partIdx]?.notes[selectedNote.noteIdx];
+  return (n && !n.rest) ? n : null;
 }
-function setTempo(t){
-  pendingTempo=t;
+function highlightDyn(d){document.querySelectorAll('.dyn-btn').forEach(b=>b.classList.remove('on'));const el=d?document.getElementById('dyn-'+d):document.getElementById('dyn-0');if(el)el.classList.add('on');}
+// Articulations are multi-select — a note can carry accent + staccato + tenuto etc at once.
+const ART_BTN_ID={'a.':'art-st','a>':'art-ac','a-':'art-te','a^':'art-ma','ao':'art-fe','tr':'art-tr','a+':'art-pz'};
+function highlightArts(arr){
+  document.querySelectorAll('.art-btn').forEach(b=>b.classList.remove('on'));
+  document.getElementById('art-0').classList.toggle('on', !arr || !arr.length);
+  (arr||[]).forEach(a=>{ if(ART_BTN_ID[a]) document.getElementById(ART_BTN_ID[a]).classList.add('on'); });
+}
+function highlightTempo(t){
   document.querySelectorAll('.tempo-btn').forEach(b=>b.classList.remove('on'));
   if(!t){document.getElementById('tw-none').classList.add('on');return;}
   const el=document.getElementById('tw-'+t)||document.getElementById('tc-'+t);
   if(el)el.classList.add('on');
 }
-function clearPending(){pendingLyric='';pendingDyn=null;pendingArt=null;pendingTempo=null;document.getElementById('lyric-inp').value='';setDyn(null);setArt(null);setTempo(null);}
+function syncEditorsToSelection(){
+  const n=currentEditableNote();
+  highlightDyn(n?n.dyn:pendingDyn);
+  highlightArts(n?n.arts:pendingArts);
+  highlightTempo(n?n.tempo:pendingTempo);
+  const li=document.getElementById('lyric-inp');
+  if(li && document.activeElement!==li) li.value=(n?n.lyric:null)||'';
+}
+function setDyn(d){
+  const n=currentEditableNote();
+  if(n){ n.dyn=d; render(); updateSelectionUI(); return; }
+  pendingDyn=d; highlightDyn(d);
+}
+function toggleArt(a){
+  const n=currentEditableNote();
+  if(n){
+    n.arts=n.arts||[];
+    const i=n.arts.indexOf(a);
+    if(i>=0)n.arts.splice(i,1);else n.arts.push(a);
+    render(); updateSelectionUI();
+    return;
+  }
+  const i=pendingArts.indexOf(a);
+  if(i>=0)pendingArts.splice(i,1);else pendingArts.push(a);
+  highlightArts(pendingArts);
+}
+function clearArts(){
+  const n=currentEditableNote();
+  if(n){ n.arts=[]; render(); updateSelectionUI(); return; }
+  pendingArts=[]; highlightArts(pendingArts);
+}
+function setTempo(t){
+  const n=currentEditableNote();
+  if(n){ n.tempo=t; render(); updateSelectionUI(); return; }
+  pendingTempo=t; highlightTempo(t);
+}
+function clearPending(){
+  pendingLyric='';pendingDyn=null;pendingArts=[];pendingTempo=null;
+  document.getElementById('lyric-inp').value='';
+  highlightDyn(pendingDyn); highlightArts(pendingArts); highlightTempo(pendingTempo);
+}
+document.getElementById('lyric-inp').addEventListener('input', function(){
+  const n=currentEditableNote();
+  if(n){ n.lyric=this.value.trim()||null; render(); }
+});
 
 // ═══════════════════════════════════════════════════════
 // Hairpins
@@ -679,14 +749,14 @@ function toggleChordMode(){
 function cancelChord(){pendingChordNotes=[];updatePendingDisplay();}
 function commitChord(){
   if(!pendingChordNotes.length)return;
-  const {lyric,dyn,art,tempo}=grabPending();
+  const {lyric,dyn,arts,tempo}=grabPending();
   parts[apIdx].notes.push({
     keys:pendingChordNotes.map(n=>n.name+'/'+n.oct),
     dur:buildDur(), vfAccs:pendingChordNotes.map(n=>n.vfAcc??n.acc),
     midiVals:pendingChordNotes.map(n=>n.midi),
-    rest:false,lyric,dyn,art,tempo
+    rest:false,lyric,dyn,arts,tempo
   });
-  pendingChordNotes=[];updatePendingDisplay();render();
+  pendingChordNotes=[];updatePendingDisplay();render();scrollToNoteEnd(apIdx);
 }
 function updatePendingDisplay(){
   const s=pendingChordNotes.map(n=>n.name+(n.acc||'')+n.oct).join(' ');
@@ -725,23 +795,23 @@ function enterDiatonicChord(deg,kd,seventh=false){
     updatePendingDisplay();
     return;
   }
-  const {lyric,dyn,art,tempo}=grabPending();
+  const {lyric,dyn,arts,tempo}=grabPending();
   parts[apIdx].notes.push({
     keys:tones.map(t=>t.name+'/'+t.oct),
     dur:buildDur(),
     vfAccs:tones.map(()=>null),
     midiVals:tones.map(t=>t.midi),
-    rest:false,lyric,dyn,art,tempo
+    rest:false,lyric,dyn,arts,tempo
   });
   selectedNote=null;
-  render();
+  render();scrollToNoteEnd(apIdx);
 }
 
 // ═══════════════════════════════════════════════════════
 // Note entry
 // ═══════════════════════════════════════════════════════
 function buildDur(rest=false){return selDur+(dotted?'d':'')+(rest?'r':'');}
-function grabPending(){return{lyric:document.getElementById('lyric-inp').value.trim()||null,dyn:pendingDyn,art:pendingArt,tempo:pendingTempo};}
+function grabPending(){return{lyric:document.getElementById('lyric-inp').value.trim()||null,dyn:pendingDyn,arts:pendingArts.slice(),tempo:pendingTempo};}
 
 function enterPitch(name, acc, oct, vfAcc){
   const midi=noteToMidi(name,acc,oct);
@@ -750,10 +820,10 @@ function enterPitch(name, acc, oct, vfAcc){
     updatePendingDisplay();
     return;
   }
-  const {lyric,dyn,art,tempo}=grabPending();
-  parts[apIdx].notes.push({keys:[name+'/'+oct],dur:buildDur(),vfAccs:[vfAcc],midiVals:[midi],rest:false,lyric,dyn,art,tempo});
+  const {lyric,dyn,arts,tempo}=grabPending();
+  parts[apIdx].notes.push({keys:[name+'/'+oct],dur:buildDur(),vfAccs:[vfAcc],midiVals:[midi],rest:false,lyric,dyn,arts,tempo});
   selectedNote=null;
-  render();
+  render();scrollToNoteEnd(apIdx);
 }
 
 // Scale degrees ascend by letter from the tonic; once the letter cycle wraps
@@ -791,9 +861,9 @@ function addRest(){
   const p=parts[apIdx];
   const clef=p.clef||(IMAP[p.instId]?.clef)||'treble';
   const rk=clef==='bass'?'d/3':'b/4';
-  p.notes.push({keys:[rk],dur:buildDur(true),vfAccs:[null],midiVals:[],rest:true,lyric:null,dyn:null,art:null,tempo:null});
+  p.notes.push({keys:[rk],dur:buildDur(true),vfAccs:[null],midiVals:[],rest:true,lyric:null,dyn:null,arts:[],tempo:null});
   selectedNote=null;
-  render();
+  render();scrollToNoteEnd(apIdx);
 }
 
 function undoNote(){
@@ -815,12 +885,13 @@ function clearAll(){
 // ═══════════════════════════════════════════════════════
 function updateSelectionUI(){
   const sec=document.getElementById('edit-section');
-  if(!selectedNote){sec.style.display='none';return;}
+  if(!selectedNote){sec.style.display='none';syncEditorsToSelection();return;}
   const n=parts[selectedNote.partIdx]?.notes[selectedNote.noteIdx];
-  if(!n){sec.style.display='none';return;}
+  if(!n){sec.style.display='none';syncEditorsToSelection();return;}
   sec.style.display='block';
   const label=n.rest?'Rest':(n.keys||[]).map((k,i)=>{const[name,oct]=k.split('/');const acc=n.vfAccs?.[i];return name+(acc&&acc!=='n'?acc:'')+oct;}).join(' ');
   document.getElementById('sel-note-label').textContent=label;
+  syncEditorsToSelection();
 }
 
 function moveSelNote(semitones){
@@ -851,7 +922,7 @@ function deleteSelected(){
   if(!selectedNote)return;
   const p=parts[selectedNote.partIdx]; const n=p?.notes[selectedNote.noteIdx]; if(!n)return;
   const clef=p.clef||(IMAP[p.instId]?.clef)||'treble';
-  n.rest=true; n.midiVals=[]; n.keys=[clef==='bass'?'d/3':'b/4']; n.vfAccs=[null]; n.art=null; n.lyric=null;
+  n.rest=true; n.midiVals=[]; n.keys=[clef==='bass'?'d/3':'b/4']; n.vfAccs=[null]; n.arts=[]; n.lyric=null;
   render(); updateSelectionUI();
 }
 
@@ -972,6 +1043,19 @@ function render(){
   scheduleAutosave();
 }
 
+// Keep the note just written visible — scroll the staff view only if it's
+// currently out of frame, so composing never requires manually scrolling right.
+function scrollToNoteEnd(partIdx){
+  const wrap=document.getElementById('score-wrap');
+  const cands=notePositions.filter(p=>p.partIdx===partIdx);
+  if(!cands.length)return;
+  const last=cands[cands.length-1];
+  const margin=90;
+  if(last.x+margin>wrap.scrollLeft+wrap.clientWidth || last.x<wrap.scrollLeft){
+    wrap.scrollTo({left:Math.max(0,last.x+margin-wrap.clientWidth),top:wrap.scrollTop,behavior:'smooth'});
+  }
+}
+
 function drawVoice(ctx,stave,noteData,mw,VF,partIdx,partOffset){
   const{StaveNote,Voice,Formatter,Accidental,Beam,Annotation,Articulation,Dot}=VF;
   if(!noteData.length)return[];
@@ -988,8 +1072,10 @@ function drawVoice(ctx,stave,noteData,mw,VF,partIdx,partOffset){
       if(n.lyric)try{const a=new Annotation(n.lyric);a.setVerticalJustification(Annotation.VerticalJustify.BOTTOM);a.setFont({family:'Arial',size:9});sn.addModifier(a,0);}catch(e){}
       if(n.dyn)try{const a=new Annotation(n.dyn);a.setVerticalJustification(Annotation.VerticalJustify.BOTTOM);a.setFont({family:'serif',size:10,style:'italic bold'});sn.addModifier(a,0);}catch(e){}
       if(n.tempo)try{const a=new Annotation(n.tempo);a.setVerticalJustification(Annotation.VerticalJustify.TOP);a.setFont({family:'serif',size:10,style:'italic'});sn.addModifier(a,0);}catch(e){}
-      if(n.art&&n.art!=='tr')try{sn.addModifier(new Articulation(n.art),0);}catch(e){}
-      if(n.art==='tr')try{const a=new Annotation('tr');a.setFont({family:'serif',size:10,style:'italic'});sn.addModifier(a,0);}catch(e){}
+      (n.arts||[]).forEach(a=>{
+        if(a==='tr')try{const ann=new Annotation('tr');ann.setFont({family:'serif',size:10,style:'italic'});sn.addModifier(ann,0);}catch(e){}
+        else try{sn.addModifier(new Articulation(a),0);}catch(e){}
+      });
       return sn;
     });
   }catch(e){console.warn('Note create:',e.message);return[];}
@@ -1168,8 +1254,13 @@ function scheduleAutosave(){
 }
 function updateProjPill(){ const p=projects.find(x=>x.id===currentProjId); document.getElementById('proj-pill').textContent=p?p.name:'Song'; }
 
+// Migrate notes saved before articulations became multi-select (singular `art` -> `arts` array).
+function normalizeNote(n){
+  if(n.arts===undefined){ n.arts=n.art?[n.art]:[]; delete n.art; }
+  return n;
+}
 function applyProject(d){
-  parts=(d.parts||[]).map(p=>({...p,hairpins:p.hairpins||[],notes:p.notes||[]}));
+  parts=(d.parts||[]).map(p=>({...p,hairpins:p.hairpins||[],notes:(p.notes||[]).map(normalizeNote)}));
   if(!parts.length) parts=[mkPart('Treble','piano','treble'),mkPart('Bass','piano','bass')];
   pid=d.pid||(Math.max(0,...parts.map(p=>p.id||0))+1);
   apIdx=Math.min(d.apIdx||0,parts.length-1);
@@ -1338,7 +1429,7 @@ function beatsToDur(qb){
   for(const [b,d] of DUR_TABLE){ const diff=Math.abs(b-qb); if(diff<bd){bd=diff;best=d;} }
   return best;
 }
-function restNote(qb){return{keys:['b/4'],dur:beatsToDur(qb)+'r',vfAccs:[null],midiVals:[],rest:true,lyric:null,dyn:null,art:null,tempo:null};}
+function restNote(qb){return{keys:['b/4'],dur:beatsToDur(qb)+'r',vfAccs:[null],midiVals:[],rest:true,lyric:null,dyn:null,arts:[],tempo:null};}
 
 // ---- MIDI (Standard MIDI File) ----
 function parseMIDI(buf){
@@ -1397,7 +1488,7 @@ function midiToData(parsed){
       const dur=Math.max(...group.map(g=>g.end-g.start));
       const midis=group.map(g=>g.midi).sort((a,b)=>a-b);
       const res=midis.map(m=>midiToNote(m));
-      nd.push({keys:res.map(r=>r.name+'/'+r.oct),dur:beatsToDur(dur/ppq),vfAccs:res.map(r=>r.acc),midiVals:midis,rest:false,lyric:null,dyn:null,art:null,tempo:null});
+      nd.push({keys:res.map(r=>r.name+'/'+r.oct),dur:beatsToDur(dur/ppq),vfAccs:res.map(r=>r.acc),midiVals:midis,rest:false,lyric:null,dyn:null,arts:[],tempo:null});
       cursor=start+dur; i=j;
     }
     outParts.push({notes:nd});
@@ -1454,7 +1545,7 @@ function parseMusicXML(text){
         const oct=parseInt(pit.querySelector('octave').textContent);
         const acc=alterToAcc(xmlAlter(pit));
         const lyr=nEl.querySelector('lyric text')?.textContent.trim()||null;
-        arr.push({keys:[step+'/'+oct],dur,vfAccs:[xmlAcc(nEl)],midiVals:[noteToMidi(step,acc,oct)],rest:false,lyric:lyr,dyn:null,art:null,tempo:null});
+        arr.push({keys:[step+'/'+oct],dur,vfAccs:[xmlAcc(nEl)],midiVals:[noteToMidi(step,acc,oct)],rest:false,lyric:lyr,dyn:null,arts:[],tempo:null});
       });
     });
     Object.keys(staves).sort().forEach(sk=>outParts.push({notes:staves[sk],staff:sk}));
@@ -1498,7 +1589,7 @@ document.getElementById('import-file').addEventListener('change', async function
 // ═══════════════════════════════════════════════════════
 // Boot
 // ═══════════════════════════════════════════════════════
-setAcc('key');setArt(null);setDyn(null);setTempo(null);
+setAcc('key');clearArts();setDyn(null);setTempo(null);
 refreshDurIcons();
 relabelNoteButtons();
 renderDiatonicChords();
