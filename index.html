@@ -206,6 +206,7 @@ body { font-family:-apple-system,BlinkMacSystemFont,sans-serif; background:#1212
     <button class="subtab-btn"    onclick="switchSubTab('dyn')">Dynamics</button>
     <button class="subtab-btn"    onclick="switchSubTab('art')">Articulation</button>
     <button class="subtab-btn"    onclick="switchSubTab('tempo')">Tempo</button>
+    <button class="subtab-btn"    onclick="switchSubTab('rud')">Rudiments</button>
   </div>
   <div class="hint" style="margin-bottom:6px">If a note is selected on the staff, these apply to that note. Otherwise they'll attach to the next note you enter.</div>
 
@@ -282,6 +283,28 @@ body { font-family:-apple-system,BlinkMacSystemFont,sans-serif; background:#1212
       <button class="tempo-btn" id="tc-rall."       onclick="setTempo('rall.')">rall.</button>
       <button class="tempo-btn" id="tc-a tempo"     onclick="setTempo('a tempo')" style="font-style:normal">a tempo</button>
     </div>
+  </div>
+
+  <div id="sub-rud" class="subpanel">
+    <div class="sec">Rolls</div>
+    <div class="art-grid">
+      <button class="art-btn" id="rud-0"     onclick="setRud(null)"      style="font-size:10px">none</button>
+      <button class="art-btn" id="rud-r2"    onclick="setRud('trem1')">/ x2</button>
+      <button class="art-btn" id="rud-r4"    onclick="setRud('trem2')">// x4</button>
+      <button class="art-btn" id="rud-r8"    onclick="setRud('trem3')">/// x8</button>
+      <button class="art-btn" id="rud-buzz"  onclick="setRud('buzz')"  style="font-size:13px">Z Buzz</button>
+      <button class="art-btn" id="rud-press" onclick="setRud('press')" style="font-size:13px">Press</button>
+    </div>
+    <div class="hint">Each extra slash doubles the roll: a quarter note becomes 2, 4, or 8 fast hits. Buzz and Press also play as a fast multi-bounce sound (Press tighter/faster than Buzz).</div>
+
+    <div class="sec" style="margin-top:8px">Grace notes (flam / drag / ruff)</div>
+    <div class="row">
+      <button class="chip" id="grace-toggle" onclick="toggleGraceMode()" style="font-size:11px">🎵 Add grace notes</button>
+      <button class="chip on" id="grace-8"  onclick="setGraceDur('8')">♪ 8th</button>
+      <button class="chip"    id="grace-16" onclick="setGraceDur('16')">♬ 16th</button>
+    </div>
+    <div id="grace-pending" style="font-size:10px;color:#e94560;min-height:14px;"></div>
+    <div class="hint">Turn this on, tap letters below to queue grace notes (1 tap = flam, 2 = drag, 3 = ruff, or add more), then turn it back off and tap the main note — the queue attaches automatically. <span onclick="clearGraceQueue()" style="color:#e94560;cursor:pointer">Clear queue</span></div>
   </div>
 </div>
 
@@ -474,7 +497,8 @@ let apIdx=0;
 
 let currentKeyId='C';
 let selDur='w', selAcc='key', selOct=4, dotted=false;
-let pendingLyric='', pendingDyn=null, pendingArts=[], pendingTempo=null;
+let pendingLyric='', pendingDyn=null, pendingArts=[], pendingTempo=null, pendingRud=null;
+let graceMode=false, graceDur='8', pendingGraceNotes=[];
 let hairpinPending=null;
 let chordBuildMode=false;
 let chord7Mode=false;
@@ -633,7 +657,7 @@ function switchTab(name){
   syncEditorsToSelection();
 }
 
-const SUBTABS=['lyrics','dyn','art','tempo'];
+const SUBTABS=['lyrics','dyn','art','tempo','rud'];
 function switchSubTab(name){
   document.querySelectorAll('.subtab-btn').forEach((b,i)=>b.classList.toggle('on',SUBTABS[i]===name));
   document.querySelectorAll('.subpanel').forEach(p=>p.classList.remove('on'));
@@ -675,11 +699,19 @@ function highlightTempo(t){
   const el=document.getElementById('tw-'+t)||document.getElementById('tc-'+t);
   if(el)el.classList.add('on');
 }
+// Rolls (tremolo/buzz/press) are single-select, like dyn/tempo.
+const RUD_BTN_ID={trem1:'rud-r2',trem2:'rud-r4',trem3:'rud-r8',buzz:'rud-buzz',press:'rud-press'};
+function highlightRud(v){
+  document.querySelectorAll('#sub-rud .art-btn').forEach(b=>b.classList.remove('on'));
+  const id=RUD_BTN_ID[v];
+  document.getElementById(id||'rud-0').classList.add('on');
+}
 function syncEditorsToSelection(){
   const n=currentEditableNote();
   highlightDyn(n?n.dyn:pendingDyn);
   highlightArts(n?n.arts:pendingArts);
   highlightTempo(n?n.tempo:pendingTempo);
+  highlightRud(n?n.rud:pendingRud);
   const li=document.getElementById('lyric-inp');
   if(li && document.activeElement!==li) li.value=(n?n.lyric:null)||'';
 }
@@ -687,6 +719,11 @@ function setDyn(d){
   const n=currentEditableNote();
   if(n){ n.dyn=d; render(); updateSelectionUI(); return; }
   pendingDyn=d; highlightDyn(d);
+}
+function setRud(v){
+  const n=currentEditableNote();
+  if(n){ n.rud=v; render(); updateSelectionUI(); return; }
+  pendingRud=v; highlightRud(v);
 }
 function toggleArt(a){
   const n=currentEditableNote();
@@ -712,14 +749,35 @@ function setTempo(t){
   pendingTempo=t; highlightTempo(t);
 }
 function clearPending(){
-  pendingLyric='';pendingDyn=null;pendingArts=[];pendingTempo=null;
+  pendingLyric='';pendingDyn=null;pendingArts=[];pendingTempo=null;pendingRud=null;
   document.getElementById('lyric-inp').value='';
-  highlightDyn(pendingDyn); highlightArts(pendingArts); highlightTempo(pendingTempo);
+  highlightDyn(pendingDyn); highlightArts(pendingArts); highlightTempo(pendingTempo); highlightRud(pendingRud);
 }
 document.getElementById('lyric-inp').addEventListener('input', function(){
   const n=currentEditableNote();
   if(n){ n.lyric=this.value.trim()||null; render(); }
 });
+
+// Grace notes (flam/drag/ruff): arm, then tap letters below to queue — they
+// attach to the next note entered. Only settable at entry time, not
+// retroactively on an already-placed note (unlike dyn/arts/tempo/rud above).
+// Turning grace mode off does NOT clear the queue — the whole point is to
+// arm it, tap out the grace notes, disarm it, then tap the main note (a
+// normal entry) which picks up and attaches the queued grace notes.
+function toggleGraceMode(){
+  graceMode=!graceMode;
+  document.getElementById('grace-toggle').classList.toggle('on',graceMode);
+}
+function setGraceDur(d){
+  graceDur=d;
+  document.getElementById('grace-8').classList.toggle('on',d==='8');
+  document.getElementById('grace-16').classList.toggle('on',d==='16');
+}
+function updateGracePendingDisplay(){
+  const el=document.getElementById('grace-pending');
+  el.textContent=pendingGraceNotes.length ? 'Queued: '+pendingGraceNotes.map(g=>g.name+(g.acc||'')+g.oct).join(' ') : '';
+}
+function clearGraceQueue(){ pendingGraceNotes=[]; updateGracePendingDisplay(); }
 
 // ═══════════════════════════════════════════════════════
 // Hairpins
@@ -749,14 +807,16 @@ function toggleChordMode(){
 function cancelChord(){pendingChordNotes=[];updatePendingDisplay();}
 function commitChord(){
   if(!pendingChordNotes.length)return;
-  const {lyric,dyn,arts,tempo}=grabPending();
+  const {lyric,dyn,arts,tempo,rud,grace}=grabPending();
   parts[apIdx].notes.push({
     keys:pendingChordNotes.map(n=>n.name+'/'+n.oct),
     dur:buildDur(), vfAccs:pendingChordNotes.map(n=>n.vfAcc??n.acc),
     midiVals:pendingChordNotes.map(n=>n.midi),
-    rest:false,lyric,dyn,arts,tempo
+    rest:false,lyric,dyn,arts,tempo,rud,grace
   });
-  pendingChordNotes=[];updatePendingDisplay();render();scrollToNoteEnd(apIdx);
+  pendingChordNotes=[];updatePendingDisplay();
+  pendingGraceNotes=[];updateGracePendingDisplay();
+  render();scrollToNoteEnd(apIdx);
 }
 function updatePendingDisplay(){
   const s=pendingChordNotes.map(n=>n.name+(n.acc||'')+n.oct).join(' ');
@@ -795,15 +855,16 @@ function enterDiatonicChord(deg,kd,seventh=false){
     updatePendingDisplay();
     return;
   }
-  const {lyric,dyn,arts,tempo}=grabPending();
+  const {lyric,dyn,arts,tempo,rud,grace}=grabPending();
   parts[apIdx].notes.push({
     keys:tones.map(t=>t.name+'/'+t.oct),
     dur:buildDur(),
     vfAccs:tones.map(()=>null),
     midiVals:tones.map(t=>t.midi),
-    rest:false,lyric,dyn,arts,tempo
+    rest:false,lyric,dyn,arts,tempo,rud,grace
   });
   selectedNote=null;
+  pendingGraceNotes=[];updateGracePendingDisplay();
   render();scrollToNoteEnd(apIdx);
 }
 
@@ -811,7 +872,13 @@ function enterDiatonicChord(deg,kd,seventh=false){
 // Note entry
 // ═══════════════════════════════════════════════════════
 function buildDur(rest=false){return selDur+(dotted?'d':'')+(rest?'r':'');}
-function grabPending(){return{lyric:document.getElementById('lyric-inp').value.trim()||null,dyn:pendingDyn,arts:pendingArts.slice(),tempo:pendingTempo};}
+function grabPending(){
+  return{
+    lyric:document.getElementById('lyric-inp').value.trim()||null,
+    dyn:pendingDyn,arts:pendingArts.slice(),tempo:pendingTempo,rud:pendingRud,
+    grace:pendingGraceNotes.map(g=>({keys:[g.name+'/'+g.oct],dur:g.dur,vfAcc:g.vfAcc??g.acc}))
+  };
+}
 
 function enterPitch(name, acc, oct, vfAcc){
   const midi=noteToMidi(name,acc,oct);
@@ -820,9 +887,15 @@ function enterPitch(name, acc, oct, vfAcc){
     updatePendingDisplay();
     return;
   }
-  const {lyric,dyn,arts,tempo}=grabPending();
-  parts[apIdx].notes.push({keys:[name+'/'+oct],dur:buildDur(),vfAccs:[vfAcc],midiVals:[midi],rest:false,lyric,dyn,arts,tempo});
+  if(graceMode){
+    pendingGraceNotes.push({name,acc,oct,midi,vfAcc,dur:graceDur});
+    updateGracePendingDisplay();
+    return;
+  }
+  const {lyric,dyn,arts,tempo,rud,grace}=grabPending();
+  parts[apIdx].notes.push({keys:[name+'/'+oct],dur:buildDur(),vfAccs:[vfAcc],midiVals:[midi],rest:false,lyric,dyn,arts,tempo,rud,grace});
   selectedNote=null;
+  pendingGraceNotes=[];updateGracePendingDisplay();
   render();scrollToNoteEnd(apIdx);
 }
 
@@ -922,7 +995,7 @@ function deleteSelected(){
   if(!selectedNote)return;
   const p=parts[selectedNote.partIdx]; const n=p?.notes[selectedNote.noteIdx]; if(!n)return;
   const clef=p.clef||(IMAP[p.instId]?.clef)||'treble';
-  n.rest=true; n.midiVals=[]; n.keys=[clef==='bass'?'d/3':'b/4']; n.vfAccs=[null]; n.arts=[]; n.lyric=null;
+  n.rest=true; n.midiVals=[]; n.keys=[clef==='bass'?'d/3':'b/4']; n.vfAccs=[null]; n.arts=[]; n.lyric=null; n.rud=null; n.grace=[];
   render(); updateSelectionUI();
 }
 
@@ -1057,7 +1130,7 @@ function scrollToNoteEnd(partIdx){
 }
 
 function drawVoice(ctx,stave,noteData,mw,VF,partIdx,partOffset){
-  const{StaveNote,Voice,Formatter,Accidental,Beam,Annotation,Articulation,Dot}=VF;
+  const{StaveNote,Voice,Formatter,Accidental,Beam,Annotation,Articulation,Dot,Tremolo,Ornament,GraceNote,GraceNoteGroup}=VF;
   if(!noteData.length)return[];
   let vfNotes;
   try{
@@ -1076,6 +1149,27 @@ function drawVoice(ctx,stave,noteData,mw,VF,partIdx,partOffset){
         if(a==='tr')try{const ann=new Annotation('tr');ann.setFont({family:'serif',size:10,style:'italic'});sn.addModifier(ann,0);}catch(e){}
         else try{sn.addModifier(new Articulation(a),0);}catch(e){}
       });
+      if(n.rud){
+        try{
+          if(n.rud==='trem1')sn.addModifier(new Tremolo(1),0);
+          else if(n.rud==='trem2')sn.addModifier(new Tremolo(2),0);
+          else if(n.rud==='trem3')sn.addModifier(new Tremolo(3),0);
+          else if(n.rud==='buzz'){const ann=new Annotation('Z');ann.setFont({family:'serif',size:15,style:'bold'});ann.setVerticalJustification(Annotation.VerticalJustify.TOP);sn.addModifier(ann,0);}
+          else if(n.rud==='press')sn.addModifier(new Ornament('mordent_inverted'),0);
+        }catch(e){}
+      }
+      if(n.grace&&n.grace.length){
+        try{
+          const gns=n.grace.map(g=>{
+            const gn=new GraceNote({keys:g.keys,duration:g.dur,slash:true});
+            if(g.vfAcc)try{gn.addModifier(new Accidental(g.vfAcc),0);}catch(e){}
+            return gn;
+          });
+          const grp=new GraceNoteGroup(gns,false);
+          if(gns.length>1)grp.beamNotes();
+          sn.addModifier(grp,0);
+        }catch(e){}
+      }
       return sn;
     });
   }catch(e){console.warn('Note create:',e.message);return[];}
@@ -1202,18 +1296,35 @@ async function playScore(){
     const inst=IMAP[part.instId]||IMAP['piano'];
     const voice=inst.unpitched?getDrum(part.instId):getSampler(part.instId);
     _activeVoices.push(voice);
+    const hit=(notesArg,d,time,vel)=>{
+      try{
+        if(inst.unpitched){ if(inst.osc==='noise')voice.triggerAttackRelease(d,time,vel); else voice.triggerAttackRelease('C2',d,time,vel); }
+        else voice.triggerAttackRelease(notesArg,d,time,vel);
+      }catch(e){}
+    };
     let t=0;
     part.notes.forEach(n=>{
       const secs=durSecs(n.dur,bpm);
       if(!n.rest&&(n.midiVals||[]).length){
-        const td=toToneDur(n.dur),abs=t;
+        const abs=t;
         const toneNotes=n.midiVals.map(m=>Tone.Frequency(m,'midi').toNote());
-        Tone.getTransport().schedule(time=>{
-          try{
-            if(inst.unpitched){ if(inst.osc==='noise')voice.triggerAttackRelease(td,time); else voice.triggerAttackRelease('C2',td,time); }
-            else voice.triggerAttackRelease(toneNotes.length===1?toneNotes[0]:toneNotes,td,time);
-          }catch(e){}
-        },'+'+abs);
+        const mainNotes=toneNotes.length===1?toneNotes[0]:toneNotes;
+        // Grace notes (flam/drag/ruff): quick quiet taps just before the main hit.
+        const graceList=n.grace||[];
+        const GRACE_GAP=.035;
+        graceList.forEach((g,gi)=>{
+          const gt=abs-(graceList.length-gi)*GRACE_GAP;
+          if(gt>=0) Tone.getTransport().schedule(time=>hit(mainNotes,GRACE_GAP*.85,time,.55),'+'+gt);
+        });
+        // Rolls: subdivide the note into fast repeated hits instead of one sustained note.
+        const ROLL_HITS={trem1:2,trem2:4,trem3:8,buzz:16,press:20};
+        const hits=ROLL_HITS[n.rud];
+        if(hits){
+          const hitDur=secs/hits;
+          for(let k=0;k<hits;k++) Tone.getTransport().schedule(time=>hit(mainNotes,hitDur*.85,time,.8),'+'+(abs+k*hitDur));
+        } else {
+          Tone.getTransport().schedule(time=>hit(mainNotes,toToneDur(n.dur),time,1),'+'+abs);
+        }
       }
       t+=secs;
     });
