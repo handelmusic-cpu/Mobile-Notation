@@ -331,8 +331,9 @@ body { font-family:-apple-system,BlinkMacSystemFont,sans-serif; background:#1212
   <div class="sec">Export current song</div>
   <div class="row" style="gap:6px">
     <button class="chip" onclick="exportMIDI()" style="font-size:11px">⇩ MIDI</button>
-    <button class="chip" onclick="exportPDF()" style="font-size:11px">🖨 Print / PDF</button>
   </div>
+  <div class="sec">Print / PDF</div>
+  <div class="row" style="gap:6px;flex-wrap:wrap" id="print-row"></div>
   <div class="sec">Your songs — autosaved</div>
   <div id="proj-list"></div>
   <input type="file" id="import-file" style="display:none">
@@ -507,6 +508,7 @@ let newInstId=null;
 
 let notePositions=[];
 let selectedNote=null;
+let measureXs=[], measureBeats=[];
 
 const BV={w:4,h:2,q:1,'8':.5,'16':.25,'32':.125};
 function durBeats(dur){const b=dur.replace(/[dr]/g,''),dot=dur.includes('d');return(BV[b]??1)*(dot?1.5:1);}
@@ -653,8 +655,15 @@ function switchTab(name){
   document.querySelectorAll('.panel').forEach(p=>p.classList.remove('on'));
   document.getElementById('panel-'+name).classList.add('on');
   if(name==='parts')renderPartsList();
-  if(name==='proj')renderProjectsList();
+  if(name==='proj'){renderProjectsList();renderPrintButtons();}
   syncEditorsToSelection();
+}
+function renderPrintButtons(){
+  const row=document.getElementById('print-row');
+  if(!row)return;
+  let html=`<button class="chip" onclick="exportPDF('all')" style="font-size:11px">🖨 Full Score</button>`;
+  parts.forEach((p,i)=>{ if(p.notes.length) html+=`<button class="chip" onclick="exportPDF(${i})" style="font-size:11px">🖨 ${p.name}</button>`; });
+  row.innerHTML=html;
 }
 
 const SUBTABS=['lyrics','dyn','art','tempo','rud'];
@@ -1059,6 +1068,14 @@ function render(){
   const totalW=FX+mws.reduce((a,b)=>a+b,0)+40;
   const totalH=TP+numP*PG+30;
 
+  // Per-measure duration (beats), used by playScore() to time the playback auto-scroll.
+  measureBeats=Array.from({length:numM},(_,mi)=>{
+    let mx=0;
+    allM.forEach(pm=>{ const arr=pm[mi]||[]; const b=arr.reduce((s,n)=>s+durBeats(n.dur),0); if(b>mx)mx=b; });
+    return mx||currentTimeSig.beats;
+  });
+  measureXs=[];
+
   const renderer=new Renderer(div,Renderer.Backends.SVG);
   renderer.resize(totalW,totalH);
   const ctx=renderer.getContext();
@@ -1070,6 +1087,7 @@ function render(){
   for(let mi=0;mi<numM;mi++){
     const first=mi===0;
     const mw=first?mws[mi]+FX:mws[mi];
+    measureXs.push(x);
 
     const staves=parts.map((p,pi)=>{
       const inst=IMAP[p.instId]||IMAP['piano'];
@@ -1127,6 +1145,16 @@ function scrollToNoteEnd(partIdx){
   if(last.x+margin>wrap.scrollLeft+wrap.clientWidth || last.x<wrap.scrollLeft){
     wrap.scrollTo({left:Math.max(0,last.x+margin-wrap.clientWidth),top:wrap.scrollTop,behavior:'smooth'});
   }
+}
+
+// Follows the currently-playing measure during playback (see the schedule
+// calls in playScore()) — always scrolls, unlike scrollToNoteEnd's "only if
+// offscreen" check, since during playback the view should actively track.
+function scrollToMeasure(mi){
+  const wrap=document.getElementById('score-wrap');
+  const tx=measureXs[mi];
+  if(tx==null)return;
+  wrap.scrollTo({left:Math.max(0,tx-30),top:wrap.scrollTop,behavior:'smooth'});
 }
 
 function drawVoice(ctx,stave,noteData,mw,VF,partIdx,partOffset){
@@ -1290,6 +1318,15 @@ async function playScore(){
   if(playBtn)playBtn.textContent='▶';
   playing=true;stopScore(true);
   Tone.getTransport().bpm.value=bpm;Tone.getTransport().cancel();
+  // Follow the currently-playing measure across the staff view as it plays.
+  if(measureXs.length){
+    const secPerBeat=60/bpm;
+    let cum=0;
+    measureXs.forEach((_,mi)=>{
+      Tone.getTransport().schedule(()=>scrollToMeasure(mi),'+'+cum);
+      cum+=(measureBeats[mi]||currentTimeSig.beats)*secPerBeat;
+    });
+  }
   _activeVoices=[];let maxT=0;
   parts.forEach(part=>{
     if(!part.notes.length)return;
@@ -1505,26 +1542,127 @@ function exportMIDI(){
 // ═══════════════════════════════════════════════════════
 // PDF / print export
 // ═══════════════════════════════════════════════════════
-function exportPDF(){
-  const svg=document.querySelector('#score-div svg');
-  if(!svg){ alert('Nothing to print yet.'); return; }
-  const name=projects.find(p=>p.id===currentProjId)?.name||'Score';
-  const clone=svg.cloneNode(true);
-  clone.removeAttribute('style');
-  clone.setAttribute('width','100%');
+// Lays a set of parts out as printed sheet music: measures are packed into
+// width-budgeted "systems" (lines), each drawn as its own small SVG, instead
+// of the single continuous strip the on-screen view uses. The print document
+// stacks these with CSS break-inside:avoid so the browser paginates cleanly
+// between systems and never slices one in half across a page.
+const PRINT_SYS_W=720; // ~ usable Letter-page width in CSS px at 96dpi after 14mm margins
+function buildPrintSystems(partsSubset){
+  const VF=Vex.Flow;
+  const {Renderer,Stave,StaveConnector,StaveHairpin}=VF;
+  const kd=KMAP[currentKeyId];
+  const allM=partsSubset.map(p=>toMeasures(p.notes));
+  const numM=Math.max(...allM.map(m=>m.length),1);
+  const numP=partsSubset.length;
+  const mws=Array.from({length:numM},(_,mi)=>calcMW(allM,mi));
+
+  const systems=[]; let cur=[], curW=0;
+  for(let mi=0;mi<numM;mi++){
+    const w=cur.length===0?mws[mi]+FX:mws[mi];
+    if(cur.length&&curW+w>PRINT_SYS_W){ systems.push(cur); cur=[]; curW=0; }
+    cur.push(mi); curW+=(cur.length===1?mws[mi]+FX:mws[mi]);
+  }
+  if(cur.length)systems.push(cur);
+
+  const partOffsets=new Array(numP).fill(0);
+  const vfRefs=partsSubset.map(()=>({}));
+  const svgBlocks=[];
+
+  systems.forEach(measureIdxs=>{
+    const sysW=FX+measureIdxs.reduce((s,mi)=>s+mws[mi],0)+20;
+    const sysH=TP+numP*PG+20;
+    const div=document.createElement('div');
+    const renderer=new Renderer(div,Renderer.Backends.SVG);
+    renderer.resize(sysW,sysH);
+    const ctx=renderer.getContext();
+    const rangeStart=partOffsets.slice();
+
+    let x=10;
+    measureIdxs.forEach((mi,localIdx)=>{
+      const first=localIdx===0;
+      const mw=first?mws[mi]+FX:mws[mi];
+      const staves=partsSubset.map((p,pi)=>{
+        const inst=IMAP[p.instId]||IMAP['piano'];
+        const cl=p.clef||(inst.clef==='percussion'?'percussion':(inst.clef||'treble'));
+        const sy=TP+pi*PG;
+        const st=new Stave(x,sy,mw);
+        if(first){ st.addClef(cl).addKeySignature(kd.vfSig).addTimeSignature(currentTimeSig.sig); }
+        st.setContext(ctx).draw();
+        return st;
+      });
+      if(numP>=2){
+        if(first){
+          const i0=IMAP[partsSubset[0].instId],i1=IMAP[partsSubset[1].instId];
+          if(i0&&i1&&i0.cat==='Keyboard'&&i1.cat==='Keyboard'&&partsSubset[0].clef!==partsSubset[1].clef){
+            try{new StaveConnector(staves[0],staves[1]).setType('brace').setContext(ctx).draw();}catch(e){}
+          }
+          new StaveConnector(staves[0],staves[numP-1]).setType('singleLeft').setContext(ctx).draw();
+        }
+        new StaveConnector(staves[0],staves[numP-1]).setType('singleRight').setContext(ctx).draw();
+      }
+      staves.forEach((st,pi)=>{
+        const noteData=allM[pi][mi]||[];
+        const vfNotes=drawVoice(ctx,st,noteData,mw,VF,pi,partOffsets[pi]);
+        noteData.forEach((_,li)=>{ if(vfNotes[li])vfRefs[pi][partOffsets[pi]+li]={vfNote:vfNotes[li],stave:st}; });
+        partOffsets[pi]+=noteData.length;
+      });
+      x+=mw;
+    });
+
+    // Only draw hairpins fully contained within this system — one that spans
+    // a line break is dropped for print (a real, if rare, engraving edge case).
+    partsSubset.forEach((part,pi)=>{
+      (part.hairpins||[]).forEach(hp=>{
+        if(hp.start<rangeStart[pi]||hp.end>=partOffsets[pi])return;
+        const s=vfRefs[pi][hp.start],e=vfRefs[pi][hp.end];
+        if(!s||!e)return;
+        try{
+          const h=new StaveHairpin({first_note:s.vfNote,last_note:e.vfNote,first_indices:[0],last_indices:[0]},
+            hp.type==='cresc'?StaveHairpin.type.CRESC:StaveHairpin.type.DECRESC);
+          h.setContext(ctx).setStave(s.stave).draw();
+        }catch(err){}
+      });
+    });
+
+    const svg=div.querySelector('svg');
+    svg.setAttribute('width',sysW);
+    svg.removeAttribute('style');
+    svgBlocks.push(svg.outerHTML);
+  });
+  return svgBlocks;
+}
+
+function exportPDF(scope){
+  if(!parts.some(p=>p.notes.length)){ alert('Nothing to print yet.'); return; }
+  const partsSubset=scope==='all'?parts:[parts[scope]];
+  if(!partsSubset[0]||!partsSubset.some(p=>p.notes.length)){ alert('Nothing to print yet.'); return; }
+  const title=projects.find(p=>p.id===currentProjId)?.name||'Score';
+  const subtitle=scope==='all'?'Full Score':partsSubset[0].name;
+
+  const savedSel=selectedNote; selectedNote=null; // don't bake the on-screen blue selection into the print
+  let svgBlocks;
+  try{ svgBlocks=buildPrintSystems(partsSubset); }
+  finally{ selectedNote=savedSel; }
+  if(!svgBlocks.length){ alert('Nothing to print yet.'); return; }
+
   const w=window.open('','_blank');
   if(!w){ alert('Allow pop-ups to print.'); return; }
-  w.document.write(`<!DOCTYPE html><html><head><title>${name}</title>
+  const systemsHTML=svgBlocks.map(s=>`<div class="system">${s}</div>`).join('');
+  w.document.write(`<!DOCTYPE html><html><head><title>${title} — ${subtitle}</title>
     <style>
       @page{margin:14mm;}
-      body{font-family:serif;color:#000;margin:0;padding:12px;}
-      h1{font-size:20px;margin:0 0 4px;}
+      body{font-family:serif;color:#000;margin:0 auto;padding:12px;max-width:${PRINT_SYS_W}px;}
+      h1{font-size:20px;margin:0 0 2px;}
+      h2{font-size:13px;font-weight:normal;color:#444;margin:0 0 4px;}
       .meta{font-size:12px;color:#444;margin-bottom:14px;}
-      svg{max-width:100%;height:auto;}
+      .system{break-inside:avoid;page-break-inside:avoid;margin-bottom:6px;}
+      .system svg{max-width:100%;height:auto;display:block;}
     </style></head><body>
-    <h1>${name}</h1>
+    <h1>${title}</h1>
+    <h2>${subtitle}</h2>
     <div class="meta">Key: ${KMAP[currentKeyId]?.label||currentKeyId} &nbsp;·&nbsp; ${currentTimeSig.sig} &nbsp;·&nbsp; ♩ = ${parseInt(document.getElementById('bpm-inp').value)||80}</div>
-    ${clone.outerHTML}
+    ${systemsHTML}
     </body></html>`);
   w.document.close();
   setTimeout(()=>{ w.focus(); w.print(); },350);
