@@ -132,6 +132,7 @@ body { font-family:-apple-system,BlinkMacSystemFont,sans-serif; background:#1212
   <button class="tb stop"  onclick="stopScore()">■</button>
   <button class="tb undo"  onclick="undoNote()">⌫</button>
   <button class="tb clear" onclick="clearAll()">✕</button>
+  <button class="tb" id="copy-toggle-btn" onclick="toggleCopyMode()" style="background:#2a2a40;color:#9bd;">✂</button>
   <div id="bpm-wrap"><span>BPM</span><input type="number" id="bpm-inp" value="80" min="20" max="320"></div>
   <span class="pill" id="proj-pill" onclick="switchTab('proj')">Song</span>
   <span class="pill" id="key-pill" onclick="switchTab('score')">C</span>
@@ -148,6 +149,20 @@ body { font-family:-apple-system,BlinkMacSystemFont,sans-serif; background:#1212
 
 <!-- Notes panel -->
 <div id="panel-notes" class="panel on">
+  <div id="copy-section" style="display:none;background:#0d2f1f;border-radius:8px;padding:5px 7px;margin-bottom:4px;border:1.5px solid #27ae60;">
+    <div class="row">
+      <span id="copy-status" style="font-size:11px;color:#6fcf97;font-weight:700;flex:1"></span>
+      <button class="chip on3" id="copy-btn" onclick="copySelectedRange()" style="font-size:10px;display:none">✓ Copy</button>
+      <button class="chip" onclick="cancelCopyRange()" style="font-size:10px">✗ Cancel</button>
+    </div>
+  </div>
+  <div id="paste-section" style="display:none;background:#0d1f35;border-radius:8px;padding:5px 7px;margin-bottom:4px;border:1.5px solid #2980b9;">
+    <div class="row">
+      <span id="paste-status" style="font-size:11px;color:#5dade2;font-weight:700;flex:1"></span>
+      <button class="chip on2" onclick="pasteClipboard()" style="font-size:10px">📋 Paste</button>
+      <button class="chip" onclick="clearClipboard()" style="font-size:10px">✗ Clear</button>
+    </div>
+  </div>
   <div id="edit-section">
     <div class="row">
       <span style="font-size:9px;color:#2980b9;font-weight:700;flex-shrink:0">SELECTED:</span>
@@ -161,20 +176,30 @@ body { font-family:-apple-system,BlinkMacSystemFont,sans-serif; background:#1212
       <button class="chip" onclick="setSelAcc('n')">♮</button>
       <button class="chip" onclick="deleteSelected()" style="color:#e67e22;border-color:#e67e22;font-size:10px">⇢Rest</button>
     </div>
-    <div class="hint">To add/change a lyric, dynamic, articulation, or tempo mark on this note, open the ✎ Markings tab above.</div>
+    <div class="row">
+      <span style="font-size:9px;color:#2980b9;font-weight:700;flex-shrink:0">LENGTH:</span>
+      <button class="chip" id="sd-w"   onclick="setSelDur('w')"></button>
+      <button class="chip" id="sd-h"   onclick="setSelDur('h')"></button>
+      <button class="chip" id="sd-q"   onclick="setSelDur('q')"></button>
+      <button class="chip" id="sd-8"   onclick="setSelDur('8')"></button>
+      <button class="chip" id="sd-16"  onclick="setSelDur('16')"></button>
+      <button class="chip" id="sd-32"  onclick="setSelDur('32')"></button>
+      <button class="chip" id="sd-dot" onclick="toggleSelDot()" style="font-size:18px">·</button>
+    </div>
+    <div class="hint">To add/change a lyric, dynamic, articulation, or tempo mark on this note, open the ✎ Markings tab above. Changing LENGTH reflows the notes after it — Delete keeps timing by turning this note into a rest instead.</div>
   </div>
   <div class="row">
     <span class="lbl">Dur</span>
-    <button class="chip on" id="d-w"   onclick="setDur('w')"></button>
+    <button class="chip"    id="d-w"   onclick="setDur('w')"></button>
     <button class="chip"    id="d-h"   onclick="setDur('h')"></button>
-    <button class="chip"    id="d-q"   onclick="setDur('q')"></button>
+    <button class="chip on" id="d-q"   onclick="setDur('q')"></button>
     <button class="chip"    id="d-8"   onclick="setDur('8')"></button>
     <button class="chip"    id="d-16"  onclick="setDur('16')"></button>
     <button class="chip"    id="d-32"  onclick="setDur('32')"></button>
     <button class="chip"    id="d-dot" onclick="toggleDot()" style="font-size:18px">·</button>
-    <span class="lbl" style="margin-left:4px">Oct</span>
+    <span class="lbl" style="margin-left:4px">Nudge</span>
     <button class="chip" onclick="changeOct(-1)">−</button>
-    <span id="oct-val" style="font-size:15px;font-weight:700;color:#fff;min-width:14px;text-align:center">4</span>
+    <span id="oct-val" style="font-size:15px;font-weight:700;color:#fff;min-width:20px;text-align:center">±0</span>
     <button class="chip" onclick="changeOct(1)">+</button>
   </div>
   <div class="row">
@@ -186,7 +211,7 @@ body { font-family:-apple-system,BlinkMacSystemFont,sans-serif; background:#1212
     <button class="chip"    id="a-ss" onclick="setAcc('##')" style="font-size:10px">𝄪</button>
     <button class="chip"    id="a-ff" onclick="setAcc('bb')" style="font-size:10px">𝄫</button>
   </div>
-  <div class="hint">Note buttons show the current key's scale in order, tonic first. “Key” enters the in-key pitch; ♯/♭/♮ force an accidental.</div>
+  <div class="hint">Note buttons show the current key's scale in order, tonic first. “Key” enters the in-key pitch; ♯/♭/♮ force an accidental. Each new note lands in the octave closest to the last one you played — use Nudge to shift a note an octave further when that guess isn't what you want.</div>
 </div>
 
 <!-- Parts panel -->
@@ -305,6 +330,13 @@ body { font-family:-apple-system,BlinkMacSystemFont,sans-serif; background:#1212
     </div>
     <div id="grace-pending" style="font-size:10px;color:#e94560;min-height:14px;"></div>
     <div class="hint">Turn this on, tap letters below to queue grace notes (1 tap = flam, 2 = drag, 3 = ruff, or add more), then turn it back off and tap the main note — the queue attaches automatically. <span onclick="clearGraceQueue()" style="color:#e94560;cursor:pointer">Clear queue</span></div>
+
+    <div class="sec" style="margin-top:8px">Sticking</div>
+    <div class="row">
+      <button class="chip" id="stick-0" onclick="setSticking(null)" style="font-size:10px">none</button>
+      <button class="chip" id="stick-R" onclick="setSticking('R')">R</button>
+      <button class="chip" id="stick-L" onclick="setSticking('L')">L</button>
+    </div>
   </div>
 </div>
 
@@ -316,6 +348,18 @@ body { font-family:-apple-system,BlinkMacSystemFont,sans-serif; background:#1212
   <div class="key-minor-grid" id="key-minor-grid"></div>
   <div class="sec">Time signature</div>
   <div class="time-grid" id="time-grid"></div>
+  <div class="sec">Repeats</div>
+  <div class="row">
+    <button class="chip" onclick="toggleRepeatStart()" style="font-size:11px">‖: Start Repeat Here</button>
+    <button class="chip" onclick="toggleRepeatEnd()" style="font-size:11px">:‖ End Repeat Here</button>
+  </div>
+  <div class="hint">Select a note on the staff first — these mark that note's whole measure. Tap again to remove.</div>
+  <div class="row" style="margin-top:4px">
+    <button class="chip" onclick="addMeasureRepeat(1)" style="font-size:11px">% Repeat Last Measure</button>
+    <button class="chip" onclick="addMeasureRepeat(2)" style="font-size:11px">%% Repeat Last 2</button>
+    <button class="chip" onclick="addMeasureRepeat(4)" style="font-size:11px">%%%% Repeat Last 4</button>
+  </div>
+  <div class="hint">Adds a repeat-previous-measure(s) symbol to the active part, in place of writing it out again. Only works right at the start of a new measure.</div>
 </div>
 
 <!-- Files / projects panel -->
@@ -363,6 +407,7 @@ body { font-family:-apple-system,BlinkMacSystemFont,sans-serif; background:#1212
   <button class="nbtn np" onclick="handleScaleBtn(4)">G</button>
   <button class="nbtn np" onclick="handleScaleBtn(5)">A</button>
   <button class="nbtn np" onclick="handleScaleBtn(6)">B</button>
+  <button class="nbtn np" id="hit-btn" onclick="enterPitch('B',null,4,null)" style="display:none;grid-column:span 7">Hit</button>
   <button class="nbtn nr" id="rest-btn" onclick="addRest()"></button>
 </div>
 
@@ -373,33 +418,35 @@ body { font-family:-apple-system,BlinkMacSystemFont,sans-serif; background:#1212
 // Instruments
 // ═══════════════════════════════════════════════════════
 const INSTRUMENTS = [
-  {id:'piano',   label:'Piano',       cat:'Keyboard',  clef:'treble',     osc:'triangle',  env:{a:.01,d:.3,s:.3,r:1},   vol:-6, gm:0},
-  {id:'organ',   label:'Organ',       cat:'Keyboard',  clef:'treble',     osc:'sine4',     env:{a:.02,d:0,s:1,r:.04},   vol:-8, gm:19},
-  {id:'harpsi',  label:'Harpsichord', cat:'Keyboard',  clef:'treble',     osc:'sawtooth',  env:{a:.005,d:.4,s:0,r:.1},  vol:-8, gm:6},
-  {id:'violin',  label:'Violin',      cat:'Strings',   clef:'treble',     osc:'sawtooth4', env:{a:.1,d:.05,s:1,r:.5},   vol:-8, gm:40},
-  {id:'viola',   label:'Viola',       cat:'Strings',   clef:'alto',       osc:'sawtooth4', env:{a:.12,d:.05,s:1,r:.5},  vol:-8, gm:41},
-  {id:'cello',   label:'Cello',       cat:'Strings',   clef:'bass',       osc:'sawtooth4', env:{a:.14,d:.05,s:1,r:.6},  vol:-8, gm:42},
-  {id:'dbass',   label:'Dbl Bass',    cat:'Strings',   clef:'bass',       osc:'sawtooth2', env:{a:.15,d:.1,s:.9,r:.7},  vol:-6, gm:43},
-  {id:'flute',   label:'Flute',       cat:'Woodwinds', clef:'treble',     osc:'sine',      env:{a:.06,d:.05,s:.9,r:.4}, vol:-10, gm:73},
-  {id:'oboe',    label:'Oboe',        cat:'Woodwinds', clef:'treble',     osc:'sawtooth8', env:{a:.04,d:.1,s:.85,r:.3}, vol:-10, gm:68},
-  {id:'clarinet',label:'Clarinet',    cat:'Woodwinds', clef:'treble',     osc:'square',    env:{a:.04,d:.05,s:.85,r:.35},vol:-10, gm:71},
-  {id:'bassoon', label:'Bassoon',     cat:'Woodwinds', clef:'bass',       osc:'sawtooth',  env:{a:.08,d:.1,s:.85,r:.5}, vol:-8, gm:70},
-  {id:'sax',     label:'Saxophone',   cat:'Woodwinds', clef:'treble',     osc:'sawtooth8', env:{a:.05,d:.1,s:.9,r:.4},  vol:-8, gm:65},
-  {id:'trumpet', label:'Trumpet',     cat:'Brass',     clef:'treble',     osc:'square',    env:{a:.04,d:.1,s:.85,r:.3}, vol:-8, gm:56},
-  {id:'horn',    label:'Fr. Horn',    cat:'Brass',     clef:'treble',     osc:'triangle8', env:{a:.1,d:.1,s:.8,r:.6},   vol:-8, gm:60},
-  {id:'trombone',label:'Trombone',    cat:'Brass',     clef:'bass',       osc:'sawtooth',  env:{a:.06,d:.1,s:.85,r:.5}, vol:-8, gm:57},
-  {id:'tuba',    label:'Tuba',        cat:'Brass',     clef:'bass',       osc:'square',    env:{a:.08,d:.1,s:.85,r:.6}, vol:-6, gm:58},
-  {id:'soprano', label:'Soprano',     cat:'Vocal',     clef:'treble',     osc:'sine',      env:{a:.1,d:.1,s:.9,r:.8},   vol:-8, gm:52},
-  {id:'mezzo',   label:'Mezzo',       cat:'Vocal',     clef:'treble',     osc:'sine',      env:{a:.1,d:.1,s:.88,r:.8},  vol:-8, gm:52},
-  {id:'altov',   label:'Alto',        cat:'Vocal',     clef:'treble',     osc:'sine',      env:{a:.1,d:.1,s:.85,r:.8},  vol:-8, gm:53},
-  {id:'tenorv',  label:'Tenor',       cat:'Vocal',     clef:'treble',     osc:'triangle',  env:{a:.08,d:.1,s:.85,r:.7}, vol:-8, gm:53},
-  {id:'baritonev',label:'Baritone',   cat:'Vocal',     clef:'bass',       osc:'triangle',  env:{a:.09,d:.1,s:.85,r:.8}, vol:-8, gm:53},
-  {id:'bassv',   label:'Bass Voice',  cat:'Vocal',     clef:'bass',       osc:'triangle',  env:{a:.1,d:.1,s:.85,r:.8},  vol:-8, gm:53},
-  {id:'timpani', label:'Timpani',     cat:'Percussion',clef:'bass',       osc:'membrane',  env:{a:.001,d:.5,s:0,r:.5},  vol:-4, gm:47},
-  {id:'xyloph',  label:'Xylophone',   cat:'Percussion',clef:'treble',     osc:'fm',        env:{a:.001,d:.3,s:0,r:.1},  vol:-8, gm:13},
-  {id:'marimba', label:'Marimba',     cat:'Percussion',clef:'treble',     osc:'fm',        env:{a:.001,d:.6,s:0,r:.2},  vol:-6, gm:12},
-  {id:'snare',   label:'Snare',       cat:'Percussion',clef:'percussion', osc:'noise',     env:{a:.001,d:.2,s:0,r:.1},  vol:-6, unpitched:true, gm:0},
-  {id:'bassdrum',label:'Bass Drum',   cat:'Percussion',clef:'percussion', osc:'membrane',  env:{a:.001,d:.4,s:0,r:.2},  vol:-4, unpitched:true, gm:0},
+  {id:'piano',   label:'Piano',       cat:'Keyboard',  clef:'treble',     osc:'triangle',  env:{a:.01,d:.3,s:.3,r:1},   vol:-6, gm:0,  defaultOct:4},
+  {id:'organ',   label:'Organ',       cat:'Keyboard',  clef:'treble',     osc:'sine4',     env:{a:.02,d:0,s:1,r:.04},   vol:-8, gm:19, defaultOct:4},
+  {id:'harpsi',  label:'Harpsichord', cat:'Keyboard',  clef:'treble',     osc:'sawtooth',  env:{a:.005,d:.4,s:0,r:.1},  vol:-8, gm:6,  defaultOct:4},
+  {id:'violin',  label:'Violin',      cat:'Strings',   clef:'treble',     osc:'sawtooth4', env:{a:.1,d:.05,s:1,r:.5},   vol:-8, gm:40, defaultOct:4},
+  {id:'viola',   label:'Viola',       cat:'Strings',   clef:'alto',       osc:'sawtooth4', env:{a:.12,d:.05,s:1,r:.5},  vol:-8, gm:41, defaultOct:4},
+  {id:'cello',   label:'Cello',       cat:'Strings',   clef:'bass',       osc:'sawtooth4', env:{a:.14,d:.05,s:1,r:.6},  vol:-8, gm:42, defaultOct:3},
+  {id:'dbass',   label:'Dbl Bass',    cat:'Strings',   clef:'bass',       osc:'sawtooth2', env:{a:.15,d:.1,s:.9,r:.7},  vol:-6, gm:43, defaultOct:2},
+  {id:'flute',   label:'Flute',       cat:'Woodwinds', clef:'treble',     osc:'sine',      env:{a:.06,d:.05,s:.9,r:.4}, vol:-10, gm:73, defaultOct:5},
+  {id:'oboe',    label:'Oboe',        cat:'Woodwinds', clef:'treble',     osc:'sawtooth8', env:{a:.04,d:.1,s:.85,r:.3}, vol:-10, gm:68, defaultOct:4},
+  {id:'clarinet',label:'Clarinet',    cat:'Woodwinds', clef:'treble',     osc:'square',    env:{a:.04,d:.05,s:.85,r:.35},vol:-10, gm:71, defaultOct:4},
+  {id:'bassoon', label:'Bassoon',     cat:'Woodwinds', clef:'bass',       osc:'sawtooth',  env:{a:.08,d:.1,s:.85,r:.5}, vol:-8, gm:70, defaultOct:3},
+  {id:'sax',     label:'Saxophone',   cat:'Woodwinds', clef:'treble',     osc:'sawtooth8', env:{a:.05,d:.1,s:.9,r:.4},  vol:-8, gm:65, defaultOct:4},
+  {id:'trumpet', label:'Trumpet',     cat:'Brass',     clef:'treble',     osc:'square',    env:{a:.04,d:.1,s:.85,r:.3}, vol:-8, gm:56, defaultOct:4},
+  {id:'horn',    label:'Fr. Horn',    cat:'Brass',     clef:'treble',     osc:'triangle8', env:{a:.1,d:.1,s:.8,r:.6},   vol:-8, gm:60, defaultOct:3},
+  {id:'trombone',label:'Trombone',    cat:'Brass',     clef:'bass',       osc:'sawtooth',  env:{a:.06,d:.1,s:.85,r:.5}, vol:-8, gm:57, defaultOct:3},
+  {id:'tuba',    label:'Tuba',        cat:'Brass',     clef:'bass',       osc:'square',    env:{a:.08,d:.1,s:.85,r:.6}, vol:-6, gm:58, defaultOct:2},
+  {id:'soprano', label:'Soprano',     cat:'Vocal',     clef:'treble',     osc:'sine',      env:{a:.1,d:.1,s:.9,r:.8},   vol:-8, gm:52, defaultOct:4},
+  {id:'mezzo',   label:'Mezzo',       cat:'Vocal',     clef:'treble',     osc:'sine',      env:{a:.1,d:.1,s:.88,r:.8},  vol:-8, gm:52, defaultOct:4},
+  {id:'altov',   label:'Alto',        cat:'Vocal',     clef:'treble',     osc:'sine',      env:{a:.1,d:.1,s:.85,r:.8},  vol:-8, gm:53, defaultOct:4},
+  {id:'tenorv',  label:'Tenor',       cat:'Vocal',     clef:'treble',     osc:'triangle',  env:{a:.08,d:.1,s:.85,r:.7}, vol:-8, gm:53, defaultOct:3},
+  {id:'baritonev',label:'Baritone',   cat:'Vocal',     clef:'bass',       osc:'triangle',  env:{a:.09,d:.1,s:.85,r:.8}, vol:-8, gm:53, defaultOct:3},
+  {id:'bassv',   label:'Bass Voice',  cat:'Vocal',     clef:'bass',       osc:'triangle',  env:{a:.1,d:.1,s:.85,r:.8},  vol:-8, gm:53, defaultOct:2},
+  {id:'timpani', label:'Timpani',     cat:'Percussion',clef:'bass',       osc:'membrane',  env:{a:.001,d:.5,s:0,r:.5},  vol:-4, gm:47, defaultOct:3},
+  {id:'xyloph',  label:'Xylophone',   cat:'Percussion',clef:'treble',     osc:'fm',        env:{a:.001,d:.3,s:0,r:.1},  vol:-8, gm:13, defaultOct:5},
+  {id:'marimba', label:'Marimba',     cat:'Percussion',clef:'treble',     osc:'fm',        env:{a:.001,d:.6,s:0,r:.2},  vol:-6, gm:12, defaultOct:4},
+  {id:'snare',   label:'Snare',       cat:'Percussion',clef:'percussion', osc:'noise',     env:{a:.001,d:.2,s:0,r:.1},  vol:-6, unpitched:true, gm:0, staffLines:1, defaultOct:4},
+  {id:'bassdrum',label:'Bass Drum',   cat:'Percussion',clef:'percussion', osc:'membrane',  env:{a:.001,d:.4,s:0,r:.2},  vol:-4, unpitched:true, gm:0, staffLines:1, defaultOct:4},
+  {id:'tenordrum',label:'Tenor Drum', cat:'Percussion',clef:'percussion', osc:'membrane',  env:{a:.001,d:.35,s:0,r:.15},vol:-4, pitchedDrum:true, gm:0, defaultOct:4},
+  {id:'marchbass',label:'Marching Bass',cat:'Percussion',clef:'percussion', osc:'membrane',env:{a:.001,d:.5,s:0,r:.2},  vol:-4, pitchedDrum:true, gm:0, defaultOct:3},
 ];
 const IMAP = Object.fromEntries(INSTRUMENTS.map(i=>[i.id,i]));
 const CATS  = [...new Set(INSTRUMENTS.map(i=>i.cat))];
@@ -497,8 +544,8 @@ let parts=[mkPart('Treble','piano','treble'), mkPart('Bass','piano','bass')];
 let apIdx=0;
 
 let currentKeyId='C';
-let selDur='w', selAcc='key', selOct=4, dotted=false;
-let pendingLyric='', pendingDyn=null, pendingArts=[], pendingTempo=null, pendingRud=null;
+let selDur='q', selAcc='key', selOct=0, dotted=false;
+let pendingLyric='', pendingDyn=null, pendingArts=[], pendingTempo=null, pendingRud=null, pendingSticking=null;
 let graceMode=false, graceDur='8', pendingGraceNotes=[];
 let hairpinPending=null;
 let chordBuildMode=false;
@@ -509,9 +556,19 @@ let newInstId=null;
 let notePositions=[];
 let selectedNote=null;
 let measureXs=[], measureBeats=[];
+// Repeats are a whole-piece structural property (the ensemble repeats
+// together), not per-part — measure indices where a repeat barline draws.
+let repeatStartMeasures=[], repeatEndMeasures=[];
+// Copy/paste: copyRangeSel tracks the in-progress tap-start/tap-end range
+// pick; clipboard holds the last copied notes (persists across part
+// switches so you can paste into a different staff, and across pastes).
+let copyMode=false, copyRangeSel=null, clipboard=null;
 
 const BV={w:4,h:2,q:1,'8':.5,'16':.25,'32':.125};
 function durBeats(dur){const b=dur.replace(/[dr]/g,''),dot=dur.includes('d');return(BV[b]??1)*(dot?1.5:1);}
+// A measure-repeat marker always fills exactly one measure, regardless of
+// time signature — it has no meaningful `dur` string of its own.
+function noteBeats(n){ return n.repeatBars ? currentTimeSig.beats : durBeats(n.dur); }
 
 // ═══════════════════════════════════════════════════════
 // Duration / rest SVG icons
@@ -544,6 +601,9 @@ function durIcon(base, isRest, dot){
 }
 function refreshDurIcons(){
   [['w','d-w'],['h','d-h'],['q','d-q'],['8','d-8'],['16','d-16'],['32','d-32']].forEach(([b,id])=>{
+    document.getElementById(id).innerHTML=durIcon(b,false,false);
+  });
+  [['w','sd-w'],['h','sd-h'],['q','sd-q'],['8','sd-8'],['16','sd-16'],['32','sd-32']].forEach(([b,id])=>{
     document.getElementById(id).innerHTML=durIcon(b,false,false);
   });
   document.getElementById('rest-btn').innerHTML=durIcon(selDur,true,dotted);
@@ -644,6 +704,15 @@ function renderPartsList(){
     row.onclick=()=>{apIdx=i;renderPartsList();};
     ul.appendChild(row);
   });
+  refreshNoteGridForActivePart();
+}
+// Single-line drums (Snare, Bass Drum) have no real pitch to pick between —
+// swap the 7-letter movable-do grid for one big "Hit" button.
+function refreshNoteGridForActivePart(){
+  const inst=IMAP[parts[apIdx]?.instId]||IMAP.piano;
+  const single=inst.staffLines===1;
+  document.querySelectorAll('#note-grid .np').forEach(b=>{ if(b.id!=='hit-btn') b.style.display=single?'none':''; });
+  document.getElementById('hit-btn').style.display=single?'':'none';
 }
 
 // ═══════════════════════════════════════════════════════
@@ -679,13 +748,32 @@ function switchSubTab(name){
 // ═══════════════════════════════════════════════════════
 function setDur(d){selDur=d;['w','h','q','8','16','32'].forEach(x=>document.getElementById('d-'+x).classList.toggle('on',x===d));document.getElementById('rest-btn').innerHTML=durIcon(selDur,true,dotted);}
 function toggleDot(){dotted=!dotted;document.getElementById('d-dot').classList.toggle('on',dotted);document.getElementById('rest-btn').innerHTML=durIcon(selDur,true,dotted);}
+// Change the LENGTH of an already-placed note (reflows everything after it) —
+// distinct from deleteSelected(), which preserves rhythmic position via a rest.
+function setSelDur(base){
+  const n=selectedNoteAny();
+  if(!n)return;
+  n.dur=base+(n.dur.includes('d')?'d':'')+(n.rest?'r':'');
+  render(); updateSelectionUI();
+}
+function toggleSelDot(){
+  const n=selectedNoteAny();
+  if(!n)return;
+  n.dur = n.dur.includes('d') ? n.dur.replace('d','') : n.dur.replace(/r?$/,'d$&');
+  render(); updateSelectionUI();
+}
+function highlightSelDur(n){
+  const base=n?n.dur.replace(/[dr]/g,''):null;
+  ['w','h','q','8','16','32'].forEach(x=>document.getElementById('sd-'+x).classList.toggle('on',x===base));
+  document.getElementById('sd-dot').classList.toggle('on', !!(n&&n.dur.includes('d')));
+}
 function setAcc(a){
   selAcc=a;
   const m={'key':'a-key','n':'a-n','#':'a-s','b':'a-f','##':'a-ss','bb':'a-ff'};
   Object.values(m).forEach(id=>document.getElementById(id).classList.remove('on'));
   if(m[a])document.getElementById(m[a]).classList.add('on');
 }
-function changeOct(d){selOct=Math.max(0,Math.min(8,selOct+d));document.getElementById('oct-val').textContent=selOct;}
+function changeOct(d){selOct=Math.max(-3,Math.min(3,selOct+d));document.getElementById('oct-val').textContent=(selOct>0?'+':selOct<0?'':'±')+selOct;}
 
 // If a (non-rest) note is selected on the staff, Markings edits apply to it directly;
 // otherwise they're "pending" and get attached to the next note entered.
@@ -693,6 +781,12 @@ function currentEditableNote(){
   if(!selectedNote)return null;
   const n=parts[selectedNote.partIdx]?.notes[selectedNote.noteIdx];
   return (n && !n.rest) ? n : null;
+}
+// Unlike currentEditableNote(), includes rests — duration editing makes sense
+// for a rest too, unlike pitch/marking edits.
+function selectedNoteAny(){
+  if(!selectedNote)return null;
+  return parts[selectedNote.partIdx]?.notes[selectedNote.noteIdx]||null;
 }
 function highlightDyn(d){document.querySelectorAll('.dyn-btn').forEach(b=>b.classList.remove('on'));const el=d?document.getElementById('dyn-'+d):document.getElementById('dyn-0');if(el)el.classList.add('on');}
 // Articulations are multi-select — a note can carry accent + staccato + tenuto etc at once.
@@ -715,12 +809,17 @@ function highlightRud(v){
   const id=RUD_BTN_ID[v];
   document.getElementById(id||'rud-0').classList.add('on');
 }
+function highlightSticking(v){
+  document.querySelectorAll('#sub-rud .chip').forEach(b=>{ if(b.id&&b.id.startsWith('stick-'))b.classList.remove('on'); });
+  document.getElementById(v?'stick-'+v:'stick-0').classList.add('on');
+}
 function syncEditorsToSelection(){
   const n=currentEditableNote();
   highlightDyn(n?n.dyn:pendingDyn);
   highlightArts(n?n.arts:pendingArts);
   highlightTempo(n?n.tempo:pendingTempo);
   highlightRud(n?n.rud:pendingRud);
+  highlightSticking(n?n.sticking:pendingSticking);
   const li=document.getElementById('lyric-inp');
   if(li && document.activeElement!==li) li.value=(n?n.lyric:null)||'';
 }
@@ -733,6 +832,11 @@ function setRud(v){
   const n=currentEditableNote();
   if(n){ n.rud=v; render(); updateSelectionUI(); return; }
   pendingRud=v; highlightRud(v);
+}
+function setSticking(v){
+  const n=currentEditableNote();
+  if(n){ n.sticking=v; render(); updateSelectionUI(); return; }
+  pendingSticking=v; highlightSticking(v);
 }
 function toggleArt(a){
   const n=currentEditableNote();
@@ -816,12 +920,12 @@ function toggleChordMode(){
 function cancelChord(){pendingChordNotes=[];updatePendingDisplay();}
 function commitChord(){
   if(!pendingChordNotes.length)return;
-  const {lyric,dyn,arts,tempo,rud,grace}=grabPending();
+  const {lyric,dyn,arts,tempo,rud,grace,sticking}=grabPending();
   parts[apIdx].notes.push({
     keys:pendingChordNotes.map(n=>n.name+'/'+n.oct),
     dur:buildDur(), vfAccs:pendingChordNotes.map(n=>n.vfAcc??n.acc),
     midiVals:pendingChordNotes.map(n=>n.midi),
-    rest:false,lyric,dyn,arts,tempo,rud,grace
+    rest:false,lyric,dyn,arts,tempo,rud,grace,sticking
   });
   pendingChordNotes=[];updatePendingDisplay();
   pendingGraceNotes=[];updateGracePendingDisplay();
@@ -858,19 +962,21 @@ function renderDiatonicChords(){
 }
 
 function enterDiatonicChord(deg,kd,seventh=false){
-  const tones=buildChordTones(deg,kd.scale,selOct,seventh);
+  const [rootName,rootAcc]=kd.scale[deg];
+  const rootOct=nearestOctaveMidi(rootName,rootAcc,getEntryAnchorMidi(parts[apIdx]))+selOct;
+  const tones=buildChordTones(deg,kd.scale,rootOct,seventh);
   if(chordBuildMode){
     tones.forEach(t=>pendingChordNotes.push({...t,vfAcc:null}));
     updatePendingDisplay();
     return;
   }
-  const {lyric,dyn,arts,tempo,rud,grace}=grabPending();
+  const {lyric,dyn,arts,tempo,rud,grace,sticking}=grabPending();
   parts[apIdx].notes.push({
     keys:tones.map(t=>t.name+'/'+t.oct),
     dur:buildDur(),
     vfAccs:tones.map(()=>null),
     midiVals:tones.map(t=>t.midi),
-    rest:false,lyric,dyn,arts,tempo,rud,grace
+    rest:false,lyric,dyn,arts,tempo,rud,grace,sticking
   });
   selectedNote=null;
   pendingGraceNotes=[];updateGracePendingDisplay();
@@ -884,12 +990,18 @@ function buildDur(rest=false){return selDur+(dotted?'d':'')+(rest?'r':'');}
 function grabPending(){
   return{
     lyric:document.getElementById('lyric-inp').value.trim()||null,
-    dyn:pendingDyn,arts:pendingArts.slice(),tempo:pendingTempo,rud:pendingRud,
+    dyn:pendingDyn,arts:pendingArts.slice(),tempo:pendingTempo,rud:pendingRud,sticking:pendingSticking,
     grace:pendingGraceNotes.map(g=>({keys:[g.name+'/'+g.oct],dur:g.dur,vfAcc:g.vfAcc??g.acc}))
   };
 }
 
+// Single-line percussion (Snare, Bass Drum) has no real pitch to choose —
+// every hit renders at the same fixed spot on the one visible line,
+// regardless of entry path (grid button, MIDI keyboard, etc).
+const SINGLE_LINE_KEY={name:'B',acc:null,oct:4};
 function enterPitch(name, acc, oct, vfAcc){
+  const activeInst=IMAP[parts[apIdx]?.instId]||IMAP.piano;
+  if(activeInst.staffLines===1){ ({name,acc,oct}=SINGLE_LINE_KEY); vfAcc=null; }
   const midi=noteToMidi(name,acc,oct);
   if(chordBuildMode){
     pendingChordNotes.push({name,acc,oct,midi,vfAcc});
@@ -901,24 +1013,31 @@ function enterPitch(name, acc, oct, vfAcc){
     updateGracePendingDisplay();
     return;
   }
-  const {lyric,dyn,arts,tempo,rud,grace}=grabPending();
-  parts[apIdx].notes.push({keys:[name+'/'+oct],dur:buildDur(),vfAccs:[vfAcc],midiVals:[midi],rest:false,lyric,dyn,arts,tempo,rud,grace});
+  const {lyric,dyn,arts,tempo,rud,grace,sticking}=grabPending();
+  parts[apIdx].notes.push({keys:[name+'/'+oct],dur:buildDur(),vfAccs:[vfAcc],midiVals:[midi],rest:false,lyric,dyn,arts,tempo,rud,grace,sticking});
   selectedNote=null;
   pendingGraceNotes=[];updateGracePendingDisplay();
   render();scrollToNoteEnd(apIdx);
 }
 
-// Scale degrees ascend by letter from the tonic; once the letter cycle wraps
-// past B back to C the pitch class drops, so bump the octave at that point.
-function scaleDegreeOct(kd, deg, baseOct){
-  let oct=baseOct, prevPc=null;
-  for(let i=0;i<=deg;i++){
-    const [n,a]=kd.scale[i];
-    const pc=((NOTE_SEMI[n]+accSemi(a))+120)%12;
-    if(prevPc!==null && pc<=prevPc) oct++;
-    prevPc=pc;
+// Anchor for octave placement: the last real note entered in this part, or
+// (if the part is still empty) the instrument's idiomatic default register.
+function getEntryAnchorMidi(part){
+  const prev=[...part.notes].reverse().find(n=>!n.rest&&(n.midiVals||[]).length);
+  if(prev) return prev.midiVals[prev.midiVals.length-1];
+  const inst=IMAP[part.instId]||IMAP.piano;
+  return noteToMidi('C',null,inst.defaultOct??4);
+}
+// Picks whichever octave (anchor's octave, or one above/below) puts (name,acc)
+// closest in pitch to the anchor — e.g. anchor=B4, next letter C -> C5, not C4.
+function nearestOctaveMidi(name,acc,anchorMidi){
+  const anchorOct=Math.floor(anchorMidi/12)-1;
+  let bestOct=anchorOct,bestDist=Infinity;
+  for(let o=anchorOct-1;o<=anchorOct+1;o++){
+    const d=Math.abs(noteToMidi(name,acc,o)-anchorMidi);
+    if(d<bestDist){bestDist=d;bestOct=o;}
   }
-  return oct;
+  return bestOct;
 }
 function relabelNoteButtons(){
   const kd=KMAP[currentKeyId];
@@ -931,11 +1050,11 @@ function relabelNoteButtons(){
 function handleScaleBtn(deg){
   const kd=KMAP[currentKeyId];
   const [letter, scaleAcc]=kd.scale[deg];
-  const oct=scaleDegreeOct(kd, deg, selOct);
   let acc, vfAcc;
   if(selAcc==='key'){ acc=scaleAcc; vfAcc=null; }        // key sig draws it
   else if(selAcc==='n'){ acc=null; vfAcc='n'; }            // force natural
   else { acc=selAcc; vfAcc=selAcc; }                       // #, b, ##, bb
+  const oct=nearestOctaveMidi(letter,acc,getEntryAnchorMidi(parts[apIdx]))+selOct;
   enterPitch(letter, acc, oct, vfAcc);
 }
 
@@ -967,12 +1086,13 @@ function clearAll(){
 // ═══════════════════════════════════════════════════════
 function updateSelectionUI(){
   const sec=document.getElementById('edit-section');
-  if(!selectedNote){sec.style.display='none';syncEditorsToSelection();return;}
+  if(!selectedNote){sec.style.display='none';highlightSelDur(null);syncEditorsToSelection();return;}
   const n=parts[selectedNote.partIdx]?.notes[selectedNote.noteIdx];
-  if(!n){sec.style.display='none';syncEditorsToSelection();return;}
+  if(!n){sec.style.display='none';highlightSelDur(null);syncEditorsToSelection();return;}
   sec.style.display='block';
   const label=n.rest?'Rest':(n.keys||[]).map((k,i)=>{const[name,oct]=k.split('/');const acc=n.vfAccs?.[i];return name+(acc&&acc!=='n'?acc:'')+oct;}).join(' ');
   document.getElementById('sel-note-label').textContent=label;
+  highlightSelDur(n);
   syncEditorsToSelection();
 }
 
@@ -1004,9 +1124,81 @@ function deleteSelected(){
   if(!selectedNote)return;
   const p=parts[selectedNote.partIdx]; const n=p?.notes[selectedNote.noteIdx]; if(!n)return;
   const clef=p.clef||(IMAP[p.instId]?.clef)||'treble';
-  n.rest=true; n.midiVals=[]; n.keys=[clef==='bass'?'d/3':'b/4']; n.vfAccs=[null]; n.arts=[]; n.lyric=null; n.rud=null; n.grace=[];
+  n.rest=true; n.midiVals=[]; n.keys=[clef==='bass'?'d/3':'b/4']; n.vfAccs=[null]; n.arts=[]; n.lyric=null; n.rud=null; n.grace=[]; n.sticking=null;
   render(); updateSelectionUI();
 }
+
+// Copy/paste: tap a start note then an end note (same part) to pick a
+// contiguous range; a 3rd tap starts a fresh range. All per-note fields
+// (pitch, duration, dyn/arts/tempo/lyric/rud/grace/sticking) travel with the
+// copy via deep-clone; hairpins (a part-level index range, not a per-note
+// field) are not included — a documented gap, not a silent drop.
+function toggleCopyMode(){
+  copyMode=!copyMode;
+  copyRangeSel=null;
+  if(copyMode) selectedNote=null; // avoid showing both the edit panel and the copy panel at once
+  document.getElementById('copy-toggle-btn').style.background=copyMode?'#27ae60':'#2a2a40';
+  document.getElementById('copy-toggle-btn').style.color=copyMode?'#fff':'#9bd';
+  render(); updateSelectionUI(); updateCopyUI();
+}
+function pickCopyRangeNote(partIdx,noteIdx){
+  if(!copyRangeSel||copyRangeSel.partIdx!==partIdx||copyRangeSel.complete){
+    copyRangeSel={partIdx,anchor:noteIdx,startIdx:noteIdx,endIdx:noteIdx,complete:false};
+  } else {
+    copyRangeSel.startIdx=Math.min(copyRangeSel.anchor,noteIdx);
+    copyRangeSel.endIdx=Math.max(copyRangeSel.anchor,noteIdx);
+    copyRangeSel.complete=true;
+  }
+  render(); updateCopyUI();
+}
+function updateCopyUI(){
+  const sec=document.getElementById('copy-section');
+  if(!copyMode){ sec.style.display='none'; return; }
+  sec.style.display='block';
+  const status=document.getElementById('copy-status');
+  const copyBtn=document.getElementById('copy-btn');
+  if(!copyRangeSel){
+    status.textContent='Tap the first note of the range.';
+    copyBtn.style.display='none';
+  } else if(!copyRangeSel.complete){
+    status.textContent='Tap the last note of the range (or the same note again for just one).';
+    copyBtn.style.display='none';
+  } else {
+    const n=copyRangeSel.endIdx-copyRangeSel.startIdx+1;
+    status.textContent=n+(n===1?' note':' notes')+' selected.';
+    copyBtn.style.display='inline-flex';
+  }
+}
+function copySelectedRange(){
+  if(!copyRangeSel||!copyRangeSel.complete)return;
+  const {partIdx,startIdx,endIdx}=copyRangeSel;
+  clipboard=JSON.parse(JSON.stringify(parts[partIdx].notes.slice(startIdx,endIdx+1)));
+  copyMode=false; copyRangeSel=null;
+  document.getElementById('copy-toggle-btn').style.background='#2a2a40';
+  document.getElementById('copy-toggle-btn').style.color='#9bd';
+  render(); updateCopyUI(); updatePasteUI();
+}
+function cancelCopyRange(){
+  copyMode=false; copyRangeSel=null;
+  document.getElementById('copy-toggle-btn').style.background='#2a2a40';
+  document.getElementById('copy-toggle-btn').style.color='#9bd';
+  render(); updateCopyUI();
+}
+function updatePasteUI(){
+  const sec=document.getElementById('paste-section');
+  if(!clipboard){ sec.style.display='none'; return; }
+  sec.style.display='block';
+  document.getElementById('paste-status').textContent='Clipboard: '+clipboard.length+(clipboard.length===1?' note':' notes')+' — select where to paste, or leave nothing selected to append.';
+}
+function pasteClipboard(){
+  if(!clipboard||!clipboard.length)return;
+  const part=parts[apIdx];
+  const insertAt=(selectedNote&&selectedNote.partIdx===apIdx)?selectedNote.noteIdx:part.notes.length;
+  part.notes.splice(insertAt,0,...JSON.parse(JSON.stringify(clipboard)));
+  selectedNote=null;
+  render(); updateSelectionUI(); scrollToNoteEnd(apIdx);
+}
+function clearClipboard(){ clipboard=null; updatePasteUI(); }
 
 document.getElementById('score-wrap').addEventListener('click', e=>{
   const scoreDiv=document.getElementById('score-div');
@@ -1018,6 +1210,10 @@ document.getElementById('score-wrap').addEventListener('click', e=>{
     const midY=pos.y+(pos.h*0.45);
     const dist=Math.sqrt(dx*dx+(cy-midY)*(cy-midY));
     if(dist<bestDist){bestDist=dist;best=pos;}
+  }
+  if(copyMode){
+    if(best) pickCopyRangeNote(best.partIdx,best.noteIdx);
+    return;
   }
   if(best){
     selectedNote={partIdx:best.partIdx,noteIdx:best.noteIdx};
@@ -1033,9 +1229,46 @@ document.getElementById('score-wrap').addEventListener('click', e=>{
 function toMeasures(notes){
   const BMAX=currentTimeSig.beats;
   const ms=[]; let cur=[],beats=0;
-  for(const n of notes){cur.push(n);beats+=durBeats(n.dur);if(beats>=BMAX-.001){ms.push(cur);cur=[];beats=0;}}
+  for(const n of notes){cur.push(n);beats+=noteBeats(n);if(beats>=BMAX-.001){ms.push(cur);cur=[];beats=0;}}
   if(cur.length)ms.push(cur);
   return ms;
+}
+// Which measure (0-based) a given note index in a part falls into.
+function measureIndexOfNote(partIdx, noteIdx){
+  const notes=parts[partIdx]?.notes||[];
+  const BMAX=currentTimeSig.beats;
+  let mi=0, beats=0;
+  for(let i=0;i<noteIdx;i++){
+    beats+=noteBeats(notes[i]);
+    if(beats>=BMAX-.001){ mi++; beats=0; }
+  }
+  return mi;
+}
+function toggleRepeatStart(){
+  if(!selectedNote){ alert('Select a note first to mark its measure.'); return; }
+  const mi=measureIndexOfNote(selectedNote.partIdx, selectedNote.noteIdx);
+  const idx=repeatStartMeasures.indexOf(mi);
+  if(idx>=0) repeatStartMeasures.splice(idx,1); else repeatStartMeasures.push(mi);
+  render();
+}
+function toggleRepeatEnd(){
+  if(!selectedNote){ alert('Select a note first to mark its measure.'); return; }
+  const mi=measureIndexOfNote(selectedNote.partIdx, selectedNote.noteIdx);
+  const idx=repeatEndMeasures.indexOf(mi);
+  if(idx>=0) repeatEndMeasures.splice(idx,1); else repeatEndMeasures.push(mi);
+  render();
+}
+// A measure-repeat ("simile") symbol replaces an entire measure's content —
+// only valid to insert right at a fresh measure boundary.
+function addMeasureRepeat(n){
+  const part=parts[apIdx];
+  const BMAX=currentTimeSig.beats;
+  let beats=0;
+  part.notes.forEach(nn=>{ beats+=noteBeats(nn); if(beats>=BMAX-.001) beats=0; });
+  if(beats>0.001){ alert('You can only add a measure repeat at the start of a new measure.'); return; }
+  part.notes.push({repeatBars:n, rest:false, keys:['b/4'], midiVals:[], dur:'w', vfAccs:[null], lyric:null, dyn:null, arts:[], tempo:null, rud:null, grace:[], sticking:null});
+  selectedNote=null;
+  render(); scrollToNoteEnd(apIdx);
 }
 
 const BASE_MW=190, PX_PER_NOTE=46, FX=115, PG=90, TP=22;
@@ -1054,7 +1287,7 @@ function calcMW(allM, mi){
 // ═══════════════════════════════════════════════════════
 function render(){
   const VF=Vex.Flow;
-  const{Renderer,Stave,StaveNote,Voice,Formatter,Accidental,StaveConnector,Beam,Annotation,Articulation,StaveHairpin,Dot}=VF;
+  const{Renderer,Stave,StaveNote,Voice,Formatter,Accidental,StaveConnector,Beam,Annotation,Articulation,StaveHairpin,Dot,Barline}=VF;
   const div=document.getElementById('score-div');
   div.innerHTML='';
   notePositions=[];
@@ -1071,7 +1304,7 @@ function render(){
   // Per-measure duration (beats), used by playScore() to time the playback auto-scroll.
   measureBeats=Array.from({length:numM},(_,mi)=>{
     let mx=0;
-    allM.forEach(pm=>{ const arr=pm[mi]||[]; const b=arr.reduce((s,n)=>s+durBeats(n.dur),0); if(b>mx)mx=b; });
+    allM.forEach(pm=>{ const arr=pm[mi]||[]; const b=arr.reduce((s,n)=>s+noteBeats(n),0); if(b>mx)mx=b; });
     return mx||currentTimeSig.beats;
   });
   measureXs=[];
@@ -1094,7 +1327,10 @@ function render(){
       const cl=p.clef||(inst.clef==='percussion'?'percussion':(inst.clef||'treble'));
       const sy=TP+pi*PG;
       const st=new Stave(x,sy,mw);
+      if(inst.staffLines)st.setNumLines(inst.staffLines);
       if(first){ st.addClef(cl).addKeySignature(kd.vfSig).addTimeSignature(currentTimeSig.sig); }
+      if(repeatStartMeasures.includes(mi))st.setBegBarType(Barline.type.REPEAT_BEGIN);
+      if(repeatEndMeasures.includes(mi))st.setEndBarType(Barline.type.REPEAT_END);
       st.setContext(ctx).draw();
       return st;
     });
@@ -1158,19 +1394,25 @@ function scrollToMeasure(mi){
 }
 
 function drawVoice(ctx,stave,noteData,mw,VF,partIdx,partOffset){
-  const{StaveNote,Voice,Formatter,Accidental,Beam,Annotation,Articulation,Dot,Tremolo,Ornament,GraceNote,GraceNoteGroup}=VF;
+  const{StaveNote,Voice,Formatter,Accidental,Beam,Annotation,Articulation,Dot,Tremolo,Ornament,GraceNote,GraceNoteGroup,RepeatNote}=VF;
   if(!noteData.length)return[];
   let vfNotes;
   try{
     vfNotes=noteData.map((n,li)=>{
       const globalIdx=partOffset+li;
+      // A measure-repeat marker replaces the whole measure with one glyph —
+      // give it a 'w' duration so it fills the voice like a full measure would.
+      if(n.repeatBars) return new RepeatNote(n.repeatBars,{duration:'w'});
       const isSelected=selectedNote&&selectedNote.partIdx===partIdx&&selectedNote.noteIdx===globalIdx;
+      const inCopyRange=copyRangeSel&&copyRangeSel.partIdx===partIdx&&globalIdx>=Math.min(copyRangeSel.startIdx,copyRangeSel.endIdx)&&globalIdx<=Math.max(copyRangeSel.startIdx,copyRangeSel.endIdx);
       const sn=new StaveNote({keys:n.keys,duration:n.dur});
       if(isSelected) sn.setStyle({fillStyle:'#2980b9',strokeStyle:'#2980b9'});
+      else if(inCopyRange) sn.setStyle({fillStyle:'#27ae60',strokeStyle:'#27ae60'});
       const accs=n.vfAccs||[];
       accs.forEach((acc,i)=>{if(acc)try{sn.addModifier(new Accidental(acc),i);}catch(e){};});
       if(n.dur.includes('d'))try{Dot.buildAndAttach([sn],{all:true});}catch(e){}
       if(n.lyric)try{const a=new Annotation(n.lyric);a.setVerticalJustification(Annotation.VerticalJustify.BOTTOM);a.setFont({family:'Arial',size:9});sn.addModifier(a,0);}catch(e){}
+      if(n.sticking)try{const a=new Annotation(n.sticking);a.setVerticalJustification(Annotation.VerticalJustify.BOTTOM);a.setFont({family:'Arial',size:9,weight:'bold'});sn.addModifier(a,0);}catch(e){}
       if(n.dyn)try{const a=new Annotation(n.dyn);a.setVerticalJustification(Annotation.VerticalJustify.BOTTOM);a.setFont({family:'serif',size:10,style:'italic bold'});sn.addModifier(a,0);}catch(e){}
       if(n.tempo)try{const a=new Annotation(n.tempo);a.setVerticalJustification(Annotation.VerticalJustify.TOP);a.setFont({family:'serif',size:10,style:'italic'});sn.addModifier(a,0);}catch(e){}
       (n.arts||[]).forEach(a=>{
@@ -1305,6 +1547,39 @@ function getDrum(instId){
 }
 
 let playing=false,_activeVoices=[];
+// Expands repeat barlines into the actual order measures play in — e.g.
+// start=[0] end=[1] over 5 measures becomes [0,1,0,1,2,3,4] (play the marked
+// section, then its repeat, then continue normally). Each end measure only
+// triggers its jump-back once, so this always terminates.
+function buildPlayOrder(numM){
+  const order=[]; const expanded=new Set();
+  let mi=0;
+  while(mi<numM){
+    order.push(mi);
+    if(repeatEndMeasures.includes(mi) && !expanded.has(mi)){
+      expanded.add(mi);
+      const starts=repeatStartMeasures.filter(s=>s<=mi).sort((a,b)=>b-a);
+      mi=starts.length?starts[0]:0;
+      continue;
+    }
+    mi++;
+  }
+  return order;
+}
+// Resolves a measure-repeat ("%") marker to the real notes from N measures
+// back (recursing in case that measure is itself a marker). Simplification:
+// "%%"/"%%%%" look back exactly 2/4 measure-slots rather than visually
+// spanning multiple measures the way engraved parts traditionally do.
+function resolveMeasureNotes(measuresForPart, mi, depth){
+  if((depth||0)>10) return [];
+  const arr=measuresForPart[mi]||[];
+  if(arr.length===1 && arr[0].repeatBars){
+    const back=mi-arr[0].repeatBars;
+    if(back<0) return [];
+    return resolveMeasureNotes(measuresForPart, back, (depth||0)+1);
+  }
+  return arr;
+}
 async function playScore(){
   if(playing)return;await Tone.start();
   const playBtn=document.querySelector('.tb.play');
@@ -1312,26 +1587,31 @@ async function playScore(){
   // Pre-create + load all samplers needed
   const usedInst=[...new Set(parts.filter(p=>p.notes.length).map(p=>p.instId))];
   let needLoad=false;
-  usedInst.forEach(id=>{const inst=IMAP[id];if(inst&&inst.unpitched){getDrum(id);}else{const key=INST_SAMPLE[id]||'piano';if(!_samplerCache[key])needLoad=true;getSampler(id);}});
+  usedInst.forEach(id=>{const inst=IMAP[id];if(inst&&(inst.unpitched||inst.pitchedDrum)){getDrum(id);}else{const key=INST_SAMPLE[id]||'piano';if(!_samplerCache[key])needLoad=true;getSampler(id);}});
   if(needLoad){ if(playBtn)playBtn.textContent='…'; }
   await Tone.loaded();
   if(playBtn)playBtn.textContent='▶';
   playing=true;stopScore(true);
   Tone.getTransport().bpm.value=bpm;Tone.getTransport().cancel();
-  // Follow the currently-playing measure across the staff view as it plays.
-  if(measureXs.length){
-    const secPerBeat=60/bpm;
-    let cum=0;
-    measureXs.forEach((_,mi)=>{
-      Tone.getTransport().schedule(()=>scrollToMeasure(mi),'+'+cum);
-      cum+=(measureBeats[mi]||currentTimeSig.beats)*secPerBeat;
-    });
-  }
+
+  const allM=parts.map(p=>toMeasures(p.notes));
+  const numM=Math.max(...allM.map(m=>m.length),1);
+  const playOrder=buildPlayOrder(numM);
+  const secPerBeat=60/bpm;
+
+  // Follow the currently-playing measure across the staff view as it plays —
+  // uses the expanded order, so the view jumps back during a repeat too.
+  let cumScroll=0;
+  playOrder.forEach(mi=>{
+    Tone.getTransport().schedule(()=>scrollToMeasure(mi),'+'+cumScroll);
+    cumScroll+=(measureBeats[mi]||currentTimeSig.beats)*secPerBeat;
+  });
+
   _activeVoices=[];let maxT=0;
-  parts.forEach(part=>{
+  parts.forEach((part,pi)=>{
     if(!part.notes.length)return;
     const inst=IMAP[part.instId]||IMAP['piano'];
-    const voice=inst.unpitched?getDrum(part.instId):getSampler(part.instId);
+    const voice=(inst.unpitched||inst.pitchedDrum)?getDrum(part.instId):getSampler(part.instId);
     _activeVoices.push(voice);
     const hit=(notesArg,d,time,vel)=>{
       try{
@@ -1340,30 +1620,33 @@ async function playScore(){
       }catch(e){}
     };
     let t=0;
-    part.notes.forEach(n=>{
-      const secs=durSecs(n.dur,bpm);
-      if(!n.rest&&(n.midiVals||[]).length){
-        const abs=t;
-        const toneNotes=n.midiVals.map(m=>Tone.Frequency(m,'midi').toNote());
-        const mainNotes=toneNotes.length===1?toneNotes[0]:toneNotes;
-        // Grace notes (flam/drag/ruff): quick quiet taps just before the main hit.
-        const graceList=n.grace||[];
-        const GRACE_GAP=.035;
-        graceList.forEach((g,gi)=>{
-          const gt=abs-(graceList.length-gi)*GRACE_GAP;
-          if(gt>=0) Tone.getTransport().schedule(time=>hit(mainNotes,GRACE_GAP*.85,time,.55),'+'+gt);
-        });
-        // Rolls: subdivide the note into fast repeated hits instead of one sustained note.
-        const ROLL_HITS={trem1:2,trem2:4,trem3:8,buzz:16,press:20};
-        const hits=ROLL_HITS[n.rud];
-        if(hits){
-          const hitDur=secs/hits;
-          for(let k=0;k<hits;k++) Tone.getTransport().schedule(time=>hit(mainNotes,hitDur*.85,time,.8),'+'+(abs+k*hitDur));
-        } else {
-          Tone.getTransport().schedule(time=>hit(mainNotes,toToneDur(n.dur),time,1),'+'+abs);
+    playOrder.forEach(mi=>{
+      const measureNotes=resolveMeasureNotes(allM[pi],mi);
+      measureNotes.forEach(n=>{
+        const secs=durSecs(n.dur,bpm);
+        if(!n.rest&&!n.repeatBars&&(n.midiVals||[]).length){
+          const abs=t;
+          const toneNotes=n.midiVals.map(m=>Tone.Frequency(m,'midi').toNote());
+          const mainNotes=toneNotes.length===1?toneNotes[0]:toneNotes;
+          // Grace notes (flam/drag/ruff): quick quiet taps just before the main hit.
+          const graceList=n.grace||[];
+          const GRACE_GAP=.035;
+          graceList.forEach((g,gi)=>{
+            const gt=abs-(graceList.length-gi)*GRACE_GAP;
+            if(gt>=0) Tone.getTransport().schedule(time=>hit(mainNotes,GRACE_GAP*.85,time,.55),'+'+gt);
+          });
+          // Rolls: subdivide the note into fast repeated hits instead of one sustained note.
+          const ROLL_HITS={trem1:2,trem2:4,trem3:8,buzz:16,press:20};
+          const hits=ROLL_HITS[n.rud];
+          if(hits){
+            const hitDur=secs/hits;
+            for(let k=0;k<hits;k++) Tone.getTransport().schedule(time=>hit(mainNotes,hitDur*.85,time,.8),'+'+(abs+k*hitDur));
+          } else {
+            Tone.getTransport().schedule(time=>hit(mainNotes,toToneDur(n.dur),time,1),'+'+abs);
+          }
         }
-      }
-      t+=secs;
+        t+=secs;
+      });
     });
     maxT=Math.max(maxT,t);
   });
@@ -1389,7 +1672,9 @@ function serializeProject(){
     pid, apIdx,
     keyId:currentKeyId,
     timeSig:currentTimeSig.sig,
-    bpm:parseInt(document.getElementById('bpm-inp').value)||80
+    bpm:parseInt(document.getElementById('bpm-inp').value)||80,
+    repeatStartMeasures:repeatStartMeasures.slice(),
+    repeatEndMeasures:repeatEndMeasures.slice()
   };
 }
 function saveAll(){ try{ localStorage.setItem('mn_projects',JSON.stringify(projects)); localStorage.setItem('mn_current',currentProjId||''); }catch(e){} }
@@ -1415,6 +1700,8 @@ function applyProject(d){
   currentKeyId=d.keyId||'C';
   currentTimeSig=TIME_SIGS.find(t=>t.sig===d.timeSig)||TIME_SIGS[0];
   document.getElementById('bpm-inp').value=d.bpm||80;
+  repeatStartMeasures=d.repeatStartMeasures?d.repeatStartMeasures.slice():[];
+  repeatEndMeasures=d.repeatEndMeasures?d.repeatEndMeasures.slice():[];
   document.querySelectorAll('.key-btn').forEach(b=>b.classList.toggle('on',b.dataset.kid===currentKeyId));
   document.querySelectorAll('.time-btn').forEach(b=>b.classList.toggle('on',b.dataset.sig===currentTimeSig.sig));
   document.getElementById('key-pill').textContent=KMAP[currentKeyId]?.label||currentKeyId;
@@ -1513,7 +1800,7 @@ function exportMIDI(){
     const raw=[];
     let tick=0;
     part.notes.forEach(n=>{
-      const dt=Math.round(durBeats(n.dur)*PPQ);
+      const dt=Math.round(noteBeats(n)*PPQ);
       if(!n.rest && (n.midiVals||[]).length){
         n.midiVals.forEach(m=>{ raw.push({tick,on:1,midi:m}); raw.push({tick:tick+dt,on:0,midi:m}); });
       }
@@ -1550,7 +1837,7 @@ function exportMIDI(){
 const PRINT_SYS_W=720; // ~ usable Letter-page width in CSS px at 96dpi after 14mm margins
 function buildPrintSystems(partsSubset){
   const VF=Vex.Flow;
-  const {Renderer,Stave,StaveConnector,StaveHairpin}=VF;
+  const {Renderer,Stave,StaveConnector,StaveHairpin,Barline}=VF;
   const kd=KMAP[currentKeyId];
   const allM=partsSubset.map(p=>toMeasures(p.notes));
   const numM=Math.max(...allM.map(m=>m.length),1);
@@ -1587,7 +1874,10 @@ function buildPrintSystems(partsSubset){
         const cl=p.clef||(inst.clef==='percussion'?'percussion':(inst.clef||'treble'));
         const sy=TP+pi*PG;
         const st=new Stave(x,sy,mw);
+        if(inst.staffLines)st.setNumLines(inst.staffLines);
         if(first){ st.addClef(cl).addKeySignature(kd.vfSig).addTimeSignature(currentTimeSig.sig); }
+        if(repeatStartMeasures.includes(mi))st.setBegBarType(Barline.type.REPEAT_BEGIN);
+        if(repeatEndMeasures.includes(mi))st.setEndBarType(Barline.type.REPEAT_END);
         st.setContext(ctx).draw();
         return st;
       });
