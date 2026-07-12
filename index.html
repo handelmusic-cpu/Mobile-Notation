@@ -12,34 +12,37 @@ body { font-family:-apple-system,BlinkMacSystemFont,sans-serif; background:#1212
 #score-wrap { flex:1 1 0; min-height:0; background:#f4efe4; overflow:auto; -webkit-overflow-scrolling:touch; padding:8px; cursor:pointer; }
 
 #toolbar { display:flex; gap:4px; padding:5px 7px; background:#1e1e35; flex-shrink:0; align-items:center; flex-wrap:wrap; }
-.tb { flex:1; padding:6px 2px; border:none; border-radius:7px; font-size:11px; font-weight:700; cursor:pointer; max-width:60px; touch-action:manipulation; }
+.tb { flex:1; padding:8px 2px; border:none; border-radius:7px; font-size:14px; font-weight:700; cursor:pointer; max-width:60px; touch-action:manipulation; }
 .tb:active{opacity:.75;}
 .play{background:#2ecc71;color:#fff;} .stop{background:#e74c3c;color:#fff;}
 .undo{background:#e67e22;color:#fff;} .clear{background:#9b59b6;color:#fff;}
-#bpm-wrap{display:flex;align-items:center;gap:3px;font-size:10px;color:#778;margin-left:4px;}
-#bpm-inp{width:40px;background:#2a2a40;border:none;border-radius:5px;color:#dde;padding:3px 4px;font-size:11px;}
-.pill{font-size:10px;font-weight:700;padding:3px 8px;border-radius:10px;background:#2a2a40;color:#dde;cursor:pointer;flex-shrink:0;white-space:nowrap;}
+#bpm-wrap{display:flex;align-items:center;gap:3px;font-size:12px;color:#889;margin-left:4px;}
+#bpm-inp{width:46px;background:#2a2a40;border:none;border-radius:5px;color:#dde;padding:4px 5px;font-size:14px;}
+.pill{font-size:12px;font-weight:700;padding:5px 10px;border-radius:10px;background:#2a2a40;color:#dde;cursor:pointer;flex-shrink:0;white-space:nowrap;}
 #proj-pill{color:#9bd;max-width:78px;overflow:hidden;text-overflow:ellipsis;}
 #midi-pill{margin-left:auto;color:#778;}
 #midi-pill.on{background:#27ae60;color:#fff;}
 
 #tab-bar{display:flex;background:#16162a;border-top:1px solid #2a2a45;flex-shrink:0;}
-.tab-btn{flex:1;padding:6px 1px;border:none;background:transparent;color:#445;font-size:9px;font-weight:700;cursor:pointer;border-bottom:2px solid transparent;letter-spacing:.2px;}
+.tab-btn{flex:1;padding:11px 1px;border:none;background:transparent;color:#778;font-size:12.5px;font-weight:700;cursor:pointer;border-bottom:2px solid transparent;white-space:nowrap;}
 .tab-btn.on{color:#e94560;border-bottom-color:#e94560;}
+
+/* Collapsed controls (landscape / more staff room): hide the tall control stack. */
+.controls-collapsed #tab-bar, .controls-collapsed .panel, .controls-collapsed #chord-palette { display:none !important; }
 
 .panel{display:none;padding:6px 8px;background:#1a1a30;flex-shrink:0;}
 .panel.on{display:block;}
 .row{display:flex;align-items:center;gap:4px;margin-bottom:4px;flex-wrap:wrap;}
-.lbl{font-size:10px;color:#778;min-width:28px;flex-shrink:0;}
-.sec{font-size:9px;color:#556;margin:5px 0 3px;letter-spacing:.5px;text-transform:uppercase;}
+.lbl{font-size:12px;color:#889;min-width:32px;flex-shrink:0;}
+.sec{font-size:11px;color:#667;margin:7px 0 4px;letter-spacing:.5px;text-transform:uppercase;}
 
 .subtab-bar{display:flex;gap:3px;margin-bottom:7px;}
-.subtab-btn{flex:1;padding:7px 2px;border:1.5px solid #2a2a45;border-radius:6px;background:#12121f;color:#aab;font-size:10px;font-weight:700;cursor:pointer;touch-action:manipulation;}
+.subtab-btn{flex:1;padding:9px 2px;border:1.5px solid #2a2a45;border-radius:6px;background:#12121f;color:#aab;font-size:12px;font-weight:700;cursor:pointer;touch-action:manipulation;}
 .subtab-btn.on{background:#e94560;border-color:#e94560;color:#fff;}
 .subpanel{display:none;}
 .subpanel.on{display:block;}
 
-.chip{padding:4px 7px;border:1.5px solid #2a2a45;border-radius:6px;background:#12121f;color:#bbc;font-size:13px;cursor:pointer;min-height:28px;min-width:28px;display:inline-flex;align-items:center;justify-content:center;touch-action:manipulation;line-height:1;user-select:none;}
+.chip{padding:6px 9px;border:1.5px solid #2a2a45;border-radius:6px;background:#12121f;color:#ccd;font-size:15px;cursor:pointer;min-height:34px;min-width:34px;display:inline-flex;align-items:center;justify-content:center;touch-action:manipulation;line-height:1;user-select:none;}
 .chip:active{opacity:.7;}
 .chip.on{background:#e94560;border-color:#e94560;color:#fff;}
 .chip.on2{background:#2980b9;border-color:#2980b9;color:#fff;}
@@ -64,7 +67,7 @@ body { font-family:-apple-system,BlinkMacSystemFont,sans-serif; background:#1212
 
 /* Dyn */
 .dyn-grid{display:grid;grid-template-columns:repeat(6,1fr);gap:3px;margin-bottom:5px;}
-.dyn-btn{padding:5px 2px;border:1.5px solid #2a2a45;border-radius:6px;background:#12121f;color:#dde;font-size:11px;font-style:italic;font-weight:700;cursor:pointer;min-height:28px;touch-action:manipulation;}
+.dyn-btn{padding:7px 2px;border:1.5px solid #2a2a45;border-radius:6px;background:#12121f;color:#dde;font-size:13px;font-style:italic;font-weight:700;cursor:pointer;min-height:34px;touch-action:manipulation;}
 .dyn-btn:active{opacity:.7;}
 .dyn-btn.on{background:#e94560;border-color:#e94560;color:#fff;}
 .hp-row{display:flex;gap:5px;align-items:center;margin-bottom:3px;}
@@ -72,24 +75,24 @@ body { font-family:-apple-system,BlinkMacSystemFont,sans-serif; background:#1212
 
 /* Art */
 .art-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:3px;}
-.art-btn{padding:5px 2px;border:1.5px solid #2a2a45;border-radius:6px;background:#12121f;color:#dde;font-size:16px;cursor:pointer;min-height:34px;touch-action:manipulation;}
+.art-btn{padding:7px 2px;border:1.5px solid #2a2a45;border-radius:6px;background:#12121f;color:#dde;font-size:18px;cursor:pointer;min-height:40px;touch-action:manipulation;}
 .art-btn:active{opacity:.7;}
 .art-btn.on{background:#e94560;border-color:#e94560;color:#fff;}
 
 /* Tempo */
 .tempo-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:3px;margin-bottom:4px;}
-.tempo-btn{padding:5px 2px;border:1.5px solid #2a2a45;border-radius:6px;background:#12121f;color:#dde;font-size:9px;font-style:italic;cursor:pointer;min-height:28px;touch-action:manipulation;}
+.tempo-btn{padding:7px 2px;border:1.5px solid #2a2a45;border-radius:6px;background:#12121f;color:#dde;font-size:11px;font-style:italic;cursor:pointer;min-height:34px;touch-action:manipulation;}
 .tempo-btn:active{opacity:.7;}
 .tempo-btn.on{background:#e94560;border-color:#e94560;color:#fff;}
 
 /* Score setup */
 .key-major-grid{display:grid;grid-template-columns:repeat(6,1fr);gap:3px;margin-bottom:3px;}
 .key-minor-grid{display:grid;grid-template-columns:repeat(6,1fr);gap:3px;margin-bottom:5px;}
-.key-btn{padding:4px 2px;border:1.5px solid #2a2a45;border-radius:6px;background:#12121f;color:#dde;font-size:10px;cursor:pointer;min-height:26px;touch-action:manipulation;text-align:center;}
+.key-btn{padding:6px 2px;border:1.5px solid #2a2a45;border-radius:6px;background:#12121f;color:#dde;font-size:13px;cursor:pointer;min-height:34px;touch-action:manipulation;text-align:center;}
 .key-btn:active{opacity:.7;}
 .key-btn.on{background:#e94560;border-color:#e94560;color:#fff;}
 .time-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:3px;}
-.time-btn{padding:5px 2px;border:1.5px solid #2a2a45;border-radius:6px;background:#12121f;color:#dde;font-size:11px;cursor:pointer;min-height:28px;touch-action:manipulation;text-align:center;}
+.time-btn{padding:7px 2px;border:1.5px solid #2a2a45;border-radius:6px;background:#12121f;color:#dde;font-size:14px;cursor:pointer;min-height:34px;touch-action:manipulation;text-align:center;}
 .time-btn.on{background:#e94560;border-color:#e94560;color:#fff;}
 
 /* Files / projects */
@@ -98,14 +101,14 @@ body { font-family:-apple-system,BlinkMacSystemFont,sans-serif; background:#1212
 /* Diatonic chord palette — always visible */
 #chord-palette{flex-shrink:0;background:#0e0e1e;padding:4px 6px 3px;border-top:1px solid #2a2a45;}
 #chord-palette-top{display:flex;align-items:center;gap:5px;margin-bottom:3px;}
-#chord-palette-label{font-size:9px;color:#556;letter-spacing:.5px;text-transform:uppercase;flex:1;}
+#chord-palette-label{font-size:11px;color:#667;letter-spacing:.5px;text-transform:uppercase;flex:1;}
 #diatonic-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:3px;}
 .dchord-btn{border:1.5px solid #333;border-radius:8px;cursor:pointer;min-height:44px;text-align:center;touch-action:manipulation;display:flex;flex-direction:column;overflow:hidden;user-select:none;}
 .dchord-btn:active{opacity:.75;}
-.dchord-7{padding:2px 2px;font-size:8px;font-weight:700;border-bottom:1px solid rgba(255,255,255,.1);flex-shrink:0;letter-spacing:.3px;}
+.dchord-7{padding:3px 2px;font-size:10px;font-weight:700;border-bottom:1px solid rgba(255,255,255,.1);flex-shrink:0;letter-spacing:.3px;}
 .dchord-triad{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:2px 1px;}
-.dchord-roman{font-size:8px;line-height:1;opacity:.7;}
-.dchord-root{font-size:13px;font-weight:800;line-height:1.2;}
+.dchord-roman{font-size:10px;line-height:1;opacity:.75;}
+.dchord-root{font-size:15px;font-weight:800;line-height:1.2;}
 .dc-tonic  {background:#0e3050;border-color:#2980b9;color:#7ec8e3;}
 .dc-tonic .dchord-7{background:#0a2040;}
 .dc-subdom {background:#2d1e00;border-color:#b8860b;color:#f0c040;}
@@ -120,12 +123,25 @@ body { font-family:-apple-system,BlinkMacSystemFont,sans-serif; background:#1212
 .np{background:#e94560;} .nr{background:#3a3f55;}
 .nr svg{width:22px;height:26px;}
 
-.hint{font-size:9px;color:#445;margin-top:3px;}
+.hint{font-size:11.5px;line-height:1.35;color:#667;margin-top:4px;}
+
+/* Guided tour overlay */
+#tour-overlay{position:fixed;inset:0;z-index:99999;}
+#tour-hole{position:absolute;border-radius:9px;box-shadow:0 0 0 9999px rgba(0,0,0,.74);transition:left .25s,top .25s,width .25s,height .25s;pointer-events:none;}
+#tour-card{position:fixed;z-index:100000;background:#20203a;border:2px solid #e94560;border-radius:14px;padding:15px 17px;box-shadow:0 10px 34px rgba(0,0,0,.55);}
+#tour-title{font-size:17px;font-weight:800;color:#fff;margin-bottom:6px;}
+#tour-text{font-size:14px;line-height:1.45;color:#d5d8e5;margin-bottom:11px;}
+#tour-dots{text-align:center;margin-bottom:11px;line-height:1;}
+#tour-btns{display:flex;align-items:center;gap:8px;}
+#tour-btns button{padding:9px 15px;border:none;border-radius:9px;font-size:14px;font-weight:700;cursor:pointer;touch-action:manipulation;}
+#tour-skip{background:#2a2a44;color:#99a;}
+#tour-back{background:#2a2a44;color:#d5d8e5;}
+#tour-next{background:#e94560;color:#fff;}
 </style>
 </head>
 <body>
 
-<div id="score-wrap"><div id="score-div"></div></div>
+<div id="score-wrap"><div id="score-div" style="position:relative;"></div></div>
 
 <div id="toolbar">
   <button class="tb play"  onclick="playScore()">▶</button>
@@ -133,6 +149,8 @@ body { font-family:-apple-system,BlinkMacSystemFont,sans-serif; background:#1212
   <button class="tb undo"  onclick="undoNote()">⌫</button>
   <button class="tb clear" onclick="clearAll()">✕</button>
   <button class="tb" id="copy-toggle-btn" onclick="toggleCopyMode()" style="background:#2a2a40;color:#9bd;">✂</button>
+  <button class="tb" id="help-btn" onclick="startTour()" style="background:#2a2a40;color:#9bd;">?</button>
+  <button class="tb" id="collapse-btn" onclick="toggleControls()" style="background:#2a2a40;color:#9bd;" title="Hide/show controls">▼</button>
   <div id="bpm-wrap"><span>BPM</span><input type="number" id="bpm-inp" value="80" min="20" max="320"></div>
   <span class="pill" id="proj-pill" onclick="switchTab('proj')">Song</span>
   <span class="pill" id="key-pill" onclick="switchTab('score')">C</span>
@@ -140,11 +158,11 @@ body { font-family:-apple-system,BlinkMacSystemFont,sans-serif; background:#1212
 </div>
 
 <div id="tab-bar">
-  <button class="tab-btn on"  onclick="switchTab('notes')">♪ Notes</button>
-  <button class="tab-btn"     onclick="switchTab('parts')">≡ Instruments</button>
-  <button class="tab-btn"     onclick="switchTab('markings')">✎ Markings</button>
-  <button class="tab-btn"     onclick="switchTab('score')">♭ Key/Time</button>
-  <button class="tab-btn"     onclick="switchTab('proj')">⁝ Songs</button>
+  <button class="tab-btn on"  onclick="switchTab('notes')">Notes</button>
+  <button class="tab-btn"     onclick="switchTab('parts')">Instruments</button>
+  <button class="tab-btn"     onclick="switchTab('markings')">Markings</button>
+  <button class="tab-btn"     onclick="switchTab('score')">Key/Time</button>
+  <button class="tab-btn"     onclick="switchTab('proj')">Songs</button>
 </div>
 
 <!-- Notes panel -->
@@ -174,21 +192,12 @@ body { font-family:-apple-system,BlinkMacSystemFont,sans-serif; background:#1212
       <button class="chip" onclick="setSelAcc('#')">♯</button>
       <button class="chip" onclick="setSelAcc('b')">♭</button>
       <button class="chip" onclick="setSelAcc('n')">♮</button>
-      <button class="chip" onclick="deleteSelected()" style="color:#e67e22;border-color:#e67e22;font-size:10px">⇢Rest</button>
+      <button class="chip" onclick="removeSelected()" style="color:#e74c3c;border-color:#e74c3c;font-weight:700">🗑 Delete</button>
+      <button class="chip" onclick="makeRest()" style="color:#e67e22;border-color:#e67e22;font-size:11px">⇢Rest</button>
     </div>
-    <div class="row">
-      <span style="font-size:9px;color:#2980b9;font-weight:700;flex-shrink:0">LENGTH:</span>
-      <button class="chip" id="sd-w"   onclick="setSelDur('w')"></button>
-      <button class="chip" id="sd-h"   onclick="setSelDur('h')"></button>
-      <button class="chip" id="sd-q"   onclick="setSelDur('q')"></button>
-      <button class="chip" id="sd-8"   onclick="setSelDur('8')"></button>
-      <button class="chip" id="sd-16"  onclick="setSelDur('16')"></button>
-      <button class="chip" id="sd-32"  onclick="setSelDur('32')"></button>
-      <button class="chip" id="sd-dot" onclick="toggleSelDot()" style="font-size:18px">·</button>
-    </div>
-    <div class="hint">To add/change a lyric, dynamic, articulation, or tempo mark on this note, open the ✎ Markings tab above. Changing LENGTH reflows the notes after it — Delete keeps timing by turning this note into a rest instead.</div>
+    <div class="hint">↑½/↓½/♯/♭ change this note's pitch; the Dur row below changes its length. New notes you type land right after it. 🗑 Delete removes it; ⇢Rest turns it into a rest (same timing). Lyrics/dynamics/articulations are in the ✎ Markings tab.</div>
   </div>
-  <div class="row">
+  <div class="row" id="dur-row">
     <span class="lbl">Dur</span>
     <button class="chip"    id="d-w"   onclick="setDur('w')"></button>
     <button class="chip"    id="d-h"   onclick="setDur('h')"></button>
@@ -202,7 +211,7 @@ body { font-family:-apple-system,BlinkMacSystemFont,sans-serif; background:#1212
     <span id="oct-val" style="font-size:15px;font-weight:700;color:#fff;min-width:20px;text-align:center">±0</span>
     <button class="chip" onclick="changeOct(1)">+</button>
   </div>
-  <div class="row">
+  <div class="row" id="acc-row">
     <span class="lbl">Acc</span>
     <button class="chip on" id="a-key" onclick="setAcc('key')" style="font-size:10px">Key</button>
     <button class="chip"    id="a-n"  onclick="setAcc('n')">♮</button>
@@ -555,6 +564,10 @@ let newInstId=null;
 
 let notePositions=[];
 let selectedNote=null;
+// Insertion cursor sitting in a gap (not on a note): {partIdx, index} where
+// index is "insert before notes[index]". Mutually exclusive with selectedNote;
+// both null = append at the end of the active part.
+let caretGap=null;
 let measureXs=[], measureBeats=[];
 // Repeats are a whole-piece structural property (the ensemble repeats
 // together), not per-part — measure indices where a repeat barline draws.
@@ -601,9 +614,6 @@ function durIcon(base, isRest, dot){
 }
 function refreshDurIcons(){
   [['w','d-w'],['h','d-h'],['q','d-q'],['8','d-8'],['16','d-16'],['32','d-32']].forEach(([b,id])=>{
-    document.getElementById(id).innerHTML=durIcon(b,false,false);
-  });
-  [['w','sd-w'],['h','sd-h'],['q','sd-q'],['8','sd-8'],['16','sd-16'],['32','sd-32']].forEach(([b,id])=>{
     document.getElementById(id).innerHTML=durIcon(b,false,false);
   });
   document.getElementById('rest-btn').innerHTML=durIcon(selDur,true,dotted);
@@ -701,7 +711,7 @@ function renderPartsList(){
     const row=document.createElement('div');
     row.className='prow'+(i===apIdx?' ap':'');
     row.innerHTML=`<div class="pdot"></div><span class="pname">${p.name}</span><span class="pinst">${inst.label}</span>${parts.length>1?`<button class="pdel" onclick="event.stopPropagation();deletePart(${i})">✕</button>`:''}`;
-    row.onclick=()=>{apIdx=i;renderPartsList();};
+    row.onclick=()=>{apIdx=i;selectedNote=null;caretGap=null;renderPartsList();render();updateSelectionUI();};
     ul.appendChild(row);
   });
   refreshNoteGridForActivePart();
@@ -727,6 +737,12 @@ function switchTab(name){
   if(name==='proj'){renderProjectsList();renderPrintButtons();}
   syncEditorsToSelection();
 }
+// Collapse/expand the tall control stack (tabs + panel + chord palette) so the
+// staff gets almost the whole screen — essential in landscape.
+function toggleControls(){
+  const collapsed=document.body.classList.toggle('controls-collapsed');
+  document.getElementById('collapse-btn').textContent=collapsed?'▲':'▼';
+}
 function renderPrintButtons(){
   const row=document.getElementById('print-row');
   if(!row)return;
@@ -746,26 +762,29 @@ function switchSubTab(name){
 // ═══════════════════════════════════════════════════════
 // Notes controls
 // ═══════════════════════════════════════════════════════
-function setDur(d){selDur=d;['w','h','q','8','16','32'].forEach(x=>document.getElementById('d-'+x).classList.toggle('on',x===d));document.getElementById('rest-btn').innerHTML=durIcon(selDur,true,dotted);}
-function toggleDot(){dotted=!dotted;document.getElementById('d-dot').classList.toggle('on',dotted);document.getElementById('rest-btn').innerHTML=durIcon(selDur,true,dotted);}
-// Change the LENGTH of an already-placed note (reflows everything after it) —
-// distinct from deleteSelected(), which preserves rhythmic position via a rest.
-function setSelDur(base){
+// The Dur row does double duty: with a note selected it CHANGES that note's
+// length (reflowing what follows); with nothing selected it sets the default
+// for new notes. refreshDurRow() keeps the row's highlight in sync with either.
+function refreshDurRow(){
   const n=selectedNoteAny();
-  if(!n)return;
-  n.dur=base+(n.dur.includes('d')?'d':'')+(n.rest?'r':'');
-  render(); updateSelectionUI();
+  const base = n ? n.dur.replace(/[dr]/g,'') : selDur;
+  const dot  = n ? n.dur.includes('d') : dotted;
+  ['w','h','q','8','16','32'].forEach(x=>document.getElementById('d-'+x).classList.toggle('on',x===base));
+  document.getElementById('d-dot').classList.toggle('on',dot);
 }
-function toggleSelDot(){
+function setDur(d){
+  selDur=d;
+  document.getElementById('rest-btn').innerHTML=durIcon(selDur,true,dotted);
   const n=selectedNoteAny();
-  if(!n)return;
-  n.dur = n.dur.includes('d') ? n.dur.replace('d','') : n.dur.replace(/r?$/,'d$&');
-  render(); updateSelectionUI();
+  if(n){ n.dur=d+(n.dur.includes('d')?'d':'')+(n.rest?'r':''); render(); updateSelectionUI(); }
+  else refreshDurRow();
 }
-function highlightSelDur(n){
-  const base=n?n.dur.replace(/[dr]/g,''):null;
-  ['w','h','q','8','16','32'].forEach(x=>document.getElementById('sd-'+x).classList.toggle('on',x===base));
-  document.getElementById('sd-dot').classList.toggle('on', !!(n&&n.dur.includes('d')));
+function toggleDot(){
+  dotted=!dotted;
+  document.getElementById('rest-btn').innerHTML=durIcon(selDur,true,dotted);
+  const n=selectedNoteAny();
+  if(n){ n.dur = n.dur.includes('d') ? n.dur.replace('d','') : n.dur.replace(/r?$/,'d$&'); render(); updateSelectionUI(); }
+  else refreshDurRow();
 }
 function setAcc(a){
   selAcc=a;
@@ -921,7 +940,7 @@ function cancelChord(){pendingChordNotes=[];updatePendingDisplay();}
 function commitChord(){
   if(!pendingChordNotes.length)return;
   const {lyric,dyn,arts,tempo,rud,grace,sticking}=grabPending();
-  parts[apIdx].notes.push({
+  insertNoteAtCursor({
     keys:pendingChordNotes.map(n=>n.name+'/'+n.oct),
     dur:buildDur(), vfAccs:pendingChordNotes.map(n=>n.vfAcc??n.acc),
     midiVals:pendingChordNotes.map(n=>n.midi),
@@ -929,7 +948,7 @@ function commitChord(){
   });
   pendingChordNotes=[];updatePendingDisplay();
   pendingGraceNotes=[];updateGracePendingDisplay();
-  render();scrollToNoteEnd(apIdx);
+  render();scrollAfterEntry();
 }
 function updatePendingDisplay(){
   const s=pendingChordNotes.map(n=>n.name+(n.acc||'')+n.oct).join(' ');
@@ -971,16 +990,15 @@ function enterDiatonicChord(deg,kd,seventh=false){
     return;
   }
   const {lyric,dyn,arts,tempo,rud,grace,sticking}=grabPending();
-  parts[apIdx].notes.push({
+  insertNoteAtCursor({
     keys:tones.map(t=>t.name+'/'+t.oct),
     dur:buildDur(),
     vfAccs:tones.map(()=>null),
     midiVals:tones.map(t=>t.midi),
     rest:false,lyric,dyn,arts,tempo,rud,grace,sticking
   });
-  selectedNote=null;
   pendingGraceNotes=[];updateGracePendingDisplay();
-  render();scrollToNoteEnd(apIdx);
+  render();scrollAfterEntry();
 }
 
 // ═══════════════════════════════════════════════════════
@@ -993,6 +1011,35 @@ function grabPending(){
     dyn:pendingDyn,arts:pendingArts.slice(),tempo:pendingTempo,rud:pendingRud,sticking:pendingSticking,
     grace:pendingGraceNotes.map(g=>({keys:[g.name+'/'+g.oct],dur:g.dur,vfAcc:g.vfAcc??g.acc}))
   };
+}
+
+// Inserts a note into the active part at the cursor: after the selected note,
+// at a gap caret, or appended at the end. Advances the cursor — after an
+// insert relative to a selection/gap it selects the new note so consecutive
+// taps build forward; a plain append stays in append mode (cursor at the end).
+function insertNoteAtCursor(noteObj){
+  const notes=parts[apIdx].notes;
+  let pos, fromCursor;
+  if(selectedNote && selectedNote.partIdx===apIdx){ pos=Math.min(selectedNote.noteIdx+1,notes.length); fromCursor=true; }
+  else if(caretGap && caretGap.partIdx===apIdx){ pos=Math.min(caretGap.index,notes.length); fromCursor=true; }
+  else { pos=notes.length; fromCursor=false; }
+  notes.splice(pos,0,noteObj);
+  if(fromCursor){ selectedNote={partIdx:apIdx,noteIdx:pos}; caretGap=null; }
+  else { selectedNote=null; caretGap=null; }
+}
+// Keep the note just entered/edited in view: scroll to the selected note if
+// one is set (mid-phrase insert), otherwise to the end (append mode).
+function scrollAfterEntry(){
+  if(selectedNote && selectedNote.partIdx===apIdx){
+    const pos=notePositions.find(p=>p.partIdx===apIdx && p.noteIdx===selectedNote.noteIdx);
+    const wrap=document.getElementById('score-wrap');
+    if(pos && (pos.x>wrap.scrollLeft+wrap.clientWidth-40 || pos.x<wrap.scrollLeft+40)){
+      wrap.scrollTo({left:Math.max(0,pos.x-wrap.clientWidth/2),top:wrap.scrollTop,behavior:'smooth'});
+      return;
+    }
+    if(pos) return;
+  }
+  scrollToNoteEnd(apIdx);
 }
 
 // Single-line percussion (Snare, Bass Drum) has no real pitch to choose —
@@ -1014,10 +1061,9 @@ function enterPitch(name, acc, oct, vfAcc){
     return;
   }
   const {lyric,dyn,arts,tempo,rud,grace,sticking}=grabPending();
-  parts[apIdx].notes.push({keys:[name+'/'+oct],dur:buildDur(),vfAccs:[vfAcc],midiVals:[midi],rest:false,lyric,dyn,arts,tempo,rud,grace,sticking});
-  selectedNote=null;
+  insertNoteAtCursor({keys:[name+'/'+oct],dur:buildDur(),vfAccs:[vfAcc],midiVals:[midi],rest:false,lyric,dyn,arts,tempo,rud,grace,sticking});
   pendingGraceNotes=[];updateGracePendingDisplay();
-  render();scrollToNoteEnd(apIdx);
+  render();scrollAfterEntry();
 }
 
 // Anchor for octave placement: the last real note entered in this part, or
@@ -1062,22 +1108,21 @@ function addRest(){
   const p=parts[apIdx];
   const clef=p.clef||(IMAP[p.instId]?.clef)||'treble';
   const rk=clef==='bass'?'d/3':'b/4';
-  p.notes.push({keys:[rk],dur:buildDur(true),vfAccs:[null],midiVals:[],rest:true,lyric:null,dyn:null,arts:[],tempo:null});
-  selectedNote=null;
-  render();scrollToNoteEnd(apIdx);
+  insertNoteAtCursor({keys:[rk],dur:buildDur(true),vfAccs:[null],midiVals:[],rest:true,lyric:null,dyn:null,arts:[],tempo:null,rud:null,grace:[],sticking:null});
+  render();scrollAfterEntry();
 }
 
 function undoNote(){
   const arr=parts[apIdx].notes;
   if(arr.length)arr.pop();
   parts[apIdx].hairpins=parts[apIdx].hairpins.filter(hp=>hp.end<arr.length);
-  selectedNote=null;
-  render();
+  selectedNote=null; caretGap=null;
+  render(); updateSelectionUI();
 }
 function clearAll(){
   if(!parts.some(p=>p.notes.length)||!confirm('Clear all notes in this song?'))return;
   parts.forEach(p=>{p.notes=[];p.hairpins=[];});
-  selectedNote=null;
+  selectedNote=null; caretGap=null;
   render();
 }
 
@@ -1086,13 +1131,13 @@ function clearAll(){
 // ═══════════════════════════════════════════════════════
 function updateSelectionUI(){
   const sec=document.getElementById('edit-section');
-  if(!selectedNote){sec.style.display='none';highlightSelDur(null);syncEditorsToSelection();return;}
+  if(!selectedNote){sec.style.display='none';refreshDurRow();syncEditorsToSelection();return;}
   const n=parts[selectedNote.partIdx]?.notes[selectedNote.noteIdx];
-  if(!n){sec.style.display='none';highlightSelDur(null);syncEditorsToSelection();return;}
+  if(!n){sec.style.display='none';refreshDurRow();syncEditorsToSelection();return;}
   sec.style.display='block';
   const label=n.rest?'Rest':(n.keys||[]).map((k,i)=>{const[name,oct]=k.split('/');const acc=n.vfAccs?.[i];return name+(acc&&acc!=='n'?acc:'')+oct;}).join(' ');
   document.getElementById('sel-note-label').textContent=label;
-  highlightSelDur(n);
+  refreshDurRow();
   syncEditorsToSelection();
 }
 
@@ -1119,12 +1164,25 @@ function setSelAcc(acc){
   render(); updateSelectionUI();
 }
 
-// "Delete" turns the note into a rest (keeps its rhythmic slot)
-function deleteSelected(){
+// "⇢Rest" turns the note into a rest, keeping its rhythmic slot & timing.
+function makeRest(){
   if(!selectedNote)return;
   const p=parts[selectedNote.partIdx]; const n=p?.notes[selectedNote.noteIdx]; if(!n)return;
   const clef=p.clef||(IMAP[p.instId]?.clef)||'treble';
   n.rest=true; n.midiVals=[]; n.keys=[clef==='bass'?'d/3':'b/4']; n.vfAccs=[null]; n.arts=[]; n.lyric=null; n.rud=null; n.grace=[]; n.sticking=null;
+  render(); updateSelectionUI();
+}
+// True delete: remove the note entirely (everything after shifts left). Leaves
+// a gap caret at that spot so the next note you write lands in the vacated slot.
+function removeSelected(){
+  if(!selectedNote)return;
+  const p=parts[selectedNote.partIdx]; if(!p)return;
+  const idx=selectedNote.noteIdx;
+  if(idx<0||idx>=p.notes.length)return;
+  p.notes.splice(idx,1);
+  p.hairpins=(p.hairpins||[]).filter(hp=>hp.start!==idx&&hp.end!==idx).map(hp=>({...hp,start:hp.start>idx?hp.start-1:hp.start,end:hp.end>idx?hp.end-1:hp.end}));
+  caretGap={partIdx:selectedNote.partIdx,index:idx};
+  selectedNote=null;
   render(); updateSelectionUI();
 }
 
@@ -1136,7 +1194,7 @@ function deleteSelected(){
 function toggleCopyMode(){
   copyMode=!copyMode;
   copyRangeSel=null;
-  if(copyMode) selectedNote=null; // avoid showing both the edit panel and the copy panel at once
+  if(copyMode){ selectedNote=null; caretGap=null; } // avoid showing both the edit panel and the copy panel at once
   document.getElementById('copy-toggle-btn').style.background=copyMode?'#27ae60':'#2a2a40';
   document.getElementById('copy-toggle-btn').style.color=copyMode?'#fff':'#9bd';
   render(); updateSelectionUI(); updateCopyUI();
@@ -1190,13 +1248,18 @@ function updatePasteUI(){
   sec.style.display='block';
   document.getElementById('paste-status').textContent='Clipboard: '+clipboard.length+(clipboard.length===1?' note':' notes')+' — select where to paste, or leave nothing selected to append.';
 }
+// Paste OVERWRITES: it replaces clipboard.length notes starting at the paste
+// point (the selected note, the caret gap, or the end), rather than inserting.
 function pasteClipboard(){
   if(!clipboard||!clipboard.length)return;
   const part=parts[apIdx];
-  const insertAt=(selectedNote&&selectedNote.partIdx===apIdx)?selectedNote.noteIdx:part.notes.length;
-  part.notes.splice(insertAt,0,...JSON.parse(JSON.stringify(clipboard)));
-  selectedNote=null;
-  render(); updateSelectionUI(); scrollToNoteEnd(apIdx);
+  const at=(selectedNote&&selectedNote.partIdx===apIdx)?selectedNote.noteIdx
+          :(caretGap&&caretGap.partIdx===apIdx)?caretGap.index
+          :part.notes.length;
+  const clones=JSON.parse(JSON.stringify(clipboard));
+  part.notes.splice(at, clones.length, ...clones);
+  selectedNote={partIdx:apIdx,noteIdx:at+clones.length-1}; caretGap=null;
+  render(); updateSelectionUI(); scrollAfterEntry();
 }
 function clearClipboard(){ clipboard=null; updatePasteUI(); }
 
@@ -1216,12 +1279,47 @@ document.getElementById('score-wrap').addEventListener('click', e=>{
     return;
   }
   if(best){
+    apIdx=best.partIdx;                 // edit/insert in the staff you tapped
     selectedNote={partIdx:best.partIdx,noteIdx:best.noteIdx};
+    caretGap=null;
     render(); updateSelectionUI(); switchTab('notes');
   } else {
-    selectedNote=null; render(); updateSelectionUI();
+    // Tapped empty space — drop an insertion cursor in the nearest gap.
+    const g=gapFromTap(cx,cy);
+    apIdx=g.partIdx; caretGap=g; selectedNote=null;
+    render(); updateSelectionUI(); switchTab('notes');
   }
 });
+// Which (part, gap-index) an empty-space tap corresponds to: nearest staff by
+// vertical distance, then count how many of that part's notes sit left of the tap.
+function gapFromTap(cx,cy){
+  if(!notePositions.length) return {partIdx:apIdx,index:0};
+  let bestPart=apIdx, bestDy=Infinity;
+  for(const p of notePositions){ const dy=Math.abs(cy-(p.y+p.h*0.45)); if(dy<bestDy){bestDy=dy;bestPart=p.partIdx;} }
+  const inPart=notePositions.filter(p=>p.partIdx===bestPart);
+  let index=0;
+  inPart.forEach(p=>{ if(cx>p.x) index=Math.max(index,p.noteIdx+1); });
+  return {partIdx:bestPart,index};
+}
+// Positions the insertion-cursor line inside #score-div (scrolls with content).
+function renderCaret(){
+  const div=document.getElementById('score-div');
+  if(!div)return;
+  let caret=document.getElementById('score-caret');
+  if(!caret){ caret=document.createElement('div'); caret.id='score-caret'; div.appendChild(caret); }
+  if(!caretGap){ caret.style.display='none'; return; }
+  const pn=notePositions.filter(p=>p.partIdx===caretGap.partIdx);
+  const at=pn.find(p=>p.noteIdx===caretGap.index);
+  let x;
+  if(at) x=at.x-14;
+  else if(pn.length) x=Math.max(...pn.map(p=>p.x))+34;
+  else x=FX+30;
+  // VexFlow draws the 5 staff lines starting ~40px below the stave's sy
+  // (default space-above); center the caret over that band (sy+40 .. sy+80).
+  const y=TP+caretGap.partIdx*PG+34;
+  caret.style.cssText='position:absolute;left:'+x+'px;top:'+y+'px;width:2.5px;height:52px;background:#2980b9;border-radius:2px;pointer-events:none;box-shadow:0 0 3px rgba(41,128,185,.6);';
+  caret.style.display='block';
+}
 
 // ═══════════════════════════════════════════════════════
 // Measure grouping & dynamic width
@@ -1327,7 +1425,7 @@ function render(){
       const cl=p.clef||(inst.clef==='percussion'?'percussion':(inst.clef||'treble'));
       const sy=TP+pi*PG;
       const st=new Stave(x,sy,mw);
-      if(inst.staffLines)st.setNumLines(inst.staffLines);
+      if(inst.staffLines===1)st.setConfigForLines([{visible:false},{visible:false},{visible:true},{visible:false},{visible:false}]);
       if(first){ st.addClef(cl).addKeySignature(kd.vfSig).addTimeSignature(currentTimeSig.sig); }
       if(repeatStartMeasures.includes(mi))st.setBegBarType(Barline.type.REPEAT_BEGIN);
       if(repeatEndMeasures.includes(mi))st.setEndBarType(Barline.type.REPEAT_END);
@@ -1367,6 +1465,7 @@ function render(){
     });
   });
 
+  renderCaret();
   scheduleAutosave();
 }
 
@@ -1707,7 +1806,7 @@ function applyProject(d){
   document.getElementById('key-pill').textContent=KMAP[currentKeyId]?.label||currentKeyId;
   relabelNoteButtons();
   renderDiatonicChords();
-  selectedNote=null; updateSelectionUI(); updateProjPill();
+  selectedNote=null; caretGap=null; updateSelectionUI(); updateProjPill();
   renderPartsList(); render();
 }
 
@@ -1874,7 +1973,7 @@ function buildPrintSystems(partsSubset){
         const cl=p.clef||(inst.clef==='percussion'?'percussion':(inst.clef||'treble'));
         const sy=TP+pi*PG;
         const st=new Stave(x,sy,mw);
-        if(inst.staffLines)st.setNumLines(inst.staffLines);
+        if(inst.staffLines===1)st.setConfigForLines([{visible:false},{visible:false},{visible:true},{visible:false},{visible:false}]);
         if(first){ st.addClef(cl).addKeySignature(kd.vfSig).addTimeSignature(currentTimeSig.sig); }
         if(repeatStartMeasures.includes(mi))st.setBegBarType(Barline.type.REPEAT_BEGIN);
         if(repeatEndMeasures.includes(mi))st.setEndBarType(Barline.type.REPEAT_END);
@@ -2126,6 +2225,88 @@ document.getElementById('import-file').addEventListener('change', async function
 });
 
 // ═══════════════════════════════════════════════════════
+// Guided tour (hybrid walkthrough + spotlight on the real controls)
+// ═══════════════════════════════════════════════════════
+const TOUR=[
+  {title:'Welcome to Mobile Notation 🎵', text:'A quick tour of everything the app can do. Tap Next to step through — or Skip anytime. You can reopen this later with the “?” button.'},
+  {tab:'notes', sel:'#note-grid', title:'Write notes', text:'Tap a letter (C–B) to add that note. Each one lands in the octave closest to the note before it, so melodies flow naturally. The last button adds a rest.'},
+  {tab:'notes', sel:'#score-wrap', title:'The cursor', text:'Tap a note on the staff to select it (it turns blue). New notes insert right after it — so you can add music in the middle, not just the end. Tap an empty spot to drop the blue cursor where the next note will go.'},
+  {tab:'notes', sel:'#edit-section', title:'Change or delete a note', text:'With a note selected: ↑½ ↓½ move its pitch, ♯ ♭ ♮ set an accidental, 🗑 Delete removes it entirely, and ⇢Rest turns it into a rest (keeping the timing).'},
+  {tab:'notes', sel:'#dur-row', title:'Note length & octave', text:'Pick whole, half, quarter, 8th, 16th, 32nd — and the dot for dotted rhythms. With a note selected, tapping a length changes that note. “Nudge” shifts a note up or down an octave.'},
+  {tab:'notes', sel:'#acc-row', title:'Sharps & flats', text:'“Key” follows the key signature automatically; ♯ ♭ ♮ force an accidental on the notes you enter.'},
+  {tab:'markings', sel:'#panel-markings', title:'Markings', text:'Lyrics, dynamics (p, f, cresc.), articulations (accent, staccato), tempo words, and drumline rudiments (rolls, flams, stickings). They apply to a selected note, or attach to your next note.'},
+  {tab:'parts', sel:'#panel-parts', title:'Instruments & parts', text:'Each staff is a part — tap one to make it active for writing. Add instruments: strings, brass, voices, and percussion including single-line snare/bass drum and 5-line marching tenors & basses.'},
+  {tab:'score', sel:'#panel-score', title:'Key, time & repeats', text:'Set the key and time signature, and add repeats — repeat barlines and “repeat previous measure” (%) symbols that actually play back.'},
+  {tab:'notes', sel:'#chord-palette', title:'Chords', text:'Tap a chord to drop the whole thing in at once. “7th” adds the seventh; “Build” lets you stack a custom chord note by note.'},
+  {tab:'notes', sel:'#copy-toggle-btn', title:'Copy & paste', text:'Tap the scissors, then tap the first and last note of a range, Copy, switch to another part, and Paste — it replaces the music at the paste point. Great for repeating sections across staves.'},
+  {sel:'.tb.play', title:'Play it back', text:'Play and stop your song here. The staff scrolls to follow along as it plays.'},
+  {sel:'#collapse-btn', title:'More room', text:'Collapse the controls to give the music most of the screen — especially handy in landscape. Tap again to bring them back.'},
+  {tab:'proj', sel:'#panel-proj', title:'Songs, import & print', text:'Your songs auto-save here. Import MIDI or MusicXML, and print or export a PDF — the full score or one part at a time.'},
+  {sel:'#help-btn', title:'That’s it! 🎉', text:'Tap “?” anytime to see this tour again. Now go make some music.'}
+];
+let tourIdx=0, tourActive=false;
+function startTour(){
+  tourActive=true; tourIdx=0;
+  document.body.classList.remove('controls-collapsed');
+  document.getElementById('collapse-btn').textContent='▼';
+  if(parts[apIdx]&&parts[apIdx].notes.length){ selectedNote={partIdx:apIdx,noteIdx:0}; caretGap=null; render(); updateSelectionUI(); }
+  buildTourDom();
+  tourStep(0);
+  try{ localStorage.setItem('mn_tutorial_seen','1'); }catch(e){}
+}
+function buildTourDom(){
+  if(document.getElementById('tour-overlay'))return;
+  const ov=document.createElement('div'); ov.id='tour-overlay';
+  ov.innerHTML='<div id="tour-hole"></div><div id="tour-card">'
+    +'<div id="tour-title"></div><div id="tour-text"></div><div id="tour-dots"></div>'
+    +'<div id="tour-btns"><button id="tour-skip">Skip</button><span style="flex:1"></span><button id="tour-back">Back</button><button id="tour-next">Next ›</button></div>'
+    +'</div>';
+  document.body.appendChild(ov);
+  document.getElementById('tour-skip').onclick=endTour;
+  document.getElementById('tour-back').onclick=()=>{ if(tourIdx>0) tourStep(tourIdx-1); };
+  document.getElementById('tour-next').onclick=()=>{ if(tourIdx<TOUR.length-1) tourStep(tourIdx+1); else endTour(); };
+  window.addEventListener('resize', tourReposition);
+}
+function tourStep(i){
+  tourIdx=i; const step=TOUR[i];
+  if(step.tab) switchTab(step.tab);
+  requestAnimationFrame(()=>positionTour(step,i));
+}
+function positionTour(step,i){
+  document.getElementById('tour-title').textContent=step.title;
+  document.getElementById('tour-text').textContent=step.text;
+  document.getElementById('tour-dots').innerHTML=TOUR.map((_,k)=>'<span style="width:6px;height:6px;border-radius:50%;display:inline-block;margin:0 3px;background:'+(k===i?'#e94560':'#556')+'"></span>').join('');
+  document.getElementById('tour-back').style.visibility=(i===0)?'hidden':'visible';
+  document.getElementById('tour-next').textContent=(i===TOUR.length-1)?'Done ✓':'Next ›';
+  const hole=document.getElementById('tour-hole'), card=document.getElementById('tour-card');
+  const el=step.sel?document.querySelector(step.sel):null;
+  const r=el?el.getBoundingClientRect():null;
+  if(r && r.width>0 && r.height>0){
+    const pad=6;
+    hole.style.display='block';
+    hole.style.left=(r.left-pad)+'px'; hole.style.top=(r.top-pad)+'px';
+    hole.style.width=(r.width+pad*2)+'px'; hole.style.height=(r.height+pad*2)+'px';
+    card.style.maxWidth='340px'; card.style.width='calc(100% - 24px)';
+    // Put the card in the roomy staff area when the target is low; below it when high.
+    if(r.top < window.innerHeight*0.42){ card.style.top=(r.bottom+14)+'px'; card.style.bottom='auto'; }
+    else { card.style.top='auto'; card.style.bottom=(window.innerHeight-r.top+14)+'px'; }
+    card.style.left='50%'; card.style.transform='translateX(-50%)';
+  } else {
+    hole.style.display='none';
+    card.style.maxWidth='340px'; card.style.width='calc(100% - 24px)';
+    card.style.left='50%'; card.style.top='50%'; card.style.bottom='auto'; card.style.transform='translate(-50%,-50%)';
+  }
+}
+function tourReposition(){ if(tourActive) positionTour(TOUR[tourIdx],tourIdx); }
+function endTour(){
+  tourActive=false;
+  const ov=document.getElementById('tour-overlay'); if(ov)ov.remove();
+  window.removeEventListener('resize', tourReposition);
+  selectedNote=null; caretGap=null; render(); updateSelectionUI();
+  try{ localStorage.setItem('mn_tutorial_seen','1'); }catch(e){}
+}
+
+// ═══════════════════════════════════════════════════════
 // Boot
 // ═══════════════════════════════════════════════════════
 setAcc('key');clearArts();setDyn(null);setTempo(null);
@@ -2136,6 +2317,7 @@ initProjects();
 render();
 initMidi();
 document.getElementById('bpm-inp').addEventListener('change',scheduleAutosave);
+if(!localStorage.getItem('mn_tutorial_seen')) setTimeout(startTour, 500);
 </script>
 </body>
 </html>
