@@ -221,6 +221,17 @@ body { font-family:-apple-system,BlinkMacSystemFont,sans-serif; background:#1212
     <button class="chip"    id="a-ff" onclick="setAcc('bb')" style="font-size:10px">𝄫</button>
   </div>
   <div class="hint">Note buttons show the current key's scale in order, tonic first. “Key” enters the in-key pitch; ♯/♭/♮ force an accidental. Each new note lands in the octave closest to the last one you played — use Nudge to shift a note an octave further when that guess isn't what you want.</div>
+  <div class="row" id="tuplet-row">
+    <span class="lbl">Tuplet</span>
+    <button class="chip" id="tup-2" onclick="startTuplet(2,3)" title="Duplet — 2 in the time of 3">2</button>
+    <button class="chip" id="tup-3" onclick="startTuplet(3,2)" title="Triplet — 3 in the time of 2">3</button>
+    <button class="chip" id="tup-4" onclick="startTuplet(4,3)" title="Quadruplet — 4 in the time of 3">4</button>
+    <button class="chip" id="tup-5" onclick="startTuplet(5,4)" title="Quintuplet — 5 in the time of 4">5</button>
+    <button class="chip" id="tup-6" onclick="startTuplet(6,4)" title="Sextuplet — 6 in the time of 4">6</button>
+    <button class="chip" id="tup-7" onclick="startTuplet(7,4)" title="Septuplet — 7 in the time of 4">7</button>
+  </div>
+  <div id="tuplet-pending" style="font-size:10px;color:#e94560;min-height:14px;"></div>
+  <div class="hint">Tap a number to start a tuplet (3 = triplet, the most common), then enter that many notes/rests/chords at the current Dur — they group under a bracket automatically and the mode turns off. Tap the lit number again to cancel early.</div>
 </div>
 
 <!-- Parts panel -->
@@ -554,6 +565,11 @@ let apIdx=0;
 
 let currentKeyId='C';
 let selDur='q', selAcc='key', selOct=0, dotted=false;
+// Tuplet entry: tupletPending is armed by startTuplet(), consumed note-by-note
+// by insertNoteAtCursor() (like grace notes), and clears itself once `num`
+// notes have been tagged with the same id — that id is what groups them
+// under one bracket at render time.
+let tupletPending=null, tupletIdSeq=1;
 let pendingLyric='', pendingDyn=null, pendingArts=[], pendingTempo=null, pendingRud=null, pendingSticking=null;
 let graceMode=false, graceDur='8', pendingGraceNotes=[];
 let hairpinPending=null;
@@ -581,7 +597,14 @@ const BV={w:4,h:2,q:1,'8':.5,'16':.25,'32':.125};
 function durBeats(dur){const b=dur.replace(/[dr]/g,''),dot=dur.includes('d');return(BV[b]??1)*(dot?1.5:1);}
 // A measure-repeat marker always fills exactly one measure, regardless of
 // time signature — it has no meaningful `dur` string of its own.
-function noteBeats(n){ return n.repeatBars ? currentTimeSig.beats : durBeats(n.dur); }
+// A tupleted note's real duration is scaled by occ/num (e.g. a triplet
+// eighth — num:3,occ:2 — takes 2/3 of a normal eighth's beat value, so 3 of
+// them fill the same 1 beat that 2 normal eighths would).
+function noteBeats(n){
+  if(n.repeatBars) return currentTimeSig.beats;
+  const b=durBeats(n.dur);
+  return n.tuplet ? b*n.tuplet.occ/n.tuplet.num : b;
+}
 
 // ═══════════════════════════════════════════════════════
 // Duration / rest SVG icons
@@ -793,6 +816,36 @@ function setAcc(a){
   if(m[a])document.getElementById(m[a]).classList.add('on');
 }
 function changeOct(d){selOct=Math.max(-3,Math.min(3,selOct+d));document.getElementById('oct-val').textContent=(selOct>0?'+':selOct<0?'':'±')+selOct;}
+
+// ═══════════════════════════════════════════════════════
+// Tuplets
+// ═══════════════════════════════════════════════════════
+const TUP_BTN_ID={2:'tup-2',3:'tup-3',4:'tup-4',5:'tup-5',6:'tup-6',7:'tup-7'};
+function startTuplet(num,occ){
+  if(tupletPending && tupletPending.num===num && tupletPending.occ===occ){ cancelTuplet(); return; }
+  if(tupletPending) cancelTuplet(); // switching mid-group cancels the incomplete one
+  tupletPending={id:tupletIdSeq++,num,occ,count:0};
+  updateTupletUI();
+}
+// Un-tags any notes already entered for the in-progress group (so cancelling
+// mid-way leaves them as plain notes, not a bracket with the wrong count).
+function cancelTuplet(){
+  if(tupletPending){
+    const id=tupletPending.id;
+    parts.forEach(p=>p.notes.forEach(n=>{ if(n.tuplet&&n.tuplet.id===id) delete n.tuplet; }));
+    render();
+  }
+  tupletPending=null;
+  updateTupletUI();
+}
+function updateTupletUI(){
+  Object.values(TUP_BTN_ID).forEach(id=>{const el=document.getElementById(id);if(el)el.classList.remove('on');});
+  const el=document.getElementById('tuplet-pending');
+  if(!tupletPending){ if(el)el.textContent=''; return; }
+  const btn=document.getElementById(TUP_BTN_ID[tupletPending.num]);
+  if(btn)btn.classList.add('on');
+  if(el)el.textContent=`${tupletPending.num}:${tupletPending.occ} tuplet — ${tupletPending.count}/${tupletPending.num} entered (tap ${tupletPending.num} again to cancel)`;
+}
 
 // If a (non-rest) note is selected on the staff, Markings edits apply to it directly;
 // otherwise they're "pending" and get attached to the next note entered.
@@ -1018,6 +1071,12 @@ function grabPending(){
 // insert relative to a selection/gap it selects the new note so consecutive
 // taps build forward; a plain append stays in append mode (cursor at the end).
 function insertNoteAtCursor(noteObj){
+  if(tupletPending){
+    noteObj.tuplet={id:tupletPending.id,num:tupletPending.num,occ:tupletPending.occ};
+    tupletPending.count++;
+    if(tupletPending.count>=tupletPending.num) tupletPending=null;
+    updateTupletUI();
+  }
   const notes=parts[apIdx].notes;
   let pos, fromCursor;
   if(selectedNote && selectedNote.partIdx===apIdx){ pos=Math.min(selectedNote.noteIdx+1,notes.length); fromCursor=true; }
@@ -1089,6 +1148,7 @@ function relabelNoteButtons(){
   const kd=KMAP[currentKeyId];
   const glyph={'#':'♯','b':'♭','##':'𝄪','bb':'𝄫'};
   document.querySelectorAll('#note-grid .np').forEach((b,i)=>{
+    if(b.id==='hit-btn')return; // not one of the 7 scale-degree buttons
     const [name,acc]=kd.scale[i];
     b.textContent=name+(glyph[acc]||'');
   });
@@ -1114,15 +1174,21 @@ function addRest(){
 
 function undoNote(){
   const arr=parts[apIdx].notes;
-  if(arr.length)arr.pop();
+  const popped=arr.length?arr.pop():null;
   parts[apIdx].hairpins=parts[apIdx].hairpins.filter(hp=>hp.end<arr.length);
+  // If the undone note was part of the tuplet group still being entered, back
+  // its count off too so the pending group's target count stays accurate.
+  if(popped&&popped.tuplet&&tupletPending&&popped.tuplet.id===tupletPending.id){
+    tupletPending.count=Math.max(0,tupletPending.count-1);
+    updateTupletUI();
+  }
   selectedNote=null; caretGap=null;
   render(); updateSelectionUI();
 }
 function clearAll(){
   if(!parts.some(p=>p.notes.length)||!confirm('Clear all notes in this song?'))return;
   parts.forEach(p=>{p.notes=[];p.hairpins=[];});
-  selectedNote=null; caretGap=null;
+  selectedNote=null; caretGap=null; tupletPending=null; updateTupletUI();
   render();
 }
 
@@ -1493,7 +1559,7 @@ function scrollToMeasure(mi){
 }
 
 function drawVoice(ctx,stave,noteData,mw,VF,partIdx,partOffset){
-  const{StaveNote,Voice,Formatter,Accidental,Beam,Annotation,Articulation,Dot,Tremolo,Ornament,GraceNote,GraceNoteGroup,RepeatNote}=VF;
+  const{StaveNote,Voice,Formatter,Accidental,Beam,Annotation,Articulation,Dot,Tremolo,Ornament,GraceNote,GraceNoteGroup,RepeatNote,Tuplet}=VF;
   if(!noteData.length)return[];
   let vfNotes;
   try{
@@ -1542,6 +1608,24 @@ function drawVoice(ctx,stave,noteData,mw,VF,partIdx,partOffset){
       return sn;
     });
   }catch(e){console.warn('Note create:',e.message);return[];}
+  // Group consecutive same-id tupleted notes (within this measure) into VexFlow
+  // Tuplet objects. This MUST happen before the notes are added to a Voice —
+  // Tuplet's constructor is what shrinks each note's tick value by occ/num, and
+  // the Voice sums those ticks when it's built.
+  const tupletObjs=[];
+  try{
+    let i=0;
+    while(i<noteData.length){
+      const t=noteData[i].tuplet;
+      if(t){
+        let j=i;
+        while(j<noteData.length && noteData[j].tuplet && noteData[j].tuplet.id===t.id) j++;
+        const grp=vfNotes.slice(i,j);
+        if(grp.length>1) tupletObjs.push(new Tuplet(grp,{num_notes:t.num,notes_occupied:t.occ}));
+        i=j;
+      } else i++;
+    }
+  }catch(e){console.warn('Tuplet build:',e.message);}
   try{
     const voice=new Voice({numBeats:currentTimeSig.vfB,beatValue:currentTimeSig.vfV}).setMode(2);
     voice.addTickables(vfNotes);
@@ -1550,6 +1634,7 @@ function drawVoice(ctx,stave,noteData,mw,VF,partIdx,partOffset){
     const beams=beamable.length>=2?Beam.generateBeams(beamable):[];
     voice.draw(ctx,stave);
     beams.forEach(b=>b.setContext(ctx).draw());
+    tupletObjs.forEach(t=>{try{t.setContext(ctx).draw();}catch(e){console.warn('Tuplet draw:',e.message);}});
     vfNotes.forEach((vn,li)=>{
       try{
         const nx=vn.getAbsoluteX();
@@ -1588,7 +1673,12 @@ async function initMidi(){
 // Playback
 // ═══════════════════════════════════════════════════════
 const BVP={w:4,h:2,q:1,'8':.5,'16':.25,'32':.125};
-function durSecs(dur,bpm){const b=dur.replace(/[dr]/g,''),dot=dur.includes('d');return(BVP[b]??1)*(dot?1.5:1)*(60/bpm);}
+function durSecs(dur,bpm,tuplet){
+  const b=dur.replace(/[dr]/g,''),dot=dur.includes('d');
+  let beats=(BVP[b]??1)*(dot?1.5:1);
+  if(tuplet) beats*=tuplet.occ/tuplet.num;
+  return beats*(60/bpm);
+}
 function toToneDur(dur){const b=dur.replace(/[dr]/g,''),dot=dur.includes('d');return({w:'1n',h:'2n',q:'4n','8':'8n','16':'16n','32':'32n'}[b]||'4n')+(dot?'.':'');}
 
 // ── Sample-based instruments (real recordings) ──────────
@@ -1722,7 +1812,7 @@ async function playScore(){
     playOrder.forEach(mi=>{
       const measureNotes=resolveMeasureNotes(allM[pi],mi);
       measureNotes.forEach(n=>{
-        const secs=durSecs(n.dur,bpm);
+        const secs=durSecs(n.dur,bpm,n.tuplet);
         if(!n.rest&&!n.repeatBars&&(n.midiVals||[]).length){
           const abs=t;
           const toneNotes=n.midiVals.map(m=>Tone.Frequency(m,'midi').toNote());
@@ -1741,7 +1831,10 @@ async function playScore(){
             const hitDur=secs/hits;
             for(let k=0;k<hits;k++) Tone.getTransport().schedule(time=>hit(mainNotes,hitDur*.85,time,.8),'+'+(abs+k*hitDur));
           } else {
-            Tone.getTransport().schedule(time=>hit(mainNotes,toToneDur(n.dur),time,1),'+'+abs);
+            // Tupleted notes are compressed in time, but toToneDur() doesn't
+            // know that — use the actual computed slot (secs) instead of the
+            // nominal duration string, or the sustain would bleed into the next note.
+            Tone.getTransport().schedule(time=>hit(mainNotes,n.tuplet?secs*.95:toToneDur(n.dur),time,1),'+'+abs);
           }
         }
         t+=secs;
@@ -1806,7 +1899,7 @@ function applyProject(d){
   document.getElementById('key-pill').textContent=KMAP[currentKeyId]?.label||currentKeyId;
   relabelNoteButtons();
   renderDiatonicChords();
-  selectedNote=null; caretGap=null; updateSelectionUI(); updateProjPill();
+  selectedNote=null; caretGap=null; tupletPending=null; updateTupletUI(); updateSelectionUI(); updateProjPill();
   renderPartsList(); render();
 }
 
@@ -2233,6 +2326,7 @@ const TOUR=[
   {tab:'notes', sel:'#score-wrap', title:'The cursor', text:'Tap a note on the staff to select it (it turns blue). New notes insert right after it — so you can add music in the middle, not just the end. Tap an empty spot to drop the blue cursor where the next note will go.'},
   {tab:'notes', sel:'#edit-section', title:'Change or delete a note', text:'With a note selected: ↑½ ↓½ move its pitch, ♯ ♭ ♮ set an accidental, 🗑 Delete removes it entirely, and ⇢Rest turns it into a rest (keeping the timing).'},
   {tab:'notes', sel:'#dur-row', title:'Note length & octave', text:'Pick whole, half, quarter, 8th, 16th, 32nd — and the dot for dotted rhythms. With a note selected, tapping a length changes that note. “Nudge” shifts a note up or down an octave.'},
+  {tab:'notes', sel:'#tuplet-row', title:'Tuplets', text:'Tap 3 for a triplet (the most common), or 5/6/7 for the rarer groupings, then enter that many notes at the current Dur — they bracket together and playback squeezes them into the right time automatically.'},
   {tab:'notes', sel:'#acc-row', title:'Sharps & flats', text:'“Key” follows the key signature automatically; ♯ ♭ ♮ force an accidental on the notes you enter.'},
   {tab:'markings', sel:'#panel-markings', title:'Markings', text:'Lyrics, dynamics (p, f, cresc.), articulations (accent, staccato), tempo words, and drumline rudiments (rolls, flams, stickings). They apply to a selected note, or attach to your next note.'},
   {tab:'parts', sel:'#panel-parts', title:'Instruments & parts', text:'Each staff is a part — tap one to make it active for writing. Add instruments: strings, brass, voices, and percussion including single-line snare/bass drum and 5-line marching tenors & basses.'},
