@@ -146,7 +146,9 @@ body { font-family:-apple-system,BlinkMacSystemFont,sans-serif; background:#1212
 <div id="toolbar">
   <button class="tb play"  onclick="playScore()">▶</button>
   <button class="tb stop"  onclick="stopScore()">■</button>
-  <button class="tb undo"  onclick="undoNote()">⌫</button>
+  <button class="tb undo"  onclick="backspaceNote()" title="Delete last note">⌫</button>
+  <button class="tb" id="undo-btn" onclick="performUndo()" style="background:#2a2a40;color:#9bd;" title="Undo">↶</button>
+  <button class="tb" id="redo-btn" onclick="performRedo()" style="background:#2a2a40;color:#9bd;" title="Redo">↷</button>
   <button class="tb clear" onclick="clearAll()">✕</button>
   <button class="tb" id="copy-toggle-btn" onclick="toggleCopyMode()" style="background:#2a2a40;color:#9bd;">✂</button>
   <button class="tb" id="help-btn" onclick="startTour()" style="background:#2a2a40;color:#9bd;">?</button>
@@ -192,10 +194,11 @@ body { font-family:-apple-system,BlinkMacSystemFont,sans-serif; background:#1212
       <button class="chip" onclick="setSelAcc('#')">♯</button>
       <button class="chip" onclick="setSelAcc('b')">♭</button>
       <button class="chip" onclick="setSelAcc('n')">♮</button>
+      <button class="chip" id="tie-btn" onclick="toggleTie()" title="Tie to the next note (same pitch)">🔗 Tie</button>
       <button class="chip" onclick="removeSelected()" style="color:#e74c3c;border-color:#e74c3c;font-weight:700">🗑 Delete</button>
       <button class="chip" onclick="makeRest()" style="color:#e67e22;border-color:#e67e22;font-size:11px">⇢Rest</button>
     </div>
-    <div class="hint">↑½/↓½/♯/♭ change this note's pitch; the Dur row below changes its length. New notes you type land right after it. 🗑 Delete removes it; ⇢Rest turns it into a rest (same timing). Lyrics/dynamics/articulations are in the ✎ Markings tab.</div>
+    <div class="hint">↑½/↓½/♯/♭ change this note's pitch; the Dur row below changes its length. New notes you type land right after it. 🔗 Tie holds this note's pitch through into the next note (they must match); 🗑 Delete removes it; ⇢Rest turns it into a rest (same timing). Lyrics/dynamics/articulations are in the ✎ Markings tab.</div>
   </div>
   <div class="row" id="dur-row">
     <span class="lbl">Dur</span>
@@ -671,6 +674,7 @@ function refreshDurIcons(){
 })();
 
 function setKey(kid){
+  if(kid!==currentKeyId) pushUndo();
   currentKeyId=kid;
   document.querySelectorAll('.key-btn').forEach(b=>b.classList.toggle('on',b.dataset.kid===kid));
   document.getElementById('key-pill').textContent=KMAP[kid]?.label||kid;
@@ -679,6 +683,7 @@ function setKey(kid){
   render();
 }
 function setTimeSig(sig){
+  if(sig!==currentTimeSig.sig) pushUndo();
   currentTimeSig=TIME_SIGS.find(t=>t.sig===sig)||TIME_SIGS[0];
   document.querySelectorAll('.time-btn').forEach(b=>b.classList.toggle('on',b.dataset.sig===sig));
   render();
@@ -711,6 +716,7 @@ function selectCat(cat){
 }
 function confirmAddPart(){
   if(!newInstId)return;
+  pushUndo();
   const inst=IMAP[newInstId];
   parts.push(mkPart(inst.label,newInstId,inst.clef||'treble'));
   apIdx=parts.length-1;
@@ -722,6 +728,7 @@ function confirmAddPart(){
 }
 function deletePart(i){
   if(parts.length<=1)return;
+  pushUndo();
   parts.splice(i,1);
   if(apIdx>=parts.length)apIdx=parts.length-1;
   renderPartsList(); render();
@@ -799,14 +806,14 @@ function setDur(d){
   selDur=d;
   document.getElementById('rest-btn').innerHTML=durIcon(selDur,true,dotted);
   const n=selectedNoteAny();
-  if(n){ n.dur=d+(n.dur.includes('d')?'d':'')+(n.rest?'r':''); render(); updateSelectionUI(); }
+  if(n){ pushUndo(); n.dur=d+(n.dur.includes('d')?'d':'')+(n.rest?'r':''); render(); updateSelectionUI(); }
   else refreshDurRow();
 }
 function toggleDot(){
   dotted=!dotted;
   document.getElementById('rest-btn').innerHTML=durIcon(selDur,true,dotted);
   const n=selectedNoteAny();
-  if(n){ n.dur = n.dur.includes('d') ? n.dur.replace('d','') : n.dur.replace(/r?$/,'d$&'); render(); updateSelectionUI(); }
+  if(n){ pushUndo(); n.dur = n.dur.includes('d') ? n.dur.replace('d','') : n.dur.replace(/r?$/,'d$&'); render(); updateSelectionUI(); }
   else refreshDurRow();
 }
 function setAcc(a){
@@ -830,7 +837,8 @@ function startTuplet(num,occ){
 // Un-tags any notes already entered for the in-progress group (so cancelling
 // mid-way leaves them as plain notes, not a bracket with the wrong count).
 function cancelTuplet(){
-  if(tupletPending){
+  if(tupletPending&&tupletPending.count>0){
+    pushUndo();
     const id=tupletPending.id;
     parts.forEach(p=>p.notes.forEach(n=>{ if(n.tuplet&&n.tuplet.id===id) delete n.tuplet; }));
     render();
@@ -897,22 +905,23 @@ function syncEditorsToSelection(){
 }
 function setDyn(d){
   const n=currentEditableNote();
-  if(n){ n.dyn=d; render(); updateSelectionUI(); return; }
+  if(n){ pushUndo(); n.dyn=d; render(); updateSelectionUI(); return; }
   pendingDyn=d; highlightDyn(d);
 }
 function setRud(v){
   const n=currentEditableNote();
-  if(n){ n.rud=v; render(); updateSelectionUI(); return; }
+  if(n){ pushUndo(); n.rud=v; render(); updateSelectionUI(); return; }
   pendingRud=v; highlightRud(v);
 }
 function setSticking(v){
   const n=currentEditableNote();
-  if(n){ n.sticking=v; render(); updateSelectionUI(); return; }
+  if(n){ pushUndo(); n.sticking=v; render(); updateSelectionUI(); return; }
   pendingSticking=v; highlightSticking(v);
 }
 function toggleArt(a){
   const n=currentEditableNote();
   if(n){
+    pushUndo();
     n.arts=n.arts||[];
     const i=n.arts.indexOf(a);
     if(i>=0)n.arts.splice(i,1);else n.arts.push(a);
@@ -925,12 +934,12 @@ function toggleArt(a){
 }
 function clearArts(){
   const n=currentEditableNote();
-  if(n){ n.arts=[]; render(); updateSelectionUI(); return; }
+  if(n){ pushUndo(); n.arts=[]; render(); updateSelectionUI(); return; }
   pendingArts=[]; highlightArts(pendingArts);
 }
 function setTempo(t){
   const n=currentEditableNote();
-  if(n){ n.tempo=t; render(); updateSelectionUI(); return; }
+  if(n){ pushUndo(); n.tempo=t; render(); updateSelectionUI(); return; }
   pendingTempo=t; highlightTempo(t);
 }
 function clearPending(){
@@ -971,7 +980,7 @@ function startHairpin(type){hairpinPending={type,partIdx:apIdx,startIdx:parts[ap
 function endHairpin(type){
   if(!hairpinPending||hairpinPending.partIdx!==apIdx)hairpinPending={type,partIdx:apIdx,startIdx:0};
   const end=parts[apIdx].notes.length-1;
-  if(end>hairpinPending.startIdx){parts[apIdx].hairpins.push({type:hairpinPending.type,start:hairpinPending.startIdx,end});render();}
+  if(end>hairpinPending.startIdx){pushUndo();parts[apIdx].hairpins.push({type:hairpinPending.type,start:hairpinPending.startIdx,end});render();}
   hairpinPending=null;document.getElementById('hp-status').textContent='';
 }
 
@@ -1071,6 +1080,7 @@ function grabPending(){
 // insert relative to a selection/gap it selects the new note so consecutive
 // taps build forward; a plain append stays in append mode (cursor at the end).
 function insertNoteAtCursor(noteObj){
+  pushUndo();
   if(tupletPending){
     noteObj.tuplet={id:tupletPending.id,num:tupletPending.num,occ:tupletPending.occ};
     tupletPending.count++;
@@ -1082,6 +1092,9 @@ function insertNoteAtCursor(noteObj){
   if(selectedNote && selectedNote.partIdx===apIdx){ pos=Math.min(selectedNote.noteIdx+1,notes.length); fromCursor=true; }
   else if(caretGap && caretGap.partIdx===apIdx){ pos=Math.min(caretGap.index,notes.length); fromCursor=true; }
   else { pos=notes.length; fromCursor=false; }
+  // Inserting between a tied pair would silently re-target the tie at the new
+  // note instead of its real partner — break it instead.
+  if(notes[pos-1]&&notes[pos-1].tie) notes[pos-1].tie=false;
   notes.splice(pos,0,noteObj);
   if(fromCursor){ selectedNote={partIdx:apIdx,noteIdx:pos}; caretGap=null; }
   else { selectedNote=null; caretGap=null; }
@@ -1172,9 +1185,15 @@ function addRest(){
   render();scrollAfterEntry();
 }
 
-function undoNote(){
+// Quick "delete the last note I just entered" — distinct from, but also
+// tracked by, the full Undo/Redo history below.
+function backspaceNote(){
   const arr=parts[apIdx].notes;
-  const popped=arr.length?arr.pop():null;
+  if(!arr.length)return;
+  pushUndo();
+  const popped=arr.pop();
+  const prev=arr[arr.length-1];
+  if(prev&&prev.tie) prev.tie=false; // its tie partner just got removed
   parts[apIdx].hairpins=parts[apIdx].hairpins.filter(hp=>hp.end<arr.length);
   // If the undone note was part of the tuplet group still being entered, back
   // its count off too so the pending group's target count stays accurate.
@@ -1187,9 +1206,62 @@ function undoNote(){
 }
 function clearAll(){
   if(!parts.some(p=>p.notes.length)||!confirm('Clear all notes in this song?'))return;
+  pushUndo();
   parts.forEach(p=>{p.notes=[];p.hairpins=[];});
   selectedNote=null; caretGap=null; tupletPending=null; updateTupletUI();
   render();
+}
+
+// ═══════════════════════════════════════════════════════
+// Undo / Redo (whole-state snapshots — simple and robust for a
+// mobile-scale score: capped stack of JSON snapshots of everything a
+// mutating action can touch).
+// ═══════════════════════════════════════════════════════
+let undoStack=[], redoStack=[];
+const UNDO_MAX=60;
+function snapshotState(){
+  return JSON.stringify({
+    parts, keyId:currentKeyId, timeSig:currentTimeSig.sig,
+    repeatStartMeasures, repeatEndMeasures
+  });
+}
+function pushUndo(){
+  undoStack.push(snapshotState());
+  if(undoStack.length>UNDO_MAX) undoStack.shift();
+  redoStack=[];
+  updateUndoRedoUI();
+}
+function restoreState(json){
+  const d=JSON.parse(json);
+  parts=(d.parts||[]).map(p=>({...p,hairpins:p.hairpins||[],notes:(p.notes||[]).map(normalizeNote)}));
+  currentKeyId=d.keyId||'C';
+  currentTimeSig=TIME_SIGS.find(t=>t.sig===d.timeSig)||currentTimeSig;
+  repeatStartMeasures=d.repeatStartMeasures?d.repeatStartMeasures.slice():[];
+  repeatEndMeasures=d.repeatEndMeasures?d.repeatEndMeasures.slice():[];
+  apIdx=Math.min(apIdx,parts.length-1);
+  selectedNote=null; caretGap=null; tupletPending=null; updateTupletUI();
+  document.querySelectorAll('.key-btn').forEach(b=>b.classList.toggle('on',b.dataset.kid===currentKeyId));
+  document.querySelectorAll('.time-btn').forEach(b=>b.classList.toggle('on',b.dataset.sig===currentTimeSig.sig));
+  document.getElementById('key-pill').textContent=KMAP[currentKeyId]?.label||currentKeyId;
+  relabelNoteButtons(); renderDiatonicChords();
+  renderPartsList(); render(); updateSelectionUI();
+}
+function performUndo(){
+  if(!undoStack.length)return;
+  redoStack.push(snapshotState());
+  restoreState(undoStack.pop());
+  updateUndoRedoUI();
+}
+function performRedo(){
+  if(!redoStack.length)return;
+  undoStack.push(snapshotState());
+  restoreState(redoStack.pop());
+  updateUndoRedoUI();
+}
+function updateUndoRedoUI(){
+  const u=document.getElementById('undo-btn'), r=document.getElementById('redo-btn');
+  if(u){ u.style.opacity=undoStack.length?1:.4; u.disabled=!undoStack.length; }
+  if(r){ r.style.opacity=redoStack.length?1:.4; r.disabled=!redoStack.length; }
 }
 
 // ═══════════════════════════════════════════════════════
@@ -1203,18 +1275,36 @@ function updateSelectionUI(){
   sec.style.display='block';
   const label=n.rest?'Rest':(n.keys||[]).map((k,i)=>{const[name,oct]=k.split('/');const acc=n.vfAccs?.[i];return name+(acc&&acc!=='n'?acc:'')+oct;}).join(' ');
   document.getElementById('sel-note-label').textContent=label;
+  document.getElementById('tie-btn').classList.toggle('on',!!n.tie);
   refreshDurRow();
   syncEditorsToSelection();
+}
+
+// Ties only make sense between two adjacent notes/chords with the SAME pitch
+// content (that's what distinguishes a tie from a slur) and never onto a rest.
+function toggleTie(){
+  if(!selectedNote)return;
+  const p=parts[selectedNote.partIdx]; const n=p?.notes[selectedNote.noteIdx]; if(!n||n.rest)return;
+  if(n.tie){ pushUndo(); n.tie=false; render(); updateSelectionUI(); return; }
+  const next=p.notes[selectedNote.noteIdx+1];
+  if(!next||next.rest||next.repeatBars){ alert('Tie needs a note of the same pitch right after this one.'); return; }
+  const same=next.keys.length===n.keys.length && n.keys.every(k=>next.keys.includes(k));
+  if(!same){ alert('Tie needs the next note to be the same pitch (chord notes included).'); return; }
+  pushUndo();
+  n.tie=true;
+  render(); updateSelectionUI();
 }
 
 function moveSelNote(semitones){
   if(!selectedNote)return;
   const n=parts[selectedNote.partIdx]?.notes[selectedNote.noteIdx];
   if(!n||n.rest)return;
+  pushUndo();
   n.midiVals=n.midiVals.map(m=>m+semitones);
   const results=n.midiVals.map(m=>midiToNote(m));
   n.keys=results.map(r=>r.name+'/'+r.oct);
   n.vfAccs=results.map(r=>r.acc);
+  sanitizeTies(parts[selectedNote.partIdx]);
   render(); updateSelectionUI();
 }
 
@@ -1223,19 +1313,36 @@ function setSelAcc(acc){
   const n=parts[selectedNote.partIdx]?.notes[selectedNote.noteIdx];
   if(!n||n.rest)return;
   const midi=n.midiVals[0]; if(midi==null)return;
+  pushUndo();
   const {name,oct}=midiToNote(midi);
   n.keys[0]=name+'/'+oct;
   if(acc==='n'){ n.vfAccs[0]='n'; n.midiVals[0]=noteToMidi(name,null,oct); }
   else { n.vfAccs[0]=acc; n.midiVals[0]=noteToMidi(name,acc,oct); }
+  sanitizeTies(parts[selectedNote.partIdx]);
   render(); updateSelectionUI();
+}
+
+// A pitch edit, paste, or splice can silently invalidate a tie (a tie only
+// means something between two adjacent same-pitch, non-rest notes) — strip
+// any that no longer qualify rather than leave a stale curve/playback-merge.
+function sanitizeTies(part){
+  const sameKeys=(a,b)=>a&&b&&a.length===b.length&&a.every(k=>b.includes(k));
+  part.notes.forEach((n,i)=>{
+    if(!n.tie)return;
+    const next=part.notes[i+1];
+    if(!next||next.rest||next.repeatBars||!sameKeys(n.keys,next.keys)) n.tie=false;
+  });
 }
 
 // "⇢Rest" turns the note into a rest, keeping its rhythmic slot & timing.
 function makeRest(){
   if(!selectedNote)return;
   const p=parts[selectedNote.partIdx]; const n=p?.notes[selectedNote.noteIdx]; if(!n)return;
+  pushUndo();
   const clef=p.clef||(IMAP[p.instId]?.clef)||'treble';
-  n.rest=true; n.midiVals=[]; n.keys=[clef==='bass'?'d/3':'b/4']; n.vfAccs=[null]; n.arts=[]; n.lyric=null; n.rud=null; n.grace=[]; n.sticking=null;
+  const prev=p.notes[selectedNote.noteIdx-1];
+  if(prev&&prev.tie) prev.tie=false; // a rest can't be tied into
+  n.rest=true; n.tie=false; n.midiVals=[]; n.keys=[clef==='bass'?'d/3':'b/4']; n.vfAccs=[null]; n.arts=[]; n.lyric=null; n.rud=null; n.grace=[]; n.sticking=null;
   render(); updateSelectionUI();
 }
 // True delete: remove the note entirely (everything after shifts left). Leaves
@@ -1245,6 +1352,9 @@ function removeSelected(){
   const p=parts[selectedNote.partIdx]; if(!p)return;
   const idx=selectedNote.noteIdx;
   if(idx<0||idx>=p.notes.length)return;
+  pushUndo();
+  const prev=p.notes[idx-1];
+  if(prev&&prev.tie) prev.tie=false; // its tie partner is about to be removed
   p.notes.splice(idx,1);
   p.hairpins=(p.hairpins||[]).filter(hp=>hp.start!==idx&&hp.end!==idx).map(hp=>({...hp,start:hp.start>idx?hp.start-1:hp.start,end:hp.end>idx?hp.end-1:hp.end}));
   caretGap={partIdx:selectedNote.partIdx,index:idx};
@@ -1318,12 +1428,14 @@ function updatePasteUI(){
 // point (the selected note, the caret gap, or the end), rather than inserting.
 function pasteClipboard(){
   if(!clipboard||!clipboard.length)return;
+  pushUndo();
   const part=parts[apIdx];
   const at=(selectedNote&&selectedNote.partIdx===apIdx)?selectedNote.noteIdx
           :(caretGap&&caretGap.partIdx===apIdx)?caretGap.index
           :part.notes.length;
   const clones=JSON.parse(JSON.stringify(clipboard));
   part.notes.splice(at, clones.length, ...clones);
+  sanitizeTies(part);
   selectedNote={partIdx:apIdx,noteIdx:at+clones.length-1}; caretGap=null;
   render(); updateSelectionUI(); scrollAfterEntry();
 }
@@ -1410,6 +1522,7 @@ function measureIndexOfNote(partIdx, noteIdx){
 }
 function toggleRepeatStart(){
   if(!selectedNote){ alert('Select a note first to mark its measure.'); return; }
+  pushUndo();
   const mi=measureIndexOfNote(selectedNote.partIdx, selectedNote.noteIdx);
   const idx=repeatStartMeasures.indexOf(mi);
   if(idx>=0) repeatStartMeasures.splice(idx,1); else repeatStartMeasures.push(mi);
@@ -1417,6 +1530,7 @@ function toggleRepeatStart(){
 }
 function toggleRepeatEnd(){
   if(!selectedNote){ alert('Select a note first to mark its measure.'); return; }
+  pushUndo();
   const mi=measureIndexOfNote(selectedNote.partIdx, selectedNote.noteIdx);
   const idx=repeatEndMeasures.indexOf(mi);
   if(idx>=0) repeatEndMeasures.splice(idx,1); else repeatEndMeasures.push(mi);
@@ -1430,6 +1544,7 @@ function addMeasureRepeat(n){
   let beats=0;
   part.notes.forEach(nn=>{ beats+=noteBeats(nn); if(beats>=BMAX-.001) beats=0; });
   if(beats>0.001){ alert('You can only add a measure repeat at the start of a new measure.'); return; }
+  pushUndo();
   part.notes.push({repeatBars:n, rest:false, keys:['b/4'], midiVals:[], dur:'w', vfAccs:[null], lyric:null, dyn:null, arts:[], tempo:null, rud:null, grace:[], sticking:null});
   selectedNote=null;
   render(); scrollToNoteEnd(apIdx);
@@ -1451,7 +1566,7 @@ function calcMW(allM, mi){
 // ═══════════════════════════════════════════════════════
 function render(){
   const VF=Vex.Flow;
-  const{Renderer,Stave,StaveNote,Voice,Formatter,Accidental,StaveConnector,Beam,Annotation,Articulation,StaveHairpin,Dot,Barline}=VF;
+  const{Renderer,Stave,StaveNote,Voice,Formatter,Accidental,StaveConnector,Beam,Annotation,Articulation,StaveHairpin,Dot,Barline,StaveTie}=VF;
   const div=document.getElementById('score-div');
   div.innerHTML='';
   notePositions=[];
@@ -1528,6 +1643,15 @@ function render(){
           hp.type==='cresc'?StaveHairpin.type.CRESC:StaveHairpin.type.DECRESC);
         h.setContext(ctx).setStave(s.stave).draw();
       }catch(err){console.warn('Hairpin:',err.message);}
+    });
+    part.notes.forEach((n,idx)=>{
+      if(!n.tie)return;
+      const s=vfRefs[pi][idx],e=vfRefs[pi][idx+1];
+      if(!s||!e)return;
+      try{
+        const idxs=n.keys.map((_,i)=>i);
+        new StaveTie({first_note:s.vfNote,last_note:e.vfNote,first_indices:idxs,last_indices:idxs}).setContext(ctx).draw();
+      }catch(err){console.warn('Tie:',err.message);}
     });
   });
 
@@ -1672,13 +1796,6 @@ async function initMidi(){
 // ═══════════════════════════════════════════════════════
 // Playback
 // ═══════════════════════════════════════════════════════
-const BVP={w:4,h:2,q:1,'8':.5,'16':.25,'32':.125};
-function durSecs(dur,bpm,tuplet){
-  const b=dur.replace(/[dr]/g,''),dot=dur.includes('d');
-  let beats=(BVP[b]??1)*(dot?1.5:1);
-  if(tuplet) beats*=tuplet.occ/tuplet.num;
-  return beats*(60/bpm);
-}
 function toToneDur(dur){const b=dur.replace(/[dr]/g,''),dot=dur.includes('d');return({w:'1n',h:'2n',q:'4n','8':'8n','16':'16n','32':'32n'}[b]||'4n')+(dot?'.':'');}
 
 // ── Sample-based instruments (real recordings) ──────────
@@ -1769,6 +1886,75 @@ function resolveMeasureNotes(measuresForPart, mi, depth){
   }
   return arr;
 }
+// ── Tempo map ─────────────────────────────────────────────
+// Tempo CHANGE markings (accel./rit./rall./a tempo) are read off a single
+// "conductor" part — the first part carrying any such marking, else the
+// first part overall — so every part speeds up/slows down together instead
+// of drifting apart. Tempo WORDS (Grave..Prestissimo) stay visual-only: they
+// usually just restate the piece's overall character/starting tempo, which
+// the BPM box already sets, so auto-applying them would silently override
+// what the user typed there.
+const TEMPO_STEP={'accel.':1.15,'poco accel.':1.08,'rit.':.85,'ritard.':.85,'rall.':.8};
+function buildTempoMap(baseBpm){
+  const cp=parts.find(p=>p.notes.some(n=>TEMPO_STEP[n.tempo]))||parts[0];
+  const map=[{beat:0,bpm:baseBpm}];
+  if(cp){
+    let beat=0,cur=baseBpm;
+    cp.notes.forEach(n=>{
+      if(n.tempo==='a tempo'&&cur!==baseBpm){ cur=baseBpm; map.push({beat,bpm:cur}); }
+      else if(TEMPO_STEP[n.tempo]){ cur=Math.max(20,Math.min(320,Math.round(cur*TEMPO_STEP[n.tempo]))); map.push({beat,bpm:cur}); }
+      beat+=noteBeats(n);
+    });
+  }
+  return map;
+}
+// Integrates the (piecewise-constant) tempo map to convert a beat position
+// into elapsed seconds since beat 0.
+function beatsToSeconds(map,beat){
+  let secs=0,prevBeat=0,prevBpm=map[0]?map[0].bpm:80;
+  for(let i=1;i<map.length;i++){
+    if(map[i].beat>=beat)break;
+    secs+=(map[i].beat-prevBeat)*(60/prevBpm);
+    prevBeat=map[i].beat;prevBpm=map[i].bpm;
+  }
+  secs+=(beat-prevBeat)*(60/prevBpm);
+  return secs;
+}
+
+// ── Dynamics → velocity ──────────────────────────────────
+// A dyn marking (p, f, ...) sets the level from that note forward until the
+// next one; a hairpin ramps linearly between the level at its start and
+// either an explicit dyn at its end note, or a generic bump/drop. Returns a
+// Map keyed by note OBJECT (not index) so a measure-repeat's resolved notes —
+// which are the same object references as their source measure — pick up
+// the correct historical level automatically.
+const DYN_VEL={ppp:.2,pp:.32,p:.45,mp:.58,mf:.7,f:.82,ff:.92,fff:1,sfz:1,sfp:.5,fz:.95};
+function computeVelocities(part){
+  const notes=part.notes,n=notes.length;
+  const hpAt={},hpStartVel={};
+  (part.hairpins||[]).forEach(hp=>{ for(let i=hp.start;i<=hp.end&&i<n;i++)(hpAt[i]=hpAt[i]||[]).push(hp); });
+  let cur=.72;
+  const map=new Map();
+  for(let i=0;i<n;i++){
+    const note=notes[i];
+    if(note.dyn&&DYN_VEL[note.dyn]!=null)cur=DYN_VEL[note.dyn];
+    (part.hairpins||[]).forEach(hp=>{ if(hp.start===i)hpStartVel[hp.start+'_'+hp.end]=cur; });
+    const hps=hpAt[i];
+    if(hps&&hps.length){
+      const hp=hps[hps.length-1];
+      const key=hp.start+'_'+hp.end;
+      const startV=hpStartVel[key]??cur;
+      const endNote=notes[hp.end];
+      const endV=(endNote&&endNote.dyn&&DYN_VEL[endNote.dyn]!=null)?DYN_VEL[endNote.dyn]:Math.max(.15,Math.min(1,startV+(hp.type==='cresc'?.22:-.22)));
+      const span=hp.end-hp.start;
+      const frac=span>0?(i-hp.start)/span:1;
+      cur=startV+(endV-startV)*frac;
+    }
+    map.set(note,cur);
+  }
+  return map;
+}
+
 async function playScore(){
   if(playing)return;await Tone.start();
   const playBtn=document.querySelector('.tb.play');
@@ -1786,17 +1972,17 @@ async function playScore(){
   const allM=parts.map(p=>toMeasures(p.notes));
   const numM=Math.max(...allM.map(m=>m.length),1);
   const playOrder=buildPlayOrder(numM);
-  const secPerBeat=60/bpm;
+  const tempoMap=buildTempoMap(bpm);
 
   // Follow the currently-playing measure across the staff view as it plays —
   // uses the expanded order, so the view jumps back during a repeat too.
-  let cumScroll=0;
+  let cumBeat=0;
   playOrder.forEach(mi=>{
-    Tone.getTransport().schedule(()=>scrollToMeasure(mi),'+'+cumScroll);
-    cumScroll+=(measureBeats[mi]||currentTimeSig.beats)*secPerBeat;
+    Tone.getTransport().schedule(()=>scrollToMeasure(mi),'+'+beatsToSeconds(tempoMap,cumBeat));
+    cumBeat+=(measureBeats[mi]||currentTimeSig.beats);
   });
 
-  _activeVoices=[];let maxT=0;
+  _activeVoices=[];let maxBeatAll=0;
   parts.forEach((part,pi)=>{
     if(!part.notes.length)return;
     const inst=IMAP[part.instId]||IMAP['piano'];
@@ -1808,41 +1994,50 @@ async function playScore(){
         else voice.triggerAttackRelease(notesArg,d,time,vel);
       }catch(e){}
     };
-    let t=0;
-    playOrder.forEach(mi=>{
-      const measureNotes=resolveMeasureNotes(allM[pi],mi);
-      measureNotes.forEach(n=>{
-        const secs=durSecs(n.dur,bpm,n.tuplet);
-        if(!n.rest&&!n.repeatBars&&(n.midiVals||[]).length){
-          const abs=t;
-          const toneNotes=n.midiVals.map(m=>Tone.Frequency(m,'midi').toNote());
-          const mainNotes=toneNotes.length===1?toneNotes[0]:toneNotes;
-          // Grace notes (flam/drag/ruff): quick quiet taps just before the main hit.
-          const graceList=n.grace||[];
-          const GRACE_GAP=.035;
-          graceList.forEach((g,gi)=>{
-            const gt=abs-(graceList.length-gi)*GRACE_GAP;
-            if(gt>=0) Tone.getTransport().schedule(time=>hit(mainNotes,GRACE_GAP*.85,time,.55),'+'+gt);
-          });
-          // Rolls: subdivide the note into fast repeated hits instead of one sustained note.
-          const ROLL_HITS={trem1:2,trem2:4,trem3:8,buzz:16,press:20};
-          const hits=ROLL_HITS[n.rud];
-          if(hits){
-            const hitDur=secs/hits;
-            for(let k=0;k<hits;k++) Tone.getTransport().schedule(time=>hit(mainNotes,hitDur*.85,time,.8),'+'+(abs+k*hitDur));
-          } else {
-            // Tupleted notes are compressed in time, but toToneDur() doesn't
-            // know that — use the actual computed slot (secs) instead of the
-            // nominal duration string, or the sustain would bleed into the next note.
-            Tone.getTransport().schedule(time=>hit(mainNotes,n.tuplet?secs*.95:toToneDur(n.dur),time,1),'+'+abs);
-          }
+    const velMap=computeVelocities(part);
+    // Flatten this part's playback sequence (this is where repeats actually
+    // get expanded into real play order), then merge tied notes into single
+    // longer-held events so the tied-to note doesn't retrigger.
+    const flat=[];
+    playOrder.forEach(mi=>{ resolveMeasureNotes(allM[pi],mi).forEach(n=>flat.push(n)); });
+    let beatPos=0,i=0;
+    while(i<flat.length){
+      const n=flat[i];
+      let beats=noteBeats(n),j=i;
+      while(flat[j].tie&&j+1<flat.length){ j++; beats+=noteBeats(flat[j]); }
+      const startBeat=beatPos,endBeat=beatPos+beats;
+      const abs=beatsToSeconds(tempoMap,startBeat);
+      const secs=beatsToSeconds(tempoMap,endBeat)-abs;
+      if(!n.rest&&!n.repeatBars&&(n.midiVals||[]).length){
+        const vel=velMap.get(n)??.75;
+        const toneNotes=n.midiVals.map(m=>Tone.Frequency(m,'midi').toNote());
+        const mainNotes=toneNotes.length===1?toneNotes[0]:toneNotes;
+        // Grace notes (flam/drag/ruff): quick quiet taps just before the main hit.
+        const graceList=n.grace||[];
+        const GRACE_GAP=.035;
+        graceList.forEach((g,gi)=>{
+          const gt=abs-(graceList.length-gi)*GRACE_GAP;
+          if(gt>=0) Tone.getTransport().schedule(time=>hit(mainNotes,GRACE_GAP*.85,time,vel*.7),'+'+gt);
+        });
+        // Rolls: subdivide the note into fast repeated hits instead of one sustained note.
+        const ROLL_HITS={trem1:2,trem2:4,trem3:8,buzz:16,press:20};
+        const hits=ROLL_HITS[n.rud];
+        if(hits){
+          const hitDur=secs/hits;
+          for(let k=0;k<hits;k++) Tone.getTransport().schedule(time=>hit(mainNotes,hitDur*.85,time,vel),'+'+(abs+k*hitDur));
+        } else {
+          // Tuplets/ties compress or extend the slot, but toToneDur() doesn't
+          // know that — use the actual computed span (secs) instead of the
+          // nominal duration string whenever it differs from the plain notated one.
+          Tone.getTransport().schedule(time=>hit(mainNotes,(n.tuplet||n.tie)?secs*.95:toToneDur(n.dur),time,vel),'+'+abs);
         }
-        t+=secs;
-      });
-    });
-    maxT=Math.max(maxT,t);
+      }
+      beatPos=endBeat; i=j+1;
+    }
+    maxBeatAll=Math.max(maxBeatAll,beatPos);
   });
   if(!_activeVoices.length){playing=false;return;}
+  const maxT=beatsToSeconds(tempoMap,maxBeatAll);
   Tone.getTransport().schedule(()=>stopScore(),'+' +(maxT+.8));
   Tone.getTransport().start();
 }
@@ -1900,6 +2095,7 @@ function applyProject(d){
   relabelNoteButtons();
   renderDiatonicChords();
   selectedNote=null; caretGap=null; tupletPending=null; updateTupletUI(); updateSelectionUI(); updateProjPill();
+  undoStack=[]; redoStack=[]; updateUndoRedoUI(); // undo history doesn't cross songs
   renderPartsList(); render();
 }
 
@@ -1978,26 +2174,38 @@ function buildTrack(events){
 function exportMIDI(){
   const PPQ=480;
   const bpm=parseInt(document.getElementById('bpm-inp').value)||80;
+  const tempoMap=buildTempoMap(bpm);
   const tracks=[];
-  // Tempo / meta track
+  // Tempo / meta track — one Set Tempo event per tempo-map breakpoint, so
+  // mid-score accel./rit./a tempo markings actually play back in the file too.
   const t0=[];
   const dden=Math.round(Math.log2(currentTimeSig.vfV));
   t0.push({d:0,bytes:[0xFF,0x58,0x04,currentTimeSig.vfB,dden,24,8]});
-  const mpq=Math.round(60000000/bpm);
-  t0.push({d:0,bytes:[0xFF,0x51,0x03,(mpq>>16)&255,(mpq>>8)&255,mpq&255]});
+  let lastTick=0;
+  tempoMap.forEach((bp,idx)=>{
+    const tick=Math.round(bp.beat*PPQ);
+    const mpq=Math.round(60000000/bp.bpm);
+    t0.push({d:idx===0?0:Math.max(0,tick-lastTick),bytes:[0xFF,0x51,0x03,(mpq>>16)&255,(mpq>>8)&255,mpq&255]});
+    lastTick=tick;
+  });
   tracks.push(buildTrack(t0));
   // Part tracks
   parts.forEach((part,pi)=>{
     const inst=IMAP[part.instId]||IMAP['piano'];
+    const velMap=computeVelocities(part);
     const raw=[];
-    let tick=0;
-    part.notes.forEach(n=>{
-      const dt=Math.round(noteBeats(n)*PPQ);
-      if(!n.rest && (n.midiVals||[]).length){
-        n.midiVals.forEach(m=>{ raw.push({tick,on:1,midi:m}); raw.push({tick:tick+dt,on:0,midi:m}); });
+    const notes=part.notes;
+    let tick=0,i=0;
+    while(i<notes.length){
+      const n=notes[i];
+      let dt=Math.round(noteBeats(n)*PPQ),j=i;
+      while(notes[j].tie&&j+1<notes.length){ j++; dt+=Math.round(noteBeats(notes[j])*PPQ); } // tied notes: one held event, no retrigger
+      if(!n.rest && !n.repeatBars && (n.midiVals||[]).length){
+        const vel=Math.max(1,Math.min(127,Math.round((velMap.get(n)??.72)*127)));
+        n.midiVals.forEach(m=>{ raw.push({tick,on:1,midi:m,vel}); raw.push({tick:tick+dt,on:0,midi:m}); });
       }
-      tick+=dt;
-    });
+      tick+=dt; i=j+1;
+    }
     raw.sort((a,b)=> a.tick-b.tick || a.on-b.on);
     const ch=pi%16;
     const evs=[];
@@ -2005,7 +2213,7 @@ function exportMIDI(){
     evs.push({d:0,bytes:[0xFF,0x03,nameB.length,...nameB]});
     evs.push({d:0,bytes:[0xC0|ch,(inst.gm||0)&0x7F]});
     let last=0;
-    raw.forEach(e=>{ const d=e.tick-last; last=e.tick; evs.push({d,bytes:[(e.on?0x90:0x80)|ch, e.midi&0x7F, e.on?90:0]}); });
+    raw.forEach(e=>{ const d=e.tick-last; last=e.tick; evs.push({d,bytes:[(e.on?0x90:0x80)|ch, e.midi&0x7F, e.on?e.vel:0]}); });
     tracks.push(buildTrack(evs));
   });
   const ntrk=tracks.length;
@@ -2029,7 +2237,7 @@ function exportMIDI(){
 const PRINT_SYS_W=720; // ~ usable Letter-page width in CSS px at 96dpi after 14mm margins
 function buildPrintSystems(partsSubset){
   const VF=Vex.Flow;
-  const {Renderer,Stave,StaveConnector,StaveHairpin,Barline}=VF;
+  const {Renderer,Stave,StaveConnector,StaveHairpin,Barline,StaveTie}=VF;
   const kd=KMAP[currentKeyId];
   const allM=partsSubset.map(p=>toMeasures(p.notes));
   const numM=Math.max(...allM.map(m=>m.length),1);
@@ -2103,6 +2311,18 @@ function buildPrintSystems(partsSubset){
           const h=new StaveHairpin({first_note:s.vfNote,last_note:e.vfNote,first_indices:[0],last_indices:[0]},
             hp.type==='cresc'?StaveHairpin.type.CRESC:StaveHairpin.type.DECRESC);
           h.setContext(ctx).setStave(s.stave).draw();
+        }catch(err){}
+      });
+    });
+    // Ties, same "only if the whole span is in this system" restriction as hairpins above.
+    partsSubset.forEach((part,pi)=>{
+      part.notes.forEach((n,idx)=>{
+        if(!n.tie||idx<rangeStart[pi]||idx+1>=partOffsets[pi])return;
+        const s=vfRefs[pi][idx],e=vfRefs[pi][idx+1];
+        if(!s||!e)return;
+        try{
+          const idxs=n.keys.map((_,i)=>i);
+          new StaveTie({first_note:s.vfNote,last_note:e.vfNote,first_indices:idxs,last_indices:idxs}).setContext(ctx).draw();
         }catch(err){}
       });
     });
@@ -2324,7 +2544,7 @@ const TOUR=[
   {title:'Welcome to Mobile Notation 🎵', text:'A quick tour of everything the app can do. Tap Next to step through — or Skip anytime. You can reopen this later with the “?” button.'},
   {tab:'notes', sel:'#note-grid', title:'Write notes', text:'Tap a letter (C–B) to add that note. Each one lands in the octave closest to the note before it, so melodies flow naturally. The last button adds a rest.'},
   {tab:'notes', sel:'#score-wrap', title:'The cursor', text:'Tap a note on the staff to select it (it turns blue). New notes insert right after it — so you can add music in the middle, not just the end. Tap an empty spot to drop the blue cursor where the next note will go.'},
-  {tab:'notes', sel:'#edit-section', title:'Change or delete a note', text:'With a note selected: ↑½ ↓½ move its pitch, ♯ ♭ ♮ set an accidental, 🗑 Delete removes it entirely, and ⇢Rest turns it into a rest (keeping the timing).'},
+  {tab:'notes', sel:'#edit-section', title:'Change or delete a note', text:'With a note selected: ↑½ ↓½ move its pitch, ♯ ♭ ♮ set an accidental, 🔗 Tie holds it into the next same-pitch note, 🗑 Delete removes it entirely, and ⇢Rest turns it into a rest (keeping the timing).'},
   {tab:'notes', sel:'#dur-row', title:'Note length & octave', text:'Pick whole, half, quarter, 8th, 16th, 32nd — and the dot for dotted rhythms. With a note selected, tapping a length changes that note. “Nudge” shifts a note up or down an octave.'},
   {tab:'notes', sel:'#tuplet-row', title:'Tuplets', text:'Tap 3 for a triplet (the most common), or 5/6/7 for the rarer groupings, then enter that many notes at the current Dur — they bracket together and playback squeezes them into the right time automatically.'},
   {tab:'notes', sel:'#acc-row', title:'Sharps & flats', text:'“Key” follows the key signature automatically; ♯ ♭ ♮ force an accidental on the notes you enter.'},
@@ -2333,7 +2553,8 @@ const TOUR=[
   {tab:'score', sel:'#panel-score', title:'Key, time & repeats', text:'Set the key and time signature, and add repeats — repeat barlines and “repeat previous measure” (%) symbols that actually play back.'},
   {tab:'notes', sel:'#chord-palette', title:'Chords', text:'Tap a chord to drop the whole thing in at once. “7th” adds the seventh; “Build” lets you stack a custom chord note by note.'},
   {tab:'notes', sel:'#copy-toggle-btn', title:'Copy & paste', text:'Tap the scissors, then tap the first and last note of a range, Copy, switch to another part, and Paste — it replaces the music at the paste point. Great for repeating sections across staves.'},
-  {sel:'.tb.play', title:'Play it back', text:'Play and stop your song here. The staff scrolls to follow along as it plays.'},
+  {sel:'.tb.play', title:'Play it back', text:'Play and stop your song here. Dynamics, hairpins, and tempo changes (accel./rit./a tempo) actually affect the sound now, not just how it looks.'},
+  {sel:'#undo-btn', title:'Undo & Redo', text:'↶ undoes any edit — notes, pitch changes, dynamics, key changes, whatever you last touched. ↷ redoes it. ⌫ is a quick shortcut for just deleting the last note.'},
   {sel:'#collapse-btn', title:'More room', text:'Collapse the controls to give the music most of the screen — especially handy in landscape. Tap again to bring them back.'},
   {tab:'proj', sel:'#panel-proj', title:'Songs, import & print', text:'Your songs auto-save here. Import MIDI or MusicXML, and print or export a PDF — the full score or one part at a time.'},
   {sel:'#help-btn', title:'That’s it! 🎉', text:'Tap “?” anytime to see this tour again. Now go make some music.'}
@@ -2409,6 +2630,7 @@ relabelNoteButtons();
 renderDiatonicChords();
 initProjects();
 render();
+updateUndoRedoUI();
 initMidi();
 document.getElementById('bpm-inp').addEventListener('change',scheduleAutosave);
 if(!localStorage.getItem('mn_tutorial_seen')) setTimeout(startTour, 500);
