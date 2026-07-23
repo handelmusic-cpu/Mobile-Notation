@@ -241,6 +241,14 @@ body { font-family:-apple-system,BlinkMacSystemFont,sans-serif; background:#1212
 <div id="panel-parts" class="panel">
   <div style="font-size:9px;color:#556;margin-bottom:3px">TAP TO SELECT ACTIVE PART FOR NOTE ENTRY</div>
   <div id="parts-list"></div>
+  <div class="sec">Transposition (active part)</div>
+  <div class="row" id="transpose-row">
+    <button class="chip on" id="tr-concert" onclick="setPartTranspose(null)" style="font-size:11px">Concert (C)</button>
+    <button class="chip" id="tr-bb" onclick="setPartTranspose('bb')" style="font-size:11px">B♭</button>
+    <button class="chip" id="tr-eb" onclick="setPartTranspose('eb')" style="font-size:11px">E♭</button>
+    <button class="chip" id="tr-f" onclick="setPartTranspose('f')" style="font-size:11px">F</button>
+  </div>
+  <div class="hint" style="margin-bottom:6px">Notes are always entered/heard at concert pitch — this only changes how the staff is WRITTEN (and what MusicXML export produces) for a transposing instrument, e.g. B♭ Clarinet or Trumpet, E♭ Alto/Bari Sax, F Horn.</div>
   <div class="sec">Add new part</div>
   <div class="cat-grid" id="cat-grid"></div>
   <div id="inst-grid"></div>
@@ -305,6 +313,13 @@ body { font-family:-apple-system,BlinkMacSystemFont,sans-serif; background:#1212
       <button class="art-btn" id="art-pz" onclick="toggleArt('a+')" style="font-size:12px">+</button>
     </div>
     <div class="hint" style="margin-top:4px">Tap to add or remove — a note can have more than one (e.g. accent + staccato).</div>
+    <div class="sec">Slurs (phrasing)</div>
+    <div class="hp-row">
+      <span style="font-size:10px;color:#aab;min-width:52px">⌢ Slur</span>
+      <button class="chip on3" onclick="startSlur()" style="font-size:10px">▸ Start</button>
+      <button class="chip"     onclick="endSlur()"  style="font-size:10px">▪ End</button>
+    </div>
+    <div id="slur-status" style="font-size:9px;color:#27ae60;min-height:11px"></div>
   </div>
 
   <div id="sub-tempo" class="subpanel">
@@ -398,6 +413,7 @@ body { font-family:-apple-system,BlinkMacSystemFont,sans-serif; background:#1212
   <div class="sec">Export current song</div>
   <div class="row" style="gap:6px">
     <button class="chip" onclick="exportMIDI()" style="font-size:11px">⇩ MIDI</button>
+    <button class="chip" onclick="exportMusicXML()" style="font-size:11px">⇩ MusicXML</button>
   </div>
   <div class="sec">Print / PDF</div>
   <div class="row" style="gap:6px;flex-wrap:wrap" id="print-row"></div>
@@ -478,28 +494,28 @@ const CATS  = [...new Set(INSTRUMENTS.map(i=>i.cat))];
 // Key / Scale data
 // ═══════════════════════════════════════════════════════
 const KEYS_DATA = [
-  {id:'C', label:'C',  vfSig:'C',  mode:'major', scale:[['C',null],['D',null],['E',null],['F',null],['G',null],['A',null],['B',null]]},
-  {id:'G', label:'G',  vfSig:'G',  mode:'major', scale:[['G',null],['A',null],['B',null],['C',null],['D',null],['E',null],['F','#']]},
-  {id:'D', label:'D',  vfSig:'D',  mode:'major', scale:[['D',null],['E',null],['F','#'],['G',null],['A',null],['B',null],['C','#']]},
-  {id:'A', label:'A',  vfSig:'A',  mode:'major', scale:[['A',null],['B',null],['C','#'],['D',null],['E',null],['F','#'],['G','#']]},
-  {id:'E', label:'E',  vfSig:'E',  mode:'major', scale:[['E',null],['F','#'],['G','#'],['A',null],['B',null],['C','#'],['D','#']]},
-  {id:'B', label:'B',  vfSig:'B',  mode:'major', scale:[['B',null],['C','#'],['D','#'],['E',null],['F','#'],['G','#'],['A','#']]},
-  {id:'Fs',label:'F#', vfSig:'F#', mode:'major', scale:[['F','#'],['G','#'],['A','#'],['B',null],['C','#'],['D','#'],['E','#']]},
-  {id:'F', label:'F',  vfSig:'F',  mode:'major', scale:[['F',null],['G',null],['A',null],['B','b'],['C',null],['D',null],['E',null]]},
-  {id:'Bb',label:'Bb', vfSig:'Bb', mode:'major', scale:[['B','b'],['C',null],['D',null],['E','b'],['F',null],['G',null],['A',null]]},
-  {id:'Eb',label:'Eb', vfSig:'Eb', mode:'major', scale:[['E','b'],['F',null],['G',null],['A','b'],['B','b'],['C',null],['D',null]]},
-  {id:'Ab',label:'Ab', vfSig:'Ab', mode:'major', scale:[['A','b'],['B','b'],['C',null],['D','b'],['E','b'],['F',null],['G',null]]},
-  {id:'Db',label:'Db', vfSig:'Db', mode:'major', scale:[['D','b'],['E','b'],['F',null],['G','b'],['A','b'],['B','b'],['C',null]]},
-  {id:'Am', label:'Am', vfSig:'C',  mode:'minor', scale:[['A',null],['B',null],['C',null],['D',null],['E',null],['F',null],['G',null]]},
-  {id:'Em', label:'Em', vfSig:'G',  mode:'minor', scale:[['E',null],['F','#'],['G',null],['A',null],['B',null],['C',null],['D',null]]},
-  {id:'Bm', label:'Bm', vfSig:'D',  mode:'minor', scale:[['B',null],['C','#'],['D',null],['E',null],['F','#'],['G',null],['A',null]]},
-  {id:'Fsm',label:'F#m',vfSig:'A',  mode:'minor', scale:[['F','#'],['G','#'],['A',null],['B',null],['C','#'],['D',null],['E',null]]},
-  {id:'Csm',label:'C#m',vfSig:'E',  mode:'minor', scale:[['C','#'],['D','#'],['E',null],['F','#'],['G','#'],['A',null],['B',null]]},
-  {id:'Dm', label:'Dm', vfSig:'F',  mode:'minor', scale:[['D',null],['E',null],['F',null],['G',null],['A',null],['B','b'],['C',null]]},
-  {id:'Gm', label:'Gm', vfSig:'Bb', mode:'minor', scale:[['G',null],['A',null],['B','b'],['C',null],['D',null],['E','b'],['F',null]]},
-  {id:'Cm', label:'Cm', vfSig:'Eb', mode:'minor', scale:[['C',null],['D',null],['E','b'],['F',null],['G',null],['A','b'],['B','b']]},
-  {id:'Fm', label:'Fm', vfSig:'Ab', mode:'minor', scale:[['F',null],['G',null],['A','b'],['B','b'],['C',null],['D','b'],['E','b']]},
-  {id:'Bbm',label:'Bbm',vfSig:'Db', mode:'minor', scale:[['B','b'],['C',null],['D','b'],['E','b'],['F',null],['G','b'],['A','b']]},
+  {id:'C', label:'C',  vfSig:'C',  mode:'major', fifths:0,  scale:[['C',null],['D',null],['E',null],['F',null],['G',null],['A',null],['B',null]]},
+  {id:'G', label:'G',  vfSig:'G',  mode:'major', fifths:1,  scale:[['G',null],['A',null],['B',null],['C',null],['D',null],['E',null],['F','#']]},
+  {id:'D', label:'D',  vfSig:'D',  mode:'major', fifths:2,  scale:[['D',null],['E',null],['F','#'],['G',null],['A',null],['B',null],['C','#']]},
+  {id:'A', label:'A',  vfSig:'A',  mode:'major', fifths:3,  scale:[['A',null],['B',null],['C','#'],['D',null],['E',null],['F','#'],['G','#']]},
+  {id:'E', label:'E',  vfSig:'E',  mode:'major', fifths:4,  scale:[['E',null],['F','#'],['G','#'],['A',null],['B',null],['C','#'],['D','#']]},
+  {id:'B', label:'B',  vfSig:'B',  mode:'major', fifths:5,  scale:[['B',null],['C','#'],['D','#'],['E',null],['F','#'],['G','#'],['A','#']]},
+  {id:'Fs',label:'F#', vfSig:'F#', mode:'major', fifths:6,  scale:[['F','#'],['G','#'],['A','#'],['B',null],['C','#'],['D','#'],['E','#']]},
+  {id:'F', label:'F',  vfSig:'F',  mode:'major', fifths:-1, scale:[['F',null],['G',null],['A',null],['B','b'],['C',null],['D',null],['E',null]]},
+  {id:'Bb',label:'Bb', vfSig:'Bb', mode:'major', fifths:-2, scale:[['B','b'],['C',null],['D',null],['E','b'],['F',null],['G',null],['A',null]]},
+  {id:'Eb',label:'Eb', vfSig:'Eb', mode:'major', fifths:-3, scale:[['E','b'],['F',null],['G',null],['A','b'],['B','b'],['C',null],['D',null]]},
+  {id:'Ab',label:'Ab', vfSig:'Ab', mode:'major', fifths:-4, scale:[['A','b'],['B','b'],['C',null],['D','b'],['E','b'],['F',null],['G',null]]},
+  {id:'Db',label:'Db', vfSig:'Db', mode:'major', fifths:-5, scale:[['D','b'],['E','b'],['F',null],['G','b'],['A','b'],['B','b'],['C',null]]},
+  {id:'Am', label:'Am', vfSig:'C',  mode:'minor', fifths:0,  scale:[['A',null],['B',null],['C',null],['D',null],['E',null],['F',null],['G',null]]},
+  {id:'Em', label:'Em', vfSig:'G',  mode:'minor', fifths:1,  scale:[['E',null],['F','#'],['G',null],['A',null],['B',null],['C',null],['D',null]]},
+  {id:'Bm', label:'Bm', vfSig:'D',  mode:'minor', fifths:2,  scale:[['B',null],['C','#'],['D',null],['E',null],['F','#'],['G',null],['A',null]]},
+  {id:'Fsm',label:'F#m',vfSig:'A',  mode:'minor', fifths:3,  scale:[['F','#'],['G','#'],['A',null],['B',null],['C','#'],['D',null],['E',null]]},
+  {id:'Csm',label:'C#m',vfSig:'E',  mode:'minor', fifths:4,  scale:[['C','#'],['D','#'],['E',null],['F','#'],['G','#'],['A',null],['B',null]]},
+  {id:'Dm', label:'Dm', vfSig:'F',  mode:'minor', fifths:-1, scale:[['D',null],['E',null],['F',null],['G',null],['A',null],['B','b'],['C',null]]},
+  {id:'Gm', label:'Gm', vfSig:'Bb', mode:'minor', fifths:-2, scale:[['G',null],['A',null],['B','b'],['C',null],['D',null],['E','b'],['F',null]]},
+  {id:'Cm', label:'Cm', vfSig:'Eb', mode:'minor', fifths:-3, scale:[['C',null],['D',null],['E','b'],['F',null],['G',null],['A','b'],['B','b']]},
+  {id:'Fm', label:'Fm', vfSig:'Ab', mode:'minor', fifths:-4, scale:[['F',null],['G',null],['A','b'],['B','b'],['C',null],['D','b'],['E','b']]},
+  {id:'Bbm',label:'Bbm',vfSig:'Db', mode:'minor', fifths:-5, scale:[['B','b'],['C',null],['D','b'],['E','b'],['F',null],['G','b'],['A','b']]},
 ];
 const KMAP = Object.fromEntries(KEYS_DATA.map(k=>[k.id,k]));
 
@@ -511,6 +527,55 @@ const MIN_ROMANS= ['i','ii°','III','iv','v','VI','VII'];
 const NOTE_SEMI = {C:0,D:2,E:4,F:5,G:7,A:9,B:11};
 function accSemi(acc){return acc==='#'?1:acc==='b'?-1:acc==='##'?2:acc==='bb'?-2:0;}
 function noteToMidi(name, acc, oct){ return (oct+1)*12 + NOTE_SEMI[name] + accSemi(acc); }
+
+// ═══════════════════════════════════════════════════════
+// Instrument transposition — DISPLAY + EXPORT only. n.midiVals/n.keys are
+// always CONCERT (sounding) pitch, so note entry, playback, and MIDI export
+// are completely untouched by any of this. Only the on-screen/print
+// noteheads, that stave's key signature, and MusicXML export show the
+// WRITTEN pitch for a transposing part.
+// ═══════════════════════════════════════════════════════
+const LETTERS=['C','D','E','F','G','A','B'];
+// chromatic/diatonic follow the MusicXML <transpose> convention:
+// sounding = written + chromatic semitones / + diatonic letter-steps.
+const TRANSPOSITIONS={
+  bb:{chromatic:-2,diatonic:-1,label:'B♭'},
+  eb:{chromatic:-9,diatonic:-5,label:'E♭'},
+  f: {chromatic:-7,diatonic:-4,label:'F'},
+};
+const INST_DEFAULT_TRANSPOSE={clarinet:'bb',trumpet:'bb',sax:'eb',horn:'f'};
+// Concert (name,acc,oct) -> written (name,acc,oct) for a {chromatic,diatonic}
+// transposition. Picks whichever octave/accidental (up to a double
+// sharp/flat) reproduces the exact target pitch on the target letter.
+function transposeToWritten(name,acc,oct,transpose){
+  if(!transpose) return {name,acc,oct};
+  const writtenMidi=noteToMidi(name,acc,oct)-transpose.chromatic;
+  const li=LETTERS.indexOf(name);
+  const rawLi=li-transpose.diatonic;
+  const newLetter=LETTERS[((rawLi%7)+7)%7];
+  const guessOct=oct+Math.floor(rawLi/7);
+  let bestAcc=null,bestOct=guessOct,bestDiff=Infinity;
+  for(let o=guessOct-1;o<=guessOct+1;o++){
+    const diff=writtenMidi-noteToMidi(newLetter,null,o);
+    if(Math.abs(diff)<=2 && Math.abs(diff)<bestDiff){
+      bestDiff=Math.abs(diff);
+      bestAcc=diff===0?null:(diff===1?'#':diff===-1?'b':diff===2?'##':'bb');
+      bestOct=o;
+    }
+  }
+  return {name:newLetter,acc:bestAcc,oct:bestOct};
+}
+// The written key signature for a transposing part — found by transposing
+// the concert tonic and looking up the matching preset key. Falls back to no
+// key signature (explicit per-note accidentals instead) for the rare
+// combination that lands on a key this app doesn't have a preset for.
+function transposedKeyInfo(kd,transpose){
+  if(!transpose) return kd;
+  const scale=kd.scale.map(([nm,ac])=>{const t=transposeToWritten(nm,ac,4,transpose);return[t.name,t.acc];});
+  const [tName,tAcc]=scale[0];
+  const match=KEYS_DATA.find(k=>k.mode===kd.mode && k.scale[0][0]===tName && (k.scale[0][1]||null)===(tAcc||null));
+  return match || {...kd, vfSig:'C', scale};
+}
 
 function buildChordTones(degree, scale, rootOct, seventh=false){
   const count = seventh ? 4 : 3;
@@ -562,7 +627,7 @@ let currentTimeSig = TIME_SIGS[0];
 // State
 // ═══════════════════════════════════════════════════════
 let pid=1;
-function mkPart(name,instId,clef){return{id:pid++,name,instId,clef:clef||null,notes:[],hairpins:[]};}
+function mkPart(name,instId,clef){return{id:pid++,name,instId,clef:clef||null,notes:[],hairpins:[],slurs:[],transpose:null};}
 let parts=[mkPart('Treble','piano','treble'), mkPart('Bass','piano','bass')];
 let apIdx=0;
 
@@ -576,6 +641,7 @@ let tupletPending=null, tupletIdSeq=1;
 let pendingLyric='', pendingDyn=null, pendingArts=[], pendingTempo=null, pendingRud=null, pendingSticking=null;
 let graceMode=false, graceDur='8', pendingGraceNotes=[];
 let hairpinPending=null;
+let slurPending=null;
 let chordBuildMode=false;
 let chord7Mode=false;
 let pendingChordNotes=[];
@@ -718,7 +784,10 @@ function confirmAddPart(){
   if(!newInstId)return;
   pushUndo();
   const inst=IMAP[newInstId];
-  parts.push(mkPart(inst.label,newInstId,inst.clef||'treble'));
+  const p=mkPart(inst.label,newInstId,inst.clef||'treble');
+  const defTr=INST_DEFAULT_TRANSPOSE[newInstId];
+  if(defTr) p.transpose={key:defTr,...TRANSPOSITIONS[defTr]};
+  parts.push(p);
   apIdx=parts.length-1;
   newInstId=null;
   document.querySelectorAll('#cat-grid .chip').forEach(b=>b.classList.remove('on'));
@@ -733,16 +802,27 @@ function deletePart(i){
   if(apIdx>=parts.length)apIdx=parts.length-1;
   renderPartsList(); render();
 }
+function setPartTranspose(key){
+  const p=parts[apIdx]; if(!p)return;
+  pushUndo();
+  p.transpose = key ? {key,...TRANSPOSITIONS[key]} : null;
+  renderPartsList(); render();
+}
 function renderPartsList(){
   const ul=document.getElementById('parts-list');
   ul.innerHTML='';
   parts.forEach((p,i)=>{
     const inst=IMAP[p.instId]||IMAP['piano'];
+    const trLabel=p.transpose?` · ${p.transpose.label}`:'';
     const row=document.createElement('div');
     row.className='prow'+(i===apIdx?' ap':'');
-    row.innerHTML=`<div class="pdot"></div><span class="pname">${p.name}</span><span class="pinst">${inst.label}</span>${parts.length>1?`<button class="pdel" onclick="event.stopPropagation();deletePart(${i})">✕</button>`:''}`;
+    row.innerHTML=`<div class="pdot"></div><span class="pname">${p.name}</span><span class="pinst">${inst.label}${trLabel}</span>${parts.length>1?`<button class="pdel" onclick="event.stopPropagation();deletePart(${i})">✕</button>`:''}`;
     row.onclick=()=>{apIdx=i;selectedNote=null;caretGap=null;renderPartsList();render();updateSelectionUI();};
     ul.appendChild(row);
+  });
+  const activeTr=parts[apIdx]?.transpose?.key||null;
+  ['concert','bb','eb','f'].forEach(k=>{
+    document.getElementById('tr-'+k).classList.toggle('on', k==='concert'?!activeTr:activeTr===k);
   });
   refreshNoteGridForActivePart();
 }
@@ -985,6 +1065,19 @@ function endHairpin(type){
 }
 
 // ═══════════════════════════════════════════════════════
+// Slurs — phrasing curves between notes of any pitch (unlike a tie, which
+// only connects two notes of the SAME pitch and merges their playback).
+// Purely visual + export; slurs don't change how the notes sound.
+// ═══════════════════════════════════════════════════════
+function startSlur(){ slurPending={partIdx:apIdx,startIdx:parts[apIdx].notes.length}; document.getElementById('slur-status').textContent='Slur started — enter notes then tap End'; }
+function endSlur(){
+  if(!slurPending||slurPending.partIdx!==apIdx) slurPending={partIdx:apIdx,startIdx:0};
+  const end=parts[apIdx].notes.length-1;
+  if(end>slurPending.startIdx){ pushUndo(); parts[apIdx].slurs.push({start:slurPending.startIdx,end}); render(); }
+  slurPending=null; document.getElementById('slur-status').textContent='';
+}
+
+// ═══════════════════════════════════════════════════════
 // Chord palette
 // ═══════════════════════════════════════════════════════
 function toggleChord7(){
@@ -1195,6 +1288,7 @@ function backspaceNote(){
   const prev=arr[arr.length-1];
   if(prev&&prev.tie) prev.tie=false; // its tie partner just got removed
   parts[apIdx].hairpins=parts[apIdx].hairpins.filter(hp=>hp.end<arr.length);
+  parts[apIdx].slurs=(parts[apIdx].slurs||[]).filter(sl=>sl.end<arr.length);
   // If the undone note was part of the tuplet group still being entered, back
   // its count off too so the pending group's target count stays accurate.
   if(popped&&popped.tuplet&&tupletPending&&popped.tuplet.id===tupletPending.id){
@@ -1207,7 +1301,7 @@ function backspaceNote(){
 function clearAll(){
   if(!parts.some(p=>p.notes.length)||!confirm('Clear all notes in this song?'))return;
   pushUndo();
-  parts.forEach(p=>{p.notes=[];p.hairpins=[];});
+  parts.forEach(p=>{p.notes=[];p.hairpins=[];p.slurs=[];});
   selectedNote=null; caretGap=null; tupletPending=null; updateTupletUI();
   render();
 }
@@ -1233,7 +1327,7 @@ function pushUndo(){
 }
 function restoreState(json){
   const d=JSON.parse(json);
-  parts=(d.parts||[]).map(p=>({...p,hairpins:p.hairpins||[],notes:(p.notes||[]).map(normalizeNote)}));
+  parts=(d.parts||[]).map(p=>({...p,hairpins:p.hairpins||[],slurs:p.slurs||[],transpose:p.transpose||null,notes:(p.notes||[]).map(normalizeNote)}));
   currentKeyId=d.keyId||'C';
   currentTimeSig=TIME_SIGS.find(t=>t.sig===d.timeSig)||currentTimeSig;
   repeatStartMeasures=d.repeatStartMeasures?d.repeatStartMeasures.slice():[];
@@ -1357,6 +1451,7 @@ function removeSelected(){
   if(prev&&prev.tie) prev.tie=false; // its tie partner is about to be removed
   p.notes.splice(idx,1);
   p.hairpins=(p.hairpins||[]).filter(hp=>hp.start!==idx&&hp.end!==idx).map(hp=>({...hp,start:hp.start>idx?hp.start-1:hp.start,end:hp.end>idx?hp.end-1:hp.end}));
+  p.slurs=(p.slurs||[]).filter(sl=>sl.start!==idx&&sl.end!==idx).map(sl=>({...sl,start:sl.start>idx?sl.start-1:sl.start,end:sl.end>idx?sl.end-1:sl.end}));
   caretGap={partIdx:selectedNote.partIdx,index:idx};
   selectedNote=null;
   render(); updateSelectionUI();
@@ -1550,7 +1645,7 @@ function addMeasureRepeat(n){
   render(); scrollToNoteEnd(apIdx);
 }
 
-const BASE_MW=190, PX_PER_NOTE=46, FX=115, PG=90, TP=22;
+const BASE_MW=190, PX_PER_NOTE=46, FX=115, PG=120, TP=22;
 function calcMW(allM, mi){
   let maxUnits=0;
   for(const pm of allM){
@@ -1566,7 +1661,7 @@ function calcMW(allM, mi){
 // ═══════════════════════════════════════════════════════
 function render(){
   const VF=Vex.Flow;
-  const{Renderer,Stave,StaveNote,Voice,Formatter,Accidental,StaveConnector,Beam,Annotation,Articulation,StaveHairpin,Dot,Barline,StaveTie}=VF;
+  const{Renderer,Stave,StaveNote,Voice,Formatter,Accidental,StaveConnector,Beam,Annotation,Articulation,StaveHairpin,Dot,Barline,StaveTie,Curve}=VF;
   const div=document.getElementById('score-div');
   div.innerHTML='';
   notePositions=[];
@@ -1592,6 +1687,18 @@ function render(){
   renderer.resize(totalW,totalH);
   const ctx=renderer.getContext();
 
+  // Tint the active part's whole row so it's obvious at a glance which
+  // staff new notes will land in — easy to lose track of on a small screen
+  // once there are 3+ instruments stacked up.
+  if(numP>1){
+    try{
+      ctx.save();
+      ctx.fillStyle='rgba(41,128,185,.09)';
+      ctx.fillRect(0,TP+apIdx*PG-6,totalW,PG-4);
+      ctx.restore();
+    }catch(e){}
+  }
+
   const vfRefs=parts.map(()=>({}));
   const partOff=new Array(numP).fill(0);
 
@@ -1607,7 +1714,14 @@ function render(){
       const sy=TP+pi*PG;
       const st=new Stave(x,sy,mw);
       if(inst.staffLines===1)st.setConfigForLines([{visible:false},{visible:false},{visible:true},{visible:false},{visible:false}]);
-      if(first){ st.addClef(cl).addKeySignature(kd.vfSig).addTimeSignature(currentTimeSig.sig); }
+      if(first){
+        const pkd=transposedKeyInfo(kd,p.transpose);
+        st.addClef(cl).addKeySignature(pkd.vfSig).addTimeSignature(currentTimeSig.sig);
+        try{
+          const label=p.name+(p.transpose?' ('+p.transpose.label+')':'');
+          st.setText(label,VF.StaveModifier.Position.ABOVE,{shift_y:-4});
+        }catch(e){}
+      }
       if(repeatStartMeasures.includes(mi))st.setBegBarType(Barline.type.REPEAT_BEGIN);
       if(repeatEndMeasures.includes(mi))st.setEndBarType(Barline.type.REPEAT_END);
       st.setContext(ctx).draw();
@@ -1653,6 +1767,11 @@ function render(){
         new StaveTie({first_note:s.vfNote,last_note:e.vfNote,first_indices:idxs,last_indices:idxs}).setContext(ctx).draw();
       }catch(err){console.warn('Tie:',err.message);}
     });
+    (part.slurs||[]).forEach(sl=>{
+      const s=vfRefs[pi][sl.start],e=vfRefs[pi][sl.end];
+      if(!s||!e)return;
+      try{ new Curve(s.vfNote,e.vfNote,{position:Curve.Position.NEAR_TOP,position_end:Curve.Position.NEAR_TOP}).setContext(ctx).draw(); }catch(err){console.warn('Slur:',err.message);}
+    });
   });
 
   renderCaret();
@@ -1682,9 +1801,29 @@ function scrollToMeasure(mi){
   wrap.scrollTo({left:Math.max(0,tx-30),top:wrap.scrollTop,behavior:'smooth'});
 }
 
+// For a transposing part's display copy: rewrite the VexFlow key string
+// ("F#/4") to its written pitch, and decide whether to draw an explicit
+// accidental (only when it differs from what the WRITTEN key signature
+// already implies for that letter — same convention as concert-pitch entry).
+function writtenNoteFor(n,transpose,transposedScale){
+  if(!transpose||n.rest||n.repeatBars) return {keys:n.keys,vfAccs:n.vfAccs};
+  const keys=[],vfAccs=[];
+  n.keys.forEach(k=>{
+    const [pitch,octStr]=k.split('/');
+    const m=pitch.match(/^([A-G])(#{1,2}|b{1,2})?$/);
+    if(!m){ keys.push(k); vfAccs.push(null); return; }
+    const w=transposeToWritten(m[1],m[2]||null,parseInt(octStr),transpose);
+    keys.push(w.name+(w.acc||'')+'/'+w.oct);
+    const keyAcc=(transposedScale.find(([nm])=>nm===w.name)||[])[1]||null;
+    vfAccs.push((w.acc||null)===keyAcc ? null : (w.acc||'n'));
+  });
+  return {keys,vfAccs};
+}
 function drawVoice(ctx,stave,noteData,mw,VF,partIdx,partOffset){
   const{StaveNote,Voice,Formatter,Accidental,Beam,Annotation,Articulation,Dot,Tremolo,Ornament,GraceNote,GraceNoteGroup,RepeatNote,Tuplet}=VF;
   if(!noteData.length)return[];
+  const transpose=parts[partIdx]?.transpose;
+  const transposedScale=transpose?transposedKeyInfo(KMAP[currentKeyId],transpose).scale:null;
   let vfNotes;
   try{
     vfNotes=noteData.map((n,li)=>{
@@ -1694,10 +1833,11 @@ function drawVoice(ctx,stave,noteData,mw,VF,partIdx,partOffset){
       if(n.repeatBars) return new RepeatNote(n.repeatBars,{duration:'w'});
       const isSelected=selectedNote&&selectedNote.partIdx===partIdx&&selectedNote.noteIdx===globalIdx;
       const inCopyRange=copyRangeSel&&copyRangeSel.partIdx===partIdx&&globalIdx>=Math.min(copyRangeSel.startIdx,copyRangeSel.endIdx)&&globalIdx<=Math.max(copyRangeSel.startIdx,copyRangeSel.endIdx);
-      const sn=new StaveNote({keys:n.keys,duration:n.dur});
+      const disp=writtenNoteFor(n,transpose,transposedScale);
+      const sn=new StaveNote({keys:disp.keys,duration:n.dur});
       if(isSelected) sn.setStyle({fillStyle:'#2980b9',strokeStyle:'#2980b9'});
       else if(inCopyRange) sn.setStyle({fillStyle:'#27ae60',strokeStyle:'#27ae60'});
-      const accs=n.vfAccs||[];
+      const accs=disp.vfAccs||[];
       accs.forEach((acc,i)=>{if(acc)try{sn.addModifier(new Accidental(acc),i);}catch(e){};});
       if(n.dur.includes('d'))try{Dot.buildAndAttach([sn],{all:true});}catch(e){}
       if(n.lyric)try{const a=new Annotation(n.lyric);a.setVerticalJustification(Annotation.VerticalJustify.BOTTOM);a.setFont({family:'Arial',size:9});sn.addModifier(a,0);}catch(e){}
@@ -1764,6 +1904,19 @@ function drawVoice(ctx,stave,noteData,mw,VF,partIdx,partOffset){
         const nx=vn.getAbsoluteX();
         const bb=vn.getBoundingBox?.();
         notePositions.push({partIdx,noteIdx:partOffset+li,x:nx,y:bb?bb.y:0,h:bb?bb.h:80});
+        // A color change alone is easy to miss on a small screen — ring the
+        // selected note so it's unmistakable at a glance.
+        if(bb&&selectedNote&&selectedNote.partIdx===partIdx&&selectedNote.noteIdx===partOffset+li){
+          try{
+            ctx.save();
+            ctx.strokeStyle='#2980b9';
+            ctx.lineWidth=1.6;
+            ctx.beginPath();
+            ctx.arc(bb.x+bb.w/2,bb.y+bb.h/2,Math.max(bb.w,bb.h)/2+7,0,Math.PI*2);
+            ctx.stroke();
+            ctx.restore();
+          }catch(e){}
+        }
       }catch(ex){}
     });
   }catch(e){console.warn('Voice draw:',e.message);}
@@ -2080,7 +2233,7 @@ function normalizeNote(n){
   return n;
 }
 function applyProject(d){
-  parts=(d.parts||[]).map(p=>({...p,hairpins:p.hairpins||[],notes:(p.notes||[]).map(normalizeNote)}));
+  parts=(d.parts||[]).map(p=>({...p,hairpins:p.hairpins||[],slurs:p.slurs||[],transpose:p.transpose||null,notes:(p.notes||[]).map(normalizeNote)}));
   if(!parts.length) parts=[mkPart('Treble','piano','treble'),mkPart('Bass','piano','bass')];
   pid=d.pid||(Math.max(0,...parts.map(p=>p.id||0))+1);
   apIdx=Math.min(d.apIdx||0,parts.length-1);
@@ -2227,6 +2380,191 @@ function exportMIDI(){
 }
 
 // ═══════════════════════════════════════════════════════
+// MusicXML export
+// ═══════════════════════════════════════════════════════
+const XML_DUR_TYPE={w:'whole',h:'half',q:'quarter','8':'eighth','16':'16th','32':'32nd'};
+// notations-level (fermata) is emitted separately from articulations-level.
+const ART_TO_XML={
+  'a.':'staccato',
+  'a>':'accent',
+  'a-':'tenuto',
+  'a^':'strong-accent',
+};
+function xmlEsc(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+function xmlClefFor(inst,clef){
+  const c=clef||inst.clef;
+  if(c==='bass') return {sign:'F',line:4};
+  if(c==='alto') return {sign:'C',line:3};
+  if(c==='percussion') return {sign:'percussion',line:2};
+  return {sign:'G',line:2};
+}
+function xmlAlterFor(acc){ return acc==='#'?1:acc==='b'?-1:acc==='##'?2:acc==='bb'?-2:0; }
+function xmlAccidentalName(acc){
+  return acc==='#'?'sharp':acc==='b'?'flat':acc==='##'?'double-sharp':acc==='bb'?'flat-flat':acc==='n'?'natural':null;
+}
+function xmlPitchFromKey(keyStr){
+  const [pitchStr,octStr]=keyStr.split('/');
+  const m=pitchStr.match(/^([A-G])(#{1,2}|b{1,2})?$/)||[null,'C',null];
+  return {step:m[1],alter:xmlAlterFor(m[2]||null),octave:parseInt(octStr)};
+}
+// DIV chosen so every duration this app can produce — including a dotted
+// 32nd inside a 7-tuplet, the worst case — comes out to an exact integer
+// number of divisions (LCM of {8,16 (dot),2,3,4,5,6,7 (tuplet nums)}).
+function exportMusicXML(){
+  if(!parts.some(p=>p.notes.length)){ alert('Nothing to export yet.'); return; }
+  const DIV=1680;
+  const bpm=parseInt(document.getElementById('bpm-inp').value)||80;
+  const kd=KMAP[currentKeyId];
+  const conductorPart=parts.find(p=>p.notes.some(n=>TEMPO_STEP[n.tempo]))||parts[0];
+  const allM=parts.map(p=>toMeasures(p.notes));
+  const numM=Math.max(...allM.map(m=>m.length),1);
+  const title=projects.find(p=>p.id===currentProjId)?.name||'Score';
+
+  const partListXml=[];
+  const partsXml=[];
+
+  parts.forEach((part,pi)=>{
+    const inst=IMAP[part.instId]||IMAP.piano;
+    const pid_='P'+(pi+1);
+    partListXml.push(
+      `<score-part id="${pid_}"><part-name>${xmlEsc(part.name)}</part-name>`+
+      `<score-instrument id="${pid_}-I1"><instrument-name>${xmlEsc(inst.label)}</instrument-name></score-instrument>`+
+      `<midi-instrument id="${pid_}-I1"><midi-channel>${(pi%16)+1}</midi-channel><midi-program>${((inst.gm||0)&0x7F)+1}</midi-program></midi-instrument>`+
+      `</score-part>`);
+
+    const pkd=transposedKeyInfo(kd,part.transpose);
+    const transposedScale=part.transpose?pkd.scale:null;
+    const clefInfo=xmlClefFor(inst,part.clef);
+    const measuresXml=[];
+    let curBpm=bpm, tempoEmitted=false;
+    // hairpins/slurs are stored as GLOBAL note indices into part.notes, and a
+    // tie can span a measure boundary — so track a running global index and
+    // the previously-emitted note across the whole part, not just per-measure.
+    let globalIdx=0, prevNote=null;
+
+    for(let mi=0;mi<numM;mi++){
+      const arr=mi<allM[pi].length?allM[pi][mi]:[];
+      // A measure-repeat ("%") marker occupies exactly ONE slot in part.notes
+      // but its content comes from an earlier measure — resolve it for real
+      // notes to export, but track the global index by its own one slot
+      // (not the resolved note count), so indices stay aligned afterward.
+      const isMarker=arr.length===1&&arr[0].repeatBars;
+      const raw=isMarker?resolveMeasureNotes(allM[pi],mi):arr;
+      const body=[];
+
+      if(mi===0){
+        body.push(`<attributes><divisions>${DIV}</divisions>`+
+          `<key><fifths>${pkd.fifths??0}</fifths><mode>${kd.mode}</mode></key>`+
+          `<time><beats>${currentTimeSig.vfB}</beats><beat-type>${currentTimeSig.vfV}</beat-type></time>`+
+          `<clef><sign>${clefInfo.sign}</sign><line>${clefInfo.line}</line></clef>`+
+          (part.transpose?`<transpose><diatonic>${part.transpose.diatonic}</diatonic><chromatic>${part.transpose.chromatic}</chromatic></transpose>`:'')+
+          `</attributes>`);
+      }
+      if(repeatStartMeasures.includes(mi)) body.push('<barline location="left"><bar-style>heavy-light</bar-style><repeat direction="forward"/></barline>');
+
+      // Tuplet start/stop markers: consecutive same-id runs of >1 note.
+      const tupBoundary=new Map();
+      { let i=0;
+        while(i<raw.length){
+          const t=raw[i].tuplet;
+          if(t){ let j=i; while(j<raw.length&&raw[j].tuplet&&raw[j].tuplet.id===t.id) j++;
+            if(j-i>1){ tupBoundary.set(i,(tupBoundary.get(i)||'')+'start'); tupBoundary.set(j-1,(tupBoundary.get(j-1)||'')+'stop'); }
+            i=j;
+          } else i++;
+        }
+      }
+
+      raw.forEach((n,li)=>{
+        if(n.repeatBars) return; // already expanded via resolveMeasureNotes
+
+        if(part===conductorPart && !tempoEmitted){
+          body.push(`<direction placement="above"><direction-type><metronome><beat-unit>quarter</beat-unit><per-minute>${curBpm}</per-minute></metronome></direction-type><sound tempo="${curBpm}"/></direction>`);
+          tempoEmitted=true;
+        }
+        if(n.tempo){
+          body.push(`<direction placement="above"><direction-type><words>${xmlEsc(n.tempo)}</words></direction-type></direction>`);
+          if(part===conductorPart){
+            if(n.tempo==='a tempo'&&curBpm!==bpm){ curBpm=bpm; body.push(`<direction><sound tempo="${curBpm}"/></direction>`); }
+            else if(TEMPO_STEP[n.tempo]){ curBpm=Math.max(20,Math.min(320,Math.round(curBpm*TEMPO_STEP[n.tempo]))); body.push(`<direction><sound tempo="${curBpm}"/></direction>`); }
+          }
+        }
+        if(n.dyn) body.push(`<direction placement="below"><direction-type><dynamics><${n.dyn}/></dynamics></direction-type><sound dynamics="${Math.round((DYN_VEL[n.dyn]??.7)*100)}"/></direction>`);
+        (part.hairpins||[]).forEach(hp=>{
+          if(hp.start===globalIdx) body.push(`<direction placement="below"><direction-type><wedge type="${hp.type==='cresc'?'crescendo':'diminuendo'}" number="1"/></direction-type></direction>`);
+        });
+
+        const grace=n.grace||[];
+        grace.forEach(g=>{
+          const gp=xmlPitchFromKey(g.keys[0]);
+          const gtype=XML_DUR_TYPE[g.dur.replace(/[dr]/g,'')]||'eighth';
+          body.push(`<note><grace slash="yes"/><pitch><step>${gp.step}</step>${gp.alter?`<alter>${gp.alter}</alter>`:''}<octave>${gp.octave}</octave></pitch><voice>1</voice><type>${gtype}</type></note>`);
+        });
+
+        const base=n.dur.replace(/[dr]/g,''), dotted=n.dur.includes('d');
+        const beats=noteBeats(n);
+        const dur=Math.max(1,Math.round(beats*DIV));
+        const type=XML_DUR_TYPE[base]||'quarter';
+        const dispKeys=part.transpose?writtenNoteFor(n,part.transpose,transposedScale):{keys:n.keys,vfAccs:n.vfAccs};
+
+        const notations=[];
+        if(n.tie) notations.push('<tied type="start"/>');
+        if(prevNote&&prevNote.tie) notations.push('<tied type="stop"/>');
+        (part.slurs||[]).forEach(sl=>{
+          if(sl.start===globalIdx) notations.push('<slur type="start" number="1"/>');
+          if(sl.end===globalIdx) notations.push('<slur type="stop" number="1"/>');
+        });
+        if(tupBoundary.get(li)?.includes('start')) notations.push(`<tuplet type="start"/>`);
+        if(tupBoundary.get(li)?.includes('stop')) notations.push(`<tuplet type="stop"/>`);
+        if((n.arts||[]).includes('ao')) notations.push('<fermata/>');
+        const artsXml=(n.arts||[]).filter(a=>ART_TO_XML[a]).map(a=>`<${ART_TO_XML[a]}/>`).join('');
+        if(artsXml) notations.push(`<articulations>${artsXml}</articulations>`);
+        if((n.arts||[]).includes('tr')) notations.push('<ornaments><trill-mark/></ornaments>');
+        if((n.arts||[]).includes('a+')) notations.push('<technical><pizzicato/></technical>');
+        const ROLL_TREM={trem1:1,trem2:2,trem3:3};
+        if(ROLL_TREM[n.rud]) notations.push(`<ornaments><tremolo type="single">${ROLL_TREM[n.rud]}</tremolo></ornaments>`);
+        const notationsXml=notations.length?`<notations>${notations.join('')}</notations>`:'';
+        const tieSoundXml=(n.tie?'<tie type="start"/>':'')+((prevNote&&prevNote.tie)?'<tie type="stop"/>':'');
+        const timeModXml=n.tuplet?`<time-modification><actual-notes>${n.tuplet.num}</actual-notes><normal-notes>${n.tuplet.occ}</normal-notes></time-modification>`:'';
+
+        if(n.rest){
+          body.push(`<note><rest/><duration>${dur}</duration><voice>1</voice><type>${type}</type>${dotted?'<dot/>':''}${timeModXml}${notationsXml}</note>`);
+        } else {
+          (dispKeys.keys||n.keys).forEach((k,i)=>{
+            const p_=xmlPitchFromKey(k);
+            const accEl=dispKeys.vfAccs&&dispKeys.vfAccs[i]?`<accidental>${xmlAccidentalName(dispKeys.vfAccs[i])}</accidental>`:'';
+            const lyricXml=(i===0&&n.lyric)?`<lyric number="1"><syllabic>single</syllabic><text>${xmlEsc(n.lyric)}</text></lyric>`:'';
+            body.push(`<note>${i>0?'<chord/>':''}<pitch><step>${p_.step}</step>${p_.alter?`<alter>${p_.alter}</alter>`:''}<octave>${p_.octave}</octave></pitch>`+
+              `<duration>${dur}</duration>${i===0?tieSoundXml:''}<voice>1</voice><type>${type}</type>${dotted?'<dot/>':''}${timeModXml}${accEl}${i===0?notationsXml:''}${lyricXml}</note>`);
+          });
+        }
+        (part.hairpins||[]).forEach(hp=>{
+          if(hp.end===globalIdx) body.push(`<direction placement="below"><direction-type><wedge type="stop" number="1"/></direction-type></direction>`);
+        });
+        prevNote=n;
+        if(!isMarker) globalIdx++;
+      });
+      if(isMarker) globalIdx++;
+
+      if(repeatEndMeasures.includes(mi)) body.push('<barline location="right"><bar-style>light-heavy</bar-style><repeat direction="backward"/></barline>');
+      measuresXml.push(`<measure number="${mi+1}">${body.join('')}</measure>`);
+    }
+    partsXml.push(`<part id="${pid_}">${measuresXml.join('')}</part>`);
+  });
+
+  const xml=`<?xml version="1.0" encoding="UTF-8"?>\n`+
+    `<!DOCTYPE score-partwise PUBLIC "-//Recordare//DTD MusicXML 4.0 Partwise//EN" "http://www.musicxml.org/dtds/partwise.dtd">\n`+
+    `<score-partwise version="4.0"><work><work-title>${xmlEsc(title)}</work-title></work>`+
+    `<identification><encoding><software>Mobile Notation</software></encoding></identification>`+
+    `<part-list>${partListXml.join('')}</part-list>${partsXml.join('')}</score-partwise>`;
+
+  const blob=new Blob([xml],{type:'application/vnd.recordare.musicxml+xml'});
+  const name=(projects.find(p=>p.id===currentProjId)?.name||'song').replace(/[^a-z0-9]+/gi,'_');
+  const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=name+'.musicxml';
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(()=>URL.revokeObjectURL(a.href),2000);
+}
+
+// ═══════════════════════════════════════════════════════
 // PDF / print export
 // ═══════════════════════════════════════════════════════
 // Lays a set of parts out as printed sheet music: measures are packed into
@@ -2237,7 +2575,7 @@ function exportMIDI(){
 const PRINT_SYS_W=720; // ~ usable Letter-page width in CSS px at 96dpi after 14mm margins
 function buildPrintSystems(partsSubset){
   const VF=Vex.Flow;
-  const {Renderer,Stave,StaveConnector,StaveHairpin,Barline,StaveTie}=VF;
+  const {Renderer,Stave,StaveConnector,StaveHairpin,Barline,StaveTie,Curve}=VF;
   const kd=KMAP[currentKeyId];
   const allM=partsSubset.map(p=>toMeasures(p.notes));
   const numM=Math.max(...allM.map(m=>m.length),1);
@@ -2275,7 +2613,14 @@ function buildPrintSystems(partsSubset){
         const sy=TP+pi*PG;
         const st=new Stave(x,sy,mw);
         if(inst.staffLines===1)st.setConfigForLines([{visible:false},{visible:false},{visible:true},{visible:false},{visible:false}]);
-        if(first){ st.addClef(cl).addKeySignature(kd.vfSig).addTimeSignature(currentTimeSig.sig); }
+        if(first){
+          const pkd=transposedKeyInfo(kd,p.transpose);
+          st.addClef(cl).addKeySignature(pkd.vfSig).addTimeSignature(currentTimeSig.sig);
+          try{
+            const label=p.name+(p.transpose?' ('+p.transpose.label+')':'');
+            st.setText(label,VF.StaveModifier.Position.ABOVE,{shift_y:-4});
+          }catch(e){}
+        }
         if(repeatStartMeasures.includes(mi))st.setBegBarType(Barline.type.REPEAT_BEGIN);
         if(repeatEndMeasures.includes(mi))st.setEndBarType(Barline.type.REPEAT_END);
         st.setContext(ctx).draw();
@@ -2324,6 +2669,15 @@ function buildPrintSystems(partsSubset){
           const idxs=n.keys.map((_,i)=>i);
           new StaveTie({first_note:s.vfNote,last_note:e.vfNote,first_indices:idxs,last_indices:idxs}).setContext(ctx).draw();
         }catch(err){}
+      });
+    });
+    // Slurs, same system-containment restriction.
+    partsSubset.forEach((part,pi)=>{
+      (part.slurs||[]).forEach(sl=>{
+        if(sl.start<rangeStart[pi]||sl.end>=partOffsets[pi])return;
+        const s=vfRefs[pi][sl.start],e=vfRefs[pi][sl.end];
+        if(!s||!e)return;
+        try{ new Curve(s.vfNote,e.vfNote,{position:Curve.Position.NEAR_TOP,position_end:Curve.Position.NEAR_TOP}).setContext(ctx).draw(); }catch(err){}
       });
     });
 
@@ -2509,7 +2863,7 @@ function importToProject(name,data){
   const newParts=data.parts.filter(p=>p.notes.length).map((pp,i)=>{
     let clef=pp.staff==='2'?'bass':pp.staff==='1'?'treble':null;
     if(!clef){const mids=pp.notes.flatMap(n=>n.midiVals);const avg=mids.length?mids.reduce((a,b)=>a+b,0)/mids.length:64;clef=avg<57?'bass':'treble';}
-    return {id:i+1,name:clef==='bass'?'Bass':(i===0?'Treble':'Part '+(i+1)),instId:'piano',clef,notes:pp.notes,hairpins:[]};
+    return {id:i+1,name:clef==='bass'?'Bass':(i===0?'Treble':'Part '+(i+1)),instId:'piano',clef,notes:pp.notes,hairpins:[],slurs:[],transpose:null};
   });
   const proj={parts:newParts,pid:newParts.length+1,apIdx:0,keyId:data.keyId||'C',timeSig:data.timeSig||'4/4',bpm:data.bpm||80};
   const id='p'+Date.now();
