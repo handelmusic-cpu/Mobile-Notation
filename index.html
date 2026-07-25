@@ -153,6 +153,7 @@ body { font-family:-apple-system,BlinkMacSystemFont,sans-serif; background:#1212
   <button class="tb" id="collapse-btn" onclick="toggleControls()" style="background:#2a2a40;color:#9bd;" title="Hide/show controls">▼</button>
   <div id="bpm-wrap"><span>BPM</span><input type="number" id="bpm-inp" value="80" min="20" max="320"></div>
   <span class="pill" id="proj-pill" onclick="switchTab('proj')">Song</span>
+  <span class="pill" id="part-pill" onclick="switchTab('parts')" style="color:#f0c040;max-width:110px;overflow:hidden;text-overflow:ellipsis;" title="Instrument you're writing to — tap to switch">Treble · Piano</span>
   <span class="pill" id="key-pill" onclick="switchTab('score')">C</span>
   <span class="pill" id="midi-pill">No MIDI</span>
 </div>
@@ -206,6 +207,10 @@ body { font-family:-apple-system,BlinkMacSystemFont,sans-serif; background:#1212
     <button class="chip"    id="d-16"  onclick="setDur('16')"></button>
     <button class="chip"    id="d-32"  onclick="setDur('32')"></button>
     <button class="chip"    id="d-dot" onclick="toggleDot()" style="font-size:18px">·</button>
+    <span class="lbl" style="margin-left:2px">Tuplet</span>
+    <button class="chip" onclick="changeTupletN(-1)" style="font-size:13px;padding:6px 8px" title="Fewer notes per tuplet">−</button>
+    <button class="chip" id="d-tuplet" onclick="toggleTuplet()" style="font-size:13px;font-weight:800;min-width:26px" title="Toggle tuplet (duplet, triplet, quintuplet, ...)">3</button>
+    <button class="chip" onclick="changeTupletN(1)" style="font-size:13px;padding:6px 8px" title="More notes per tuplet">+</button>
     <span class="lbl" style="margin-left:4px">Nudge</span>
     <button class="chip" onclick="changeOct(-1)">−</button>
     <span id="oct-val" style="font-size:15px;font-weight:700;color:#fff;min-width:20px;text-align:center">±0</span>
@@ -221,6 +226,7 @@ body { font-family:-apple-system,BlinkMacSystemFont,sans-serif; background:#1212
     <button class="chip"    id="a-ff" onclick="setAcc('bb')" style="font-size:10px">𝄫</button>
   </div>
   <div class="hint">Note buttons show the current key's scale in order, tonic first. “Key” enters the in-key pitch; ♯/♭/♮ force an accidental. Each new note lands in the octave closest to the last one you played — use Nudge to shift a note an octave further when that guess isn't what you want.</div>
+  <div class="hint">Tuplets: use −/+ to pick how many notes (3 = triplet, 5 = quintuplet, etc.), pick a length, tap the number to arm it, then enter that many notes — they group under a bracket in the time the next-smaller normal grouping would take. Turns itself off once you've entered that many; tap the number again to cancel early.</div>
 </div>
 
 <!-- Parts panel -->
@@ -553,7 +559,7 @@ let parts=[mkPart('Treble','piano','treble'), mkPart('Bass','piano','bass')];
 let apIdx=0;
 
 let currentKeyId='C';
-let selDur='q', selAcc='key', selOct=0, dotted=false;
+let selDur='q', selAcc='key', selOct=0, dotted=false, tupletMode=false, tupletN=3, tupletCount=0;
 let pendingLyric='', pendingDyn=null, pendingArts=[], pendingTempo=null, pendingRud=null, pendingSticking=null;
 let graceMode=false, graceDur='8', pendingGraceNotes=[];
 let hairpinPending=null;
@@ -577,8 +583,38 @@ let repeatStartMeasures=[], repeatEndMeasures=[];
 // switches so you can paste into a different staff, and across pastes).
 let copyMode=false, copyRangeSel=null, clipboard=null;
 
+// ── Duration strings ─────────────────────────────────────
+// A note's `dur` is base + optional 'd' (dot) + optional 't<N>' (tuplet size)
+// + optional 'r' (rest) — in that order, e.g. "8t5" = eighth-note quintuplet,
+// "qdt3r" = dotted-quarter-triplet rest. compose/decomposeDur keep every call
+// site from hand-rolling that string.
+function composeDur(base,dot,tupN,rest){ return base+(dot?'d':'')+(tupN?('t'+tupN):'')+(rest?'r':''); }
+function decomposeDur(dur){
+  const rest=dur.includes('r');
+  const m=dur.match(/t(\d+)/); const tupN=m?parseInt(m[1],10):0;
+  const dot=dur.includes('d');
+  const base=dur.replace(/t\d+/,'').replace(/[dr]/g,'');
+  return {base,dot,tupN,rest};
+}
+// Duration string with the 't<N>' tuplet marker removed — VexFlow's own
+// duration syntax only understands 'd' (dot) and 'r' (rest) suffixes.
+function stripTuplet(dur){ return dur.replace(/t\d+/,''); }
+function tupletNumOf(dur){ return decomposeDur(dur).tupN; }
+
+// Standard "notes occupied" for common tuplet sizes — how much normal time an
+// N-tuplet group fills (e.g. a triplet's 3 notes fill the time 2 normally
+// would). Anything not listed falls back to the nearest lower power of two,
+// the same convention most notation software defaults to.
+const TUPLET_RATIOS={2:3,3:2,4:3,5:4,6:4,7:4,9:8};
+function tupletOccupied(n){ return TUPLET_RATIOS[n] || Math.pow(2,Math.floor(Math.log2(Math.max(n-1,1)))); }
+
 const BV={w:4,h:2,q:1,'8':.5,'16':.25,'32':.125};
-function durBeats(dur){const b=dur.replace(/[dr]/g,''),dot=dur.includes('d');return(BV[b]??1)*(dot?1.5:1);}
+function durBeats(dur){
+  const d=decomposeDur(dur);
+  let mult=d.dot?1.5:1;
+  if(d.tupN) mult*=tupletOccupied(d.tupN)/d.tupN;
+  return (BV[d.base]??1)*mult;
+}
 // A measure-repeat marker always fills exactly one measure, regardless of
 // time signature — it has no meaningful `dur` string of its own.
 function noteBeats(n){ return n.repeatBars ? currentTimeSig.beats : durBeats(n.dur); }
@@ -647,6 +683,17 @@ function refreshDurIcons(){
   });
 })();
 
+// Always-visible reminder of which staff new notes land on — the Parts tab
+// list only shows this while that tab is open, which left people typing into
+// the wrong instrument without realizing it.
+function updatePartPill(){
+  const pill=document.getElementById('part-pill');
+  if(!pill)return;
+  const p=parts[apIdx];
+  if(!p){ pill.textContent='—'; return; }
+  const inst=IMAP[p.instId]||IMAP.piano;
+  pill.textContent=p.name+' · '+inst.label;
+}
 function setKey(kid){
   currentKeyId=kid;
   document.querySelectorAll('.key-btn').forEach(b=>b.classList.toggle('on',b.dataset.kid===kid));
@@ -767,24 +814,45 @@ function switchSubTab(name){
 // for new notes. refreshDurRow() keeps the row's highlight in sync with either.
 function refreshDurRow(){
   const n=selectedNoteAny();
-  const base = n ? n.dur.replace(/[dr]/g,'') : selDur;
-  const dot  = n ? n.dur.includes('d') : dotted;
-  ['w','h','q','8','16','32'].forEach(x=>document.getElementById('d-'+x).classList.toggle('on',x===base));
-  document.getElementById('d-dot').classList.toggle('on',dot);
+  const d = n ? decomposeDur(n.dur) : {base:selDur,dot:dotted,tupN:tupletMode?tupletN:0};
+  ['w','h','q','8','16','32'].forEach(x=>document.getElementById('d-'+x).classList.toggle('on',x===d.base));
+  document.getElementById('d-dot').classList.toggle('on',d.dot);
+  document.getElementById('d-tuplet').classList.toggle('on',!!d.tupN);
+  document.getElementById('d-tuplet').textContent=d.tupN||tupletN;
 }
-function setDur(d){
-  selDur=d;
+function setDur(dNew){
+  selDur=dNew;
   document.getElementById('rest-btn').innerHTML=durIcon(selDur,true,dotted);
   const n=selectedNoteAny();
-  if(n){ n.dur=d+(n.dur.includes('d')?'d':'')+(n.rest?'r':''); render(); updateSelectionUI(); }
+  if(n){ const d=decomposeDur(n.dur); n.dur=composeDur(dNew,d.dot,d.tupN,d.rest); render(); updateSelectionUI(); }
   else refreshDurRow();
 }
 function toggleDot(){
   dotted=!dotted;
   document.getElementById('rest-btn').innerHTML=durIcon(selDur,true,dotted);
   const n=selectedNoteAny();
-  if(n){ n.dur = n.dur.includes('d') ? n.dur.replace('d','') : n.dur.replace(/r?$/,'d$&'); render(); updateSelectionUI(); }
+  if(n){ const d=decomposeDur(n.dur); n.dur=composeDur(d.base,!d.dot,d.tupN,d.rest); render(); updateSelectionUI(); }
   else refreshDurRow();
+}
+// Marks the next notes entered (or the selected note) as part of an N-tuplet —
+// drawVoice() groups consecutive runs of N same-N-flagged notes under a bracket.
+// N itself is set by changeTupletN() below (duplet, triplet, quintuplet, ...).
+function toggleTuplet(){
+  tupletMode=!tupletMode;
+  tupletCount=0;
+  const n=selectedNoteAny();
+  if(n){ const d=decomposeDur(n.dur); d.tupN=d.tupN?0:tupletN; n.dur=composeDur(d.base,d.dot,d.tupN,d.rest); render(); updateSelectionUI(); }
+  else refreshDurRow();
+}
+function changeTupletN(delta){
+  tupletN=Math.max(2,Math.min(9,tupletN+delta));
+  tupletCount=0;
+  const n=selectedNoteAny();
+  if(n){
+    const d=decomposeDur(n.dur);
+    if(d.tupN){ d.tupN=tupletN; n.dur=composeDur(d.base,d.dot,d.tupN,d.rest); render(); updateSelectionUI(); return; }
+  }
+  refreshDurRow();
 }
 function setAcc(a){
   selAcc=a;
@@ -936,7 +1004,15 @@ function toggleChordMode(){
   document.getElementById('pending-row').style.display=chordBuildMode?'flex':'none';
   pendingChordNotes=[];updatePendingDisplay();
 }
-function cancelChord(){pendingChordNotes=[];updatePendingDisplay();}
+// Build mode is meant to construct ONE chord at a time, not linger as a sticky
+// mode — leaving it on after Add/Cancel is what left people stuck unable to
+// enter single notes. Both exits return straight to normal note entry.
+function exitChordBuildMode(){
+  chordBuildMode=false;
+  document.getElementById('btn-chord-mode').classList.remove('on');
+  document.getElementById('pending-row').style.display='none';
+}
+function cancelChord(){pendingChordNotes=[];updatePendingDisplay();exitChordBuildMode();}
 function commitChord(){
   if(!pendingChordNotes.length)return;
   const {lyric,dyn,arts,tempo,rud,grace,sticking}=grabPending();
@@ -948,6 +1024,7 @@ function commitChord(){
   });
   pendingChordNotes=[];updatePendingDisplay();
   pendingGraceNotes=[];updateGracePendingDisplay();
+  exitChordBuildMode();
   render();scrollAfterEntry();
 }
 function updatePendingDisplay(){
@@ -1004,7 +1081,7 @@ function enterDiatonicChord(deg,kd,seventh=false){
 // ═══════════════════════════════════════════════════════
 // Note entry
 // ═══════════════════════════════════════════════════════
-function buildDur(rest=false){return selDur+(dotted?'d':'')+(rest?'r':'');}
+function buildDur(rest=false){return composeDur(selDur,dotted,tupletMode?tupletN:0,rest);}
 function grabPending(){
   return{
     lyric:document.getElementById('lyric-inp').value.trim()||null,
@@ -1026,6 +1103,13 @@ function insertNoteAtCursor(noteObj){
   notes.splice(pos,0,noteObj);
   if(fromCursor){ selectedNote={partIdx:apIdx,noteIdx:pos}; caretGap=null; }
   else { selectedNote=null; caretGap=null; }
+  // Tuplet mode groups exactly N notes — auto-exit once N are entered so it
+  // doesn't linger and silently tuplet-ize everything after, the same trap
+  // chord build mode used to leave people stuck in.
+  if(tupletMode && noteObj.dur && tupletNumOf(noteObj.dur)){
+    tupletCount++;
+    if(tupletCount>=tupletN){ tupletMode=false; tupletCount=0; refreshDurRow(); }
+  }
 }
 // Keep the note just entered/edited in view: scroll to the selected note if
 // one is set (mid-phrase insert), otherwise to the end (append mode).
@@ -1292,10 +1376,15 @@ document.getElementById('score-wrap').addEventListener('click', e=>{
 });
 // Which (part, gap-index) an empty-space tap corresponds to: nearest staff by
 // vertical distance, then count how many of that part's notes sit left of the tap.
+// Picks the staff nearest a tap by its row band (TP + pi*PG), not by scanning
+// notePositions — a part with zero notes anywhere (a freshly added instrument,
+// or a paste destination that hasn't been written into yet) has no entries in
+// notePositions at all, so the old nearest-note search could never land on it
+// and silently snapped the tap to whichever staff already had notes.
 function gapFromTap(cx,cy){
-  if(!notePositions.length) return {partIdx:apIdx,index:0};
-  let bestPart=apIdx, bestDy=Infinity;
-  for(const p of notePositions){ const dy=Math.abs(cy-(p.y+p.h*0.45)); if(dy<bestDy){bestDy=dy;bestPart=p.partIdx;} }
+  const numP=parts.length;
+  let bestPart=Math.round((cy-TP-PG/2)/PG);
+  bestPart=Math.max(0,Math.min(numP-1,bestPart));
   const inPart=notePositions.filter(p=>p.partIdx===bestPart);
   let index=0;
   inPart.forEach(p=>{ if(cx>p.x) index=Math.max(index,p.noteIdx+1); });
@@ -1369,12 +1458,29 @@ function addMeasureRepeat(n){
   render(); scrollToNoteEnd(apIdx);
 }
 
+// Resolves the clef a part actually renders/plays in: an explicit per-part
+// override wins, otherwise fall back to the instrument's idiomatic clef.
+function partClefFor(p){
+  const inst=IMAP[p.instId]||IMAP['piano'];
+  return p.clef||(inst.clef==='percussion'?'percussion':(inst.clef||'treble'));
+}
+
 const BASE_MW=190, PX_PER_NOTE=46, FX=115, PG=90, TP=22;
+// Notes need horizontal room roughly proportional to their duration — counting
+// every note as the same 1 unit (regardless of whether it's a whole note or a
+// 32nd) squashed long-note measures and over-spread short-note ones, which is
+// most of what read as "wonky spacing."
+const DUR_WIDTH_UNITS={w:3.5,h:2.2,q:1.4,'8':1,'16':.75,'32':.6};
 function calcMW(allM, mi){
   let maxUnits=0;
   for(const pm of allM){
     const md=pm[mi]||[]; let units=0;
-    md.forEach(n=>{ units+=1; if(n.vfAccs) units+=n.vfAccs.filter(a=>a&&a!=='n').length*0.5; });
+    md.forEach(n=>{
+      const base=decomposeDur(n.dur).base;
+      units+=DUR_WIDTH_UNITS[base]??1;
+      if(n.dur.includes('d')) units+=0.35;
+      if(n.vfAccs) units+=n.vfAccs.filter(a=>a&&a!=='n').length*0.5;
+    });
     maxUnits=Math.max(maxUnits,units);
   }
   return Math.max(BASE_MW, Math.round(maxUnits*PX_PER_NOTE));
@@ -1394,6 +1500,7 @@ function render(){
   const numM=Math.max(...allM.map(m=>m.length),1);
   const numP=parts.length;
   const kd=KMAP[currentKeyId];
+  const partClefs=parts.map(partClefFor);
 
   const mws=Array.from({length:numM},(_,mi)=>calcMW(allM,mi));
   const totalW=FX+mws.reduce((a,b)=>a+b,0)+40;
@@ -1422,7 +1529,7 @@ function render(){
 
     const staves=parts.map((p,pi)=>{
       const inst=IMAP[p.instId]||IMAP['piano'];
-      const cl=p.clef||(inst.clef==='percussion'?'percussion':(inst.clef||'treble'));
+      const cl=partClefs[pi];
       const sy=TP+pi*PG;
       const st=new Stave(x,sy,mw);
       if(inst.staffLines===1)st.setConfigForLines([{visible:false},{visible:false},{visible:true},{visible:false},{visible:false}]);
@@ -1446,7 +1553,7 @@ function render(){
 
     staves.forEach((st,pi)=>{
       const noteData=allM[pi][mi]||[];
-      const vfNotes=drawVoice(ctx,st,noteData,mw,VF,pi,partOff[pi]);
+      const vfNotes=drawVoice(ctx,st,noteData,mw,VF,pi,partOff[pi],partClefs[pi]);
       noteData.forEach((_,li)=>{if(vfNotes[li])vfRefs[pi][partOff[pi]+li]={vfNote:vfNotes[li],stave:st};});
       partOff[pi]+=noteData.length;
     });
@@ -1466,6 +1573,7 @@ function render(){
   });
 
   renderCaret();
+  updatePartPill();
   scheduleAutosave();
 }
 
@@ -1492,8 +1600,8 @@ function scrollToMeasure(mi){
   wrap.scrollTo({left:Math.max(0,tx-30),top:wrap.scrollTop,behavior:'smooth'});
 }
 
-function drawVoice(ctx,stave,noteData,mw,VF,partIdx,partOffset){
-  const{StaveNote,Voice,Formatter,Accidental,Beam,Annotation,Articulation,Dot,Tremolo,Ornament,GraceNote,GraceNoteGroup,RepeatNote}=VF;
+function drawVoice(ctx,stave,noteData,mw,VF,partIdx,partOffset,clef){
+  const{StaveNote,Voice,Formatter,Accidental,Beam,Annotation,Articulation,Dot,Tremolo,Ornament,GraceNote,GraceNoteGroup,RepeatNote,Tuplet}=VF;
   if(!noteData.length)return[];
   let vfNotes;
   try{
@@ -1504,7 +1612,11 @@ function drawVoice(ctx,stave,noteData,mw,VF,partIdx,partOffset){
       if(n.repeatBars) return new RepeatNote(n.repeatBars,{duration:'w'});
       const isSelected=selectedNote&&selectedNote.partIdx===partIdx&&selectedNote.noteIdx===globalIdx;
       const inCopyRange=copyRangeSel&&copyRangeSel.partIdx===partIdx&&globalIdx>=Math.min(copyRangeSel.startIdx,copyRangeSel.endIdx)&&globalIdx<=Math.max(copyRangeSel.startIdx,copyRangeSel.endIdx);
-      const sn=new StaveNote({keys:n.keys,duration:n.dur});
+      // clef must be passed explicitly — VexFlow's StaveNote silently defaults
+      // to treble-clef line positions otherwise, mispositioning every note on
+      // a non-treble stave even though the stave itself draws the right clef.
+      // 't<N>' (our tuplet marker) isn't a VexFlow duration token, so strip it here.
+      const sn=new StaveNote({keys:n.keys,duration:stripTuplet(n.dur),clef});
       if(isSelected) sn.setStyle({fillStyle:'#2980b9',strokeStyle:'#2980b9'});
       else if(inCopyRange) sn.setStyle({fillStyle:'#27ae60',strokeStyle:'#27ae60'});
       const accs=n.vfAccs||[];
@@ -1530,7 +1642,7 @@ function drawVoice(ctx,stave,noteData,mw,VF,partIdx,partOffset){
       if(n.grace&&n.grace.length){
         try{
           const gns=n.grace.map(g=>{
-            const gn=new GraceNote({keys:g.keys,duration:g.dur,slash:true});
+            const gn=new GraceNote({keys:g.keys,duration:g.dur,slash:true,clef});
             if(g.vfAcc)try{gn.addModifier(new Accidental(g.vfAcc),0);}catch(e){}
             return gn;
           });
@@ -1542,14 +1654,38 @@ function drawVoice(ctx,stave,noteData,mw,VF,partIdx,partOffset){
       return sn;
     });
   }catch(e){console.warn('Note create:',e.message);return[];}
+
+  // Tuplets: consecutive runs of exactly N notes sharing the same tuplet size
+  // (set via the N-tuplet toggle/stepper) become one bracketed group. Must
+  // happen before addTickables() below — Tuplet() rewrites each note's tick
+  // duration to the N:notesOccupied ratio, which the Voice/Formatter then
+  // relies on for layout.
+  const tuplets=[];
+  try{
+    let ti=0;
+    while(ti<noteData.length){
+      const num=noteData[ti].repeatBars?0:tupletNumOf(noteData[ti].dur);
+      if(num){
+        let tj=ti;
+        while(tj<noteData.length && !noteData[tj].repeatBars && tupletNumOf(noteData[tj].dur)===num && (tj-ti)<num) tj++;
+        // VexFlow 4's Tuplet options are snake_case (num_notes/notes_occupied);
+        // camelCase is silently ignored and falls back to a default 2:notes_occupied
+        // ratio, so this must match exactly.
+        if(tj-ti===num) tuplets.push(new Tuplet(vfNotes.slice(ti,tj),{num_notes:num,notes_occupied:tupletOccupied(num)}));
+        ti=tj;
+      } else ti++;
+    }
+  }catch(e){console.warn('Tuplet:',e.message);}
+
   try{
     const voice=new Voice({numBeats:currentTimeSig.vfB,beatValue:currentTimeSig.vfV}).setMode(2);
     voice.addTickables(vfNotes);
     new Formatter().joinVoices([voice]).format([voice],mw-32);
-    const beamable=vfNotes.filter((_,i)=>{const b=noteData[i].dur.replace(/[dr]/g,'');return !noteData[i].rest&&['8','16','32'].includes(b);});
+    const beamable=vfNotes.filter((_,i)=>{const b=decomposeDur(noteData[i].dur).base;return !noteData[i].rest&&['8','16','32'].includes(b);});
     const beams=beamable.length>=2?Beam.generateBeams(beamable):[];
     voice.draw(ctx,stave);
     beams.forEach(b=>b.setContext(ctx).draw());
+    tuplets.forEach(t=>{ try{ t.setContext(ctx).draw(); }catch(e){} });
     vfNotes.forEach((vn,li)=>{
       try{
         const nx=vn.getAbsoluteX();
@@ -1588,8 +1724,12 @@ async function initMidi(){
 // Playback
 // ═══════════════════════════════════════════════════════
 const BVP={w:4,h:2,q:1,'8':.5,'16':.25,'32':.125};
-function durSecs(dur,bpm){const b=dur.replace(/[dr]/g,''),dot=dur.includes('d');return(BVP[b]??1)*(dot?1.5:1)*(60/bpm);}
-function toToneDur(dur){const b=dur.replace(/[dr]/g,''),dot=dur.includes('d');return({w:'1n',h:'2n',q:'4n','8':'8n','16':'16n','32':'32n'}[b]||'4n')+(dot?'.':'');}
+function durSecs(dur,bpm){
+  const d=decomposeDur(dur);
+  let mult=d.dot?1.5:1;
+  if(d.tupN) mult*=tupletOccupied(d.tupN)/d.tupN;
+  return (BVP[d.base]??1)*mult*(60/bpm);
+}
 
 // ── Sample-based instruments (real recordings) ──────────
 // Salamander grand piano (Tone.js official) + tonejs-instruments library.
@@ -1741,7 +1881,10 @@ async function playScore(){
             const hitDur=secs/hits;
             for(let k=0;k<hits;k++) Tone.getTransport().schedule(time=>hit(mainNotes,hitDur*.85,time,.8),'+'+(abs+k*hitDur));
           } else {
-            Tone.getTransport().schedule(time=>hit(mainNotes,toToneDur(n.dur),time,1),'+'+abs);
+            // Plain seconds (not a Tone.js Time-string like '8n') so arbitrary
+            // N-tuplet ratios play at the right length — Tone's own 't' shorthand
+            // only understands the 2:3 triplet case.
+            Tone.getTransport().schedule(time=>hit(mainNotes,secs*0.94,time,1),'+'+abs);
           }
         }
         t+=secs;
@@ -1941,6 +2084,7 @@ function buildPrintSystems(partsSubset){
   const allM=partsSubset.map(p=>toMeasures(p.notes));
   const numM=Math.max(...allM.map(m=>m.length),1);
   const numP=partsSubset.length;
+  const partClefs=partsSubset.map(partClefFor);
   const mws=Array.from({length:numM},(_,mi)=>calcMW(allM,mi));
 
   const systems=[]; let cur=[], curW=0;
@@ -1970,7 +2114,7 @@ function buildPrintSystems(partsSubset){
       const mw=first?mws[mi]+FX:mws[mi];
       const staves=partsSubset.map((p,pi)=>{
         const inst=IMAP[p.instId]||IMAP['piano'];
-        const cl=p.clef||(inst.clef==='percussion'?'percussion':(inst.clef||'treble'));
+        const cl=partClefs[pi];
         const sy=TP+pi*PG;
         const st=new Stave(x,sy,mw);
         if(inst.staffLines===1)st.setConfigForLines([{visible:false},{visible:false},{visible:true},{visible:false},{visible:false}]);
@@ -1992,7 +2136,7 @@ function buildPrintSystems(partsSubset){
       }
       staves.forEach((st,pi)=>{
         const noteData=allM[pi][mi]||[];
-        const vfNotes=drawVoice(ctx,st,noteData,mw,VF,pi,partOffsets[pi]);
+        const vfNotes=drawVoice(ctx,st,noteData,mw,VF,pi,partOffsets[pi],partClefs[pi]);
         noteData.forEach((_,li)=>{ if(vfNotes[li])vfRefs[pi][partOffsets[pi]+li]={vfNote:vfNotes[li],stave:st}; });
         partOffsets[pi]+=noteData.length;
       });
