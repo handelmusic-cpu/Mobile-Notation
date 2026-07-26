@@ -1795,6 +1795,47 @@ function drawVoice(ctx,stave,noteData,mw,VF,partIdx,partOffset,clef){
 // ═══════════════════════════════════════════════════════
 const MN=['C','C','D','D','E','F','F','G','G','A','A','B'];
 const MA=[null,'#',null,'#',null,null,'#',null,'#',null,'#',null];
+
+// A chord struck on a real MIDI keyboard never arrives as one message — each
+// key fires its own note-on a few ms apart. Buffer note-ons that land within a
+// short window and enter them together as a single chord, instead of the old
+// behavior of inserting each key as its own separate note in sequence.
+let _midiChordBuf=[], _midiChordTimer=null;
+const MIDI_CHORD_WINDOW_MS=45;
+function queueMidiNote(name,acc,oct,midi){
+  _midiChordBuf.push({name,acc,oct,midi});
+  clearTimeout(_midiChordTimer);
+  _midiChordTimer=setTimeout(flushMidiChordBuffer,MIDI_CHORD_WINDOW_MS);
+}
+function flushMidiChordBuffer(){
+  const notes=_midiChordBuf; _midiChordBuf=[];
+  if(!notes.length)return;
+  const activeInst=IMAP[parts[apIdx]?.instId]||IMAP.piano;
+  if(notes.length===1||chordBuildMode||graceMode){
+    // Single key, or mid-way through an explicit chord-build/grace queue —
+    // those already accumulate correctly one call at a time.
+    notes.forEach(n=>enterPitch(n.name,n.acc,n.oct,n.acc));
+    return;
+  }
+  if(activeInst.staffLines===1){
+    // Single-line percussion has no real pitch to stack — a chord struck here
+    // is still just one hit, not several hits piled up in a row.
+    enterPitch(notes[0].name,notes[0].acc,notes[0].oct,notes[0].acc);
+    return;
+  }
+  notes.sort((a,b)=>a.midi-b.midi);
+  const {lyric,dyn,arts,tempo,rud,grace,sticking}=grabPending();
+  insertNoteAtCursor({
+    keys:notes.map(n=>n.name+'/'+n.oct),
+    dur:buildDur(),
+    vfAccs:notes.map(n=>n.acc),
+    midiVals:notes.map(n=>n.midi),
+    rest:false,lyric,dyn,arts,tempo,rud,grace,sticking
+  });
+  pendingGraceNotes=[];updateGracePendingDisplay();
+  render();scrollAfterEntry();
+}
+
 async function initMidi(){
   if(!navigator.requestMIDIAccess)return;
   try{
@@ -1804,7 +1845,7 @@ async function initMidi(){
       const[st,note,vel]=e.data;
       if((st&0xf0)===0x90&&vel>0){
         const name=MN[note%12],acc=MA[note%12],oct=Math.floor(note/12)-1;
-        enterPitch(name,acc,oct,acc);
+        queueMidiNote(name,acc,oct,note);
       }
     };};
     ma.inputs.forEach(attach);
