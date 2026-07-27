@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<title>Music Notation</title>
+<title>MōdScore</title>
 <style>
 * { box-sizing:border-box; margin:0; padding:0; -webkit-tap-highlight-color:transparent; }
 html,body { height:100%; overflow:hidden; }
@@ -2121,7 +2121,7 @@ function applyProject(d){
 // clearing browser data or moving between devices.
 function saveProjectToFile(){
   const proj=projects.find(p=>p.id===currentProjId);
-  const payload={ app:'mobile-notation', version:1, name:(proj?proj.name:'Song'), data:serializeProject() };
+  const payload={ app:'modscore', version:1, name:(proj?proj.name:'Song'), data:serializeProject() };
   const blob=new Blob([JSON.stringify(payload)],{type:'application/json'});
   const nm=((proj?proj.name:'song')||'song').replace(/[^a-z0-9]+/gi,'_');
   const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=nm+'.mnote.json';
@@ -2134,7 +2134,7 @@ document.getElementById('project-file').addEventListener('change', async functio
   try{
     const payload=JSON.parse(await f.text());
     const data=payload && payload.data ? payload.data : payload; // tolerate a bare data object
-    if(!data || !Array.isArray(data.parts)) throw new Error('Not a Mobile Notation song file');
+    if(!data || !Array.isArray(data.parts)) throw new Error('Not a MōdScore song file');
     const id='p'+Date.now();
     const name=(payload.name||f.name.replace(/\.(mnote\.)?json$/i,'')||'Imported song');
     projects.push({id,name,data,updated:Date.now()});
@@ -2593,7 +2593,7 @@ document.addEventListener('keydown', e=>{
 // Guided tour (hybrid walkthrough + spotlight on the real controls)
 // ═══════════════════════════════════════════════════════
 const TOUR=[
-  {title:'Welcome to Mobile Notation 🎵', text:'A quick tour of everything the app can do. Tap Next to step through — or Skip anytime. You can reopen this later with the “?” button.'},
+  {title:'Welcome to MōdScore 🎵', text:'A quick tour of everything the app can do. Tap Next to step through — or Skip anytime. You can reopen this later with the “?” button.'},
   {tab:'notes', sel:'#note-grid', title:'Write notes', text:'Tap a letter (C–B) to add that note. Each one lands in the octave closest to the note before it, so melodies flow naturally. The last button adds a rest.'},
   {tab:'notes', sel:'#score-wrap', title:'The cursor', text:'Tap a note on the staff to select it (it turns blue). New notes insert right after it — so you can add music in the middle, not just the end. Tap an empty spot to drop the blue cursor where the next note will go.'},
   {tab:'notes', sel:'#edit-section', title:'Change or delete a note', text:'With a note selected: ↑½ ↓½ move its pitch, ♯ ♭ ♮ set an accidental, 🗑 Delete removes it entirely, and ⇢Rest turns it into a rest (keeping the timing).'},
