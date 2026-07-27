@@ -3,7 +3,8 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<title>Music Notation</title>
+<title>MōdScore</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%20100%20100'%3E%3Crect%20width='100'%20height='100'%20rx='22'%20fill='%2312121f'/%3E%3Ctext%20x='50'%20y='70'%20font-family='Arial,Helvetica,sans-serif'%20font-size='58'%20font-weight='800'%20fill='%23e94560'%20text-anchor='middle'%3EM%3C/text%3E%3C/svg%3E">
 <style>
 * { box-sizing:border-box; margin:0; padding:0; -webkit-tap-highlight-color:transparent; }
 html,body { height:100%; overflow:hidden; }
@@ -25,7 +26,7 @@ body { font-family:-apple-system,BlinkMacSystemFont,sans-serif; background:#1212
 #midi-pill.on{background:#27ae60;color:#fff;}
 
 #tab-bar{display:flex;background:#16162a;border-top:1px solid #2a2a45;flex-shrink:0;}
-.tab-btn{flex:1;padding:11px 1px;border:none;background:transparent;color:#778;font-size:12.5px;font-weight:700;cursor:pointer;border-bottom:2px solid transparent;white-space:nowrap;}
+.tab-btn{flex:1;padding:11px 1px;border:none;background:transparent;color:#778;font-size:11.5px;font-weight:700;cursor:pointer;border-bottom:2px solid transparent;white-space:nowrap;text-transform:uppercase;letter-spacing:.5px;}
 .tab-btn.on{color:#e94560;border-bottom-color:#e94560;}
 
 /* Collapsed controls (landscape / more staff room): hide the tall control stack. */
@@ -98,6 +99,12 @@ body { font-family:-apple-system,BlinkMacSystemFont,sans-serif; background:#1212
 
 /* Files / projects */
 #proj-list{display:flex;flex-direction:column;gap:4px;max-height:150px;overflow-y:auto;}
+
+/* Brand wordmark — shown on the Songs tab rather than the always-visible
+   toolbar, so it never competes with the score for space on a small screen. */
+#brand{text-align:center;padding:6px 0 12px;}
+#brand-mark{font-size:26px;font-weight:800;letter-spacing:.5px;background:linear-gradient(90deg,#2ecc71,#f0c040,#e94560);-webkit-background-clip:text;background-clip:text;color:transparent;}
+#brand-tag{font-size:10px;color:#667;letter-spacing:1.5px;text-transform:uppercase;margin-top:2px;}
 
 /* Diatonic chord palette — always visible */
 #chord-palette{flex-shrink:0;background:#0e0e1e;padding:4px 6px 3px;border-top:1px solid #2a2a45;}
@@ -384,6 +391,7 @@ body { font-family:-apple-system,BlinkMacSystemFont,sans-serif; background:#1212
 
 <!-- Files / projects panel -->
 <div id="panel-proj" class="panel">
+  <div id="brand"><div id="brand-mark">MōdScore</div><div id="brand-tag">Mobile Music Notation</div></div>
   <div class="row" style="gap:6px">
     <button class="chip on2" onclick="newProjectPrompt()" style="font-size:11px">+ New Song</button>
   </div>
@@ -1899,6 +1907,19 @@ const INST_SAMPLE={
   soprano:'organ', mezzo:'organ', altov:'organ', tenorv:'organ', baritonev:'organ', bassv:'organ',
   timpani:'piano', xyloph:'xylophone', marimba:'xylophone'
 };
+// Every instrument routes here instead of straight toDestination(). With each
+// voice going directly to the speakers, playing several parts at once (or a
+// thick MIDI/keyboard chord, or the drum set alongside anything else) could
+// sum well past 0dB with nothing to catch it — a brick-wall limiter just
+// under full scale stops that clipping without touching the level of normal,
+// single-part playback (it only engages once the sum actually gets loud).
+let _masterBus=null;
+function getMasterBus(){
+  if(_masterBus)return _masterBus;
+  _masterBus=new Tone.Limiter(-1).toDestination();
+  return _masterBus;
+}
+
 const _samplerCache={}, _drumCache={};
 function getSampler(instId){
   const key=INST_SAMPLE[instId]||'piano';
@@ -1907,15 +1928,15 @@ function getSampler(instId){
   const urls={};
   if(def.map)Object.assign(urls,def.map);
   else def.pitches.forEach(p=>{urls[p]=p.replace('#','s')+'.mp3';});
-  const s=new Tone.Sampler({urls,baseUrl:def.base,release:1,volume:-4}).toDestination();
+  const s=new Tone.Sampler({urls,baseUrl:def.base,release:1,volume:-4}).connect(getMasterBus());
   _samplerCache[key]=s;return s;
 }
 function getDrum(instId){
   if(_drumCache[instId])return _drumCache[instId];
   const inst=IMAP[instId];const e={attack:inst.env.a,decay:inst.env.d,sustain:inst.env.s,release:inst.env.r};
   let s;
-  if(inst.osc==='noise')s=new Tone.NoiseSynth({noise:{type:'white'},envelope:e,volume:inst.vol}).toDestination();
-  else s=new Tone.MembraneSynth({pitchDecay:.05,octaves:5,envelope:e,volume:inst.vol}).toDestination();
+  if(inst.osc==='noise')s=new Tone.NoiseSynth({noise:{type:'white'},envelope:e,volume:inst.vol}).connect(getMasterBus());
+  else s=new Tone.MembraneSynth({pitchDecay:.05,octaves:5,envelope:e,volume:inst.vol}).connect(getMasterBus());
   _drumCache[instId]=s;return s;
 }
 // Drum set: one 5-line percussion staff whose notes route to different drum
@@ -1924,11 +1945,11 @@ function getDrum(instId){
 let _drumset=null;
 function getDrumset(){
   if(_drumset)return _drumset;
-  const kick =new Tone.MembraneSynth({pitchDecay:.03,octaves:6,envelope:{attack:.001,decay:.28,sustain:0,release:.2},volume:-3}).toDestination();
-  const tom  =new Tone.MembraneSynth({pitchDecay:.05,octaves:4,envelope:{attack:.001,decay:.25,sustain:0,release:.2},volume:-5}).toDestination();
-  const snare=new Tone.NoiseSynth({noise:{type:'white'},envelope:{attack:.001,decay:.16,sustain:0,release:.05},volume:-7}).toDestination();
+  const kick =new Tone.MembraneSynth({pitchDecay:.03,octaves:6,envelope:{attack:.001,decay:.28,sustain:0,release:.2},volume:-6}).connect(getMasterBus());
+  const tom  =new Tone.MembraneSynth({pitchDecay:.05,octaves:4,envelope:{attack:.001,decay:.25,sustain:0,release:.2},volume:-6}).connect(getMasterBus());
+  const snare=new Tone.NoiseSynth({noise:{type:'white'},envelope:{attack:.001,decay:.16,sustain:0,release:.05},volume:-7}).connect(getMasterBus());
   // Hi-hat/cymbal: high-passed short noise so it reads as metal, not a snare.
-  const hatFilter=new Tone.Filter(7000,'highpass').toDestination();
+  const hatFilter=new Tone.Filter(7000,'highpass').connect(getMasterBus());
   const hat  =new Tone.NoiseSynth({noise:{type:'white'},envelope:{attack:.001,decay:.045,sustain:0,release:.02},volume:-13}).connect(hatFilter);
   _drumset={kick,tom,snare,hat,voices:[kick,tom,snare,hat]};
   return _drumset;
@@ -2121,7 +2142,7 @@ function applyProject(d){
 // clearing browser data or moving between devices.
 function saveProjectToFile(){
   const proj=projects.find(p=>p.id===currentProjId);
-  const payload={ app:'mobile-notation', version:1, name:(proj?proj.name:'Song'), data:serializeProject() };
+  const payload={ app:'modscore', version:1, name:(proj?proj.name:'Song'), data:serializeProject() };
   const blob=new Blob([JSON.stringify(payload)],{type:'application/json'});
   const nm=((proj?proj.name:'song')||'song').replace(/[^a-z0-9]+/gi,'_');
   const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=nm+'.mnote.json';
@@ -2134,7 +2155,7 @@ document.getElementById('project-file').addEventListener('change', async functio
   try{
     const payload=JSON.parse(await f.text());
     const data=payload && payload.data ? payload.data : payload; // tolerate a bare data object
-    if(!data || !Array.isArray(data.parts)) throw new Error('Not a Mobile Notation song file');
+    if(!data || !Array.isArray(data.parts)) throw new Error('Not a MōdScore song file');
     const id='p'+Date.now();
     const name=(payload.name||f.name.replace(/\.(mnote\.)?json$/i,'')||'Imported song');
     projects.push({id,name,data,updated:Date.now()});
@@ -2593,7 +2614,7 @@ document.addEventListener('keydown', e=>{
 // Guided tour (hybrid walkthrough + spotlight on the real controls)
 // ═══════════════════════════════════════════════════════
 const TOUR=[
-  {title:'Welcome to Mobile Notation 🎵', text:'A quick tour of everything the app can do. Tap Next to step through — or Skip anytime. You can reopen this later with the “?” button.'},
+  {title:'Welcome to MōdScore 🎵', text:'A quick tour of everything the app can do. Tap Next to step through — or Skip anytime. You can reopen this later with the “?” button.'},
   {tab:'notes', sel:'#note-grid', title:'Write notes', text:'Tap a letter (C–B) to add that note. Each one lands in the octave closest to the note before it, so melodies flow naturally. The last button adds a rest.'},
   {tab:'notes', sel:'#score-wrap', title:'The cursor', text:'Tap a note on the staff to select it (it turns blue). New notes insert right after it — so you can add music in the middle, not just the end. Tap an empty spot to drop the blue cursor where the next note will go.'},
   {tab:'notes', sel:'#edit-section', title:'Change or delete a note', text:'With a note selected: ↑½ ↓½ move its pitch, ♯ ♭ ♮ set an accidental, 🗑 Delete removes it entirely, and ⇢Rest turns it into a rest (keeping the timing).'},
