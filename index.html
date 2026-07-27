@@ -11,6 +11,8 @@ html,body { height:100%; overflow:hidden; }
 body { font-family:-apple-system,BlinkMacSystemFont,sans-serif; background:#12121f; color:#e0e4ef; display:flex; flex-direction:column; height:100dvh; }
 
 #score-wrap { flex:1 1 0; min-height:0; background:#f4efe4; overflow:auto; -webkit-overflow-scrolling:touch; padding:8px; cursor:pointer; }
+#quick-edit-bar{display:none;align-items:center;gap:4px;padding:5px 7px;background:#0d1f35;border-top:1.5px solid #2980b9;border-bottom:1.5px solid #2980b9;flex-shrink:0;overflow-x:auto;-webkit-overflow-scrolling:touch;}
+#qe-label{font-size:11px;font-weight:700;color:#5dade2;flex-shrink:0;margin-right:2px;white-space:nowrap;}
 
 #toolbar { display:flex; gap:4px; padding:5px 7px; background:#1e1e35; flex-shrink:0; align-items:center; flex-wrap:wrap; }
 .tb { flex:1; padding:8px 2px; border:none; border-radius:7px; font-size:14px; font-weight:700; cursor:pointer; max-width:60px; touch-action:manipulation; }
@@ -18,10 +20,15 @@ body { font-family:-apple-system,BlinkMacSystemFont,sans-serif; background:#1212
 .tb:disabled{opacity:.3;cursor:default;}
 .play{background:#2ecc71;color:#fff;} .stop{background:#e74c3c;color:#fff;}
 .undo{background:#e67e22;color:#fff;} .clear{background:#9b59b6;color:#fff;}
+.rec{background:#c0392b;color:#fff;}
+.rec.recording{animation:recPulse 1s ease-in-out infinite;}
+@keyframes recPulse{0%,100%{opacity:1;}50%{opacity:.45;}}
 #bpm-wrap{display:flex;align-items:center;gap:3px;font-size:12px;color:#889;margin-left:4px;}
 #bpm-inp{width:46px;background:#2a2a40;border:none;border-radius:5px;color:#dde;padding:4px 5px;font-size:14px;}
 .pill{font-size:12px;font-weight:700;padding:5px 10px;border-radius:10px;background:#2a2a40;color:#dde;cursor:pointer;flex-shrink:0;white-space:nowrap;}
 #proj-pill{color:#9bd;max-width:78px;overflow:hidden;text-overflow:ellipsis;}
+#audition-pill{color:#778;}
+#audition-pill.on{background:#27ae60;color:#fff;}
 #midi-pill{margin-left:auto;color:#778;}
 #midi-pill.on{background:#27ae60;color:#fff;}
 
@@ -136,11 +143,11 @@ body { font-family:-apple-system,BlinkMacSystemFont,sans-serif; background:#1212
 /* Guided tour overlay */
 #tour-overlay{position:fixed;inset:0;z-index:99999;}
 #tour-hole{position:absolute;border-radius:9px;box-shadow:0 0 0 9999px rgba(0,0,0,.74);transition:left .25s,top .25s,width .25s,height .25s;pointer-events:none;}
-#tour-card{position:fixed;z-index:100000;background:#20203a;border:2px solid #e94560;border-radius:14px;padding:15px 17px;box-shadow:0 10px 34px rgba(0,0,0,.55);}
+#tour-card{position:fixed;z-index:100000;background:#20203a;border:2px solid #e94560;border-radius:14px;padding:15px 17px;box-shadow:0 10px 34px rgba(0,0,0,.55);overflow-y:auto;}
 #tour-title{font-size:17px;font-weight:800;color:#fff;margin-bottom:6px;}
 #tour-text{font-size:14px;line-height:1.45;color:#d5d8e5;margin-bottom:11px;}
 #tour-dots{text-align:center;margin-bottom:11px;line-height:1;}
-#tour-btns{display:flex;align-items:center;gap:8px;}
+#tour-btns{display:flex;align-items:center;gap:8px;position:sticky;bottom:0;background:#20203a;padding-top:8px;margin-top:4px;}
 #tour-btns button{padding:9px 15px;border:none;border-radius:9px;font-size:14px;font-weight:700;cursor:pointer;touch-action:manipulation;}
 #tour-skip{background:#2a2a44;color:#99a;}
 #tour-back{background:#2a2a44;color:#d5d8e5;}
@@ -151,9 +158,31 @@ body { font-family:-apple-system,BlinkMacSystemFont,sans-serif; background:#1212
 
 <div id="score-wrap"><div id="score-div" style="position:relative;"></div></div>
 
+<!-- Quick note edit — shown only when a note is selected on the staff, so
+     changing its length/pitch never requires leaving the score to dig into
+     the Notes tab. -->
+<div id="quick-edit-bar">
+  <span id="qe-label"></span>
+  <button class="chip" id="qe-d-w"   onclick="setDur('w')"></button>
+  <button class="chip" id="qe-d-h"   onclick="setDur('h')"></button>
+  <button class="chip" id="qe-d-q"   onclick="setDur('q')"></button>
+  <button class="chip" id="qe-d-8"   onclick="setDur('8')"></button>
+  <button class="chip" id="qe-d-16"  onclick="setDur('16')"></button>
+  <button class="chip" id="qe-d-32"  onclick="setDur('32')"></button>
+  <button class="chip" id="qe-d-dot" onclick="toggleDot()" style="font-size:16px">·</button>
+  <button class="chip qe-pitch-btn" onclick="moveSelNote(-1)"  title="Down semitone">↓½</button>
+  <button class="chip qe-pitch-btn" onclick="moveSelNote(1)"   title="Up semitone">↑½</button>
+  <button class="chip qe-pitch-btn" onclick="moveSelNote(-12)" title="Down octave" style="font-size:10px">↓8va</button>
+  <button class="chip qe-pitch-btn" onclick="moveSelNote(12)"  title="Up octave" style="font-size:10px">↑8va</button>
+  <button class="chip qe-pitch-btn" onclick="setSelAcc('#')">♯</button>
+  <button class="chip qe-pitch-btn" onclick="setSelAcc('b')">♭</button>
+  <button class="chip qe-pitch-btn" onclick="setSelAcc('n')">♮</button>
+</div>
+
 <div id="toolbar">
   <button class="tb play"  onclick="playScore()">▶</button>
   <button class="tb stop"  onclick="stopScore()">■</button>
+  <button class="tb rec"   id="rec-btn" onclick="toggleRecord()" title="Record from a MIDI keyboard (2-bar count-in + metronome)">⏺</button>
   <button class="tb undo"  id="undo-btn" onclick="undo()" title="Undo (Ctrl/Cmd+Z)">↶</button>
   <button class="tb undo"  id="redo-btn" onclick="redo()" title="Redo (Ctrl/Cmd+Shift+Z)">↷</button>
   <button class="tb clear" onclick="clearAll()" title="Clear all notes">✕</button>
@@ -164,6 +193,7 @@ body { font-family:-apple-system,BlinkMacSystemFont,sans-serif; background:#1212
   <span class="pill" id="proj-pill" onclick="switchTab('proj')">Song</span>
   <span class="pill" id="part-pill" onclick="switchTab('parts')" style="color:#f0c040;max-width:110px;overflow:hidden;text-overflow:ellipsis;" title="Instrument you're writing to — tap to switch">Treble · Piano</span>
   <span class="pill" id="key-pill" onclick="switchTab('score')">C</span>
+  <span class="pill on" id="audition-pill" onclick="toggleAudition()" title="Hear each note as you enter or edit it">🔊 Audition</span>
   <span class="pill" id="midi-pill">No MIDI</span>
 </div>
 
@@ -190,6 +220,21 @@ body { font-family:-apple-system,BlinkMacSystemFont,sans-serif; background:#1212
       <button class="chip on2" onclick="pasteClipboard()" style="font-size:10px">📋 Paste</button>
       <button class="chip" onclick="clearClipboard()" style="font-size:10px">✗ Clear</button>
     </div>
+  </div>
+  <div id="record-section" style="background:#2f0d16;border-radius:8px;padding:5px 7px;margin-bottom:4px;border:1.5px solid #c0392b;">
+    <div class="row">
+      <span style="font-size:9px;color:#e74c3c;font-weight:700;flex-shrink:0">RECORD (MIDI):</span>
+      <span id="rec-status" style="font-size:11px;color:#ff8a8a;font-weight:700;flex:1"></span>
+    </div>
+    <div class="row" style="margin-top:2px">
+      <span class="lbl">Grid</span>
+      <button class="chip rec-grid-btn" data-grid="q"   onclick="setRecGrid('q')"   style="font-size:11px">♩</button>
+      <button class="chip rec-grid-btn" data-grid="8"   onclick="setRecGrid('8')"   style="font-size:11px">♪</button>
+      <button class="chip rec-grid-btn on" data-grid="16"  onclick="setRecGrid('16')"  style="font-size:11px">♬</button>
+      <button class="chip rec-grid-btn" data-grid="8t"  onclick="setRecGrid('8t')"  style="font-size:10px">♪3</button>
+      <button class="chip rec-grid-btn" data-grid="16t" onclick="setRecGrid('16t')" style="font-size:10px">♬3</button>
+    </div>
+    <div class="hint">Sets the quantize grid your playing snaps to. Tap ⏺ in the toolbar: 2 bars of metronome count-in, then it records whatever you play on your MIDI keyboard until you tap ⏺ again.</div>
   </div>
   <div id="edit-section">
     <div class="row">
@@ -236,9 +281,7 @@ body { font-family:-apple-system,BlinkMacSystemFont,sans-serif; background:#1212
     <button class="chip"    id="a-ss" onclick="setAcc('##')" style="font-size:10px">𝄪</button>
     <button class="chip"    id="a-ff" onclick="setAcc('bb')" style="font-size:10px">𝄫</button>
   </div>
-  <div class="hint">Note buttons show the current key's scale in order, tonic first. “Key” enters the in-key pitch; ♯/♭/♮ force an accidental. Each new note lands in the octave closest to the last one you played — use Nudge to shift a note an octave further when that guess isn't what you want.</div>
-  <div class="hint">Tuplets: use −/+ to pick how many notes (3 = triplet, 5 = quintuplet, etc.), pick a length, tap the number to arm it, then enter that many notes — they group under a bracket in the time the next-smaller normal grouping would take. Turns itself off once you've entered that many; tap the number again to cancel early.</div>
-  <div class="hint">Computer keyboard: <b>A–G</b> enter notes, <b>1–6</b> set length (whole→32nd), <b>.</b> dot, <b>R</b> rest, <b>T</b> tuplet, <b>←/→</b> select, <b>↑/↓</b> move pitch (with Shift = octave), <b>Backspace</b> delete, <b>Space</b> play, <b>Ctrl/⌘+Z</b> undo.</div>
+  <div class="hint">Tuplets: pick a count with −/+, tap the number to arm it, then enter that many notes.</div>
 </div>
 
 <!-- Parts panel -->
@@ -671,7 +714,9 @@ function durIcon(base, isRest, dot){
 }
 function refreshDurIcons(){
   [['w','d-w'],['h','d-h'],['q','d-q'],['8','d-8'],['16','d-16'],['32','d-32']].forEach(([b,id])=>{
-    document.getElementById(id).innerHTML=durIcon(b,false,false);
+    const icon=durIcon(b,false,false);
+    document.getElementById(id).innerHTML=icon;
+    const qe=document.getElementById('qe-'+id); if(qe) qe.innerHTML=icon;
   });
   document.getElementById('rest-btn').innerHTML=durIcon(selDur,true,dotted);
 }
@@ -836,8 +881,12 @@ function switchSubTab(name){
 function refreshDurRow(){
   const n=selectedNoteAny();
   const d = n ? decomposeDur(n.dur) : {base:selDur,dot:dotted,tupN:tupletMode?tupletN:0};
-  ['w','h','q','8','16','32'].forEach(x=>document.getElementById('d-'+x).classList.toggle('on',x===d.base));
+  ['w','h','q','8','16','32'].forEach(x=>{
+    document.getElementById('d-'+x).classList.toggle('on',x===d.base);
+    document.getElementById('qe-d-'+x)?.classList.toggle('on',x===d.base);
+  });
   document.getElementById('d-dot').classList.toggle('on',d.dot);
+  document.getElementById('qe-d-dot')?.classList.toggle('on',d.dot);
   document.getElementById('d-tuplet').classList.toggle('on',!!d.tupN);
   document.getElementById('d-tuplet').textContent=d.tupN||tupletN;
 }
@@ -1036,6 +1085,7 @@ function exitChordBuildMode(){
 function cancelChord(){pendingChordNotes=[];updatePendingDisplay();exitChordBuildMode();}
 function commitChord(){
   if(!pendingChordNotes.length)return;
+  auditionPreview(pendingChordNotes.map(n=>n.midi), parts[apIdx]?.instId);
   const {lyric,dyn,arts,tempo,rud,grace,sticking}=grabPending();
   insertNoteAtCursor({
     keys:pendingChordNotes.map(n=>n.name+'/'+n.oct),
@@ -1084,9 +1134,11 @@ function enterDiatonicChord(deg,kd,seventh=false){
   const tones=buildChordTones(deg,kd.scale,rootOct,seventh);
   if(chordBuildMode){
     tones.forEach(t=>pendingChordNotes.push({...t,vfAcc:null}));
+    auditionPreview(tones.map(t=>t.midi), parts[apIdx]?.instId);
     updatePendingDisplay();
     return;
   }
+  auditionPreview(tones.map(t=>t.midi), parts[apIdx]?.instId);
   const {lyric,dyn,arts,tempo,rud,grace,sticking}=grabPending();
   insertNoteAtCursor({
     keys:tones.map(t=>t.name+'/'+t.oct),
@@ -1155,6 +1207,7 @@ function enterPitch(name, acc, oct, vfAcc){
   const activeInst=IMAP[parts[apIdx]?.instId]||IMAP.piano;
   if(activeInst.staffLines===1){ ({name,acc,oct}=SINGLE_LINE_KEY); vfAcc=null; }
   const midi=noteToMidi(name,acc,oct);
+  auditionPreview([midi], parts[apIdx]?.instId);
   if(chordBuildMode){
     pendingChordNotes.push({name,acc,oct,midi,vfAcc});
     updatePendingDisplay();
@@ -1309,12 +1362,16 @@ function clearAll(){
 // ═══════════════════════════════════════════════════════
 function updateSelectionUI(){
   const sec=document.getElementById('edit-section');
-  if(!selectedNote){sec.style.display='none';refreshDurRow();syncEditorsToSelection();return;}
+  const qe=document.getElementById('quick-edit-bar');
+  if(!selectedNote){sec.style.display='none';qe.style.display='none';refreshDurRow();syncEditorsToSelection();return;}
   const n=parts[selectedNote.partIdx]?.notes[selectedNote.noteIdx];
-  if(!n){sec.style.display='none';refreshDurRow();syncEditorsToSelection();return;}
+  if(!n){sec.style.display='none';qe.style.display='none';refreshDurRow();syncEditorsToSelection();return;}
   sec.style.display='block';
   const label=n.rest?'Rest':(n.keys||[]).map((k,i)=>{const[name,oct]=k.split('/');const acc=n.vfAccs?.[i];return name+(acc&&acc!=='n'?acc:'')+oct;}).join(' ');
   document.getElementById('sel-note-label').textContent=label;
+  qe.style.display='flex';
+  document.getElementById('qe-label').textContent=label;
+  document.querySelectorAll('.qe-pitch-btn').forEach(b=>b.style.display=n.rest?'none':'');
   refreshDurRow();
   syncEditorsToSelection();
 }
@@ -1327,6 +1384,7 @@ function moveSelNote(semitones){
   const results=n.midiVals.map(m=>midiToNote(m));
   n.keys=results.map(r=>r.name+'/'+r.oct);
   n.vfAccs=results.map(r=>r.acc);
+  auditionPreview(n.midiVals, parts[selectedNote.partIdx]?.instId);
   render(); updateSelectionUI();
 }
 
@@ -1339,6 +1397,7 @@ function setSelAcc(acc){
   n.keys[0]=name+'/'+oct;
   if(acc==='n'){ n.vfAccs[0]='n'; n.midiVals[0]=noteToMidi(name,null,oct); }
   else { n.vfAccs[0]=acc; n.midiVals[0]=noteToMidi(name,acc,oct); }
+  auditionPreview(n.midiVals, parts[selectedNote.partIdx]?.instId);
   render(); updateSelectionUI();
 }
 
@@ -1832,6 +1891,7 @@ function flushMidiChordBuffer(){
     return;
   }
   notes.sort((a,b)=>a.midi-b.midi);
+  auditionPreview(notes.map(n=>n.midi), parts[apIdx]?.instId);
   const {lyric,dyn,arts,tempo,rud,grace,sticking}=grabPending();
   insertNoteAtCursor({
     keys:notes.map(n=>n.name+'/'+n.oct),
@@ -1844,22 +1904,205 @@ function flushMidiChordBuffer(){
   render();scrollAfterEntry();
 }
 
+// Split out from initMidi's message handler so it's directly callable — both
+// by real MIDI input and, e.g., by tests that can't drive actual hardware.
+function handleMidiNoteEvent(status,note,vel){
+  const type=status&0xf0;
+  if(type===0x90&&vel>0){
+    if(recState==='recording'){
+      recActiveNotes[note]=Tone.now()-recStartSec;
+      auditionPreview([note], parts[apIdx]?.instId);
+    } else {
+      const name=MN[note%12],acc=MA[note%12],oct=Math.floor(note/12)-1;
+      queueMidiNote(name,acc,oct,note);
+    }
+  } else if(type===0x80||(type===0x90&&vel===0)){
+    if(recState==='recording'&&recActiveNotes[note]!=null){
+      const onSec=recActiveNotes[note]; delete recActiveNotes[note];
+      recEvents.push({onSec,offSec:Math.max(onSec+0.02,Tone.now()-recStartSec),midi:note});
+    }
+  }
+}
 async function initMidi(){
   if(!navigator.requestMIDIAccess)return;
   try{
     const ma=await navigator.requestMIDIAccess();
     const pill=document.getElementById('midi-pill');
-    const attach=inp=>{inp.onmidimessage=e=>{
-      const[st,note,vel]=e.data;
-      if((st&0xf0)===0x90&&vel>0){
-        const name=MN[note%12],acc=MA[note%12],oct=Math.floor(note/12)-1;
-        queueMidiNote(name,acc,oct,note);
-      }
-    };};
+    const attach=inp=>{inp.onmidimessage=e=>handleMidiNoteEvent(e.data[0],e.data[1],e.data[2]);};
     ma.inputs.forEach(attach);
     if(ma.inputs.size){pill.textContent='MIDI ●';pill.classList.add('on');}
     ma.onstatechange=e=>{if(e.port.type==='input'&&e.port.state==='connected'){attach(e.port);pill.textContent='MIDI ●';pill.classList.add('on');}};
   }catch(e){}
+}
+
+// ═══════════════════════════════════════════════════════
+// Live MIDI recording — 2-bar metronome count-in, then capture note-on/off
+// timestamps until stopped, quantized afterward to the chosen grid.
+// ═══════════════════════════════════════════════════════
+let recState='idle'; // 'idle' | 'counting' | 'recording'
+let recGrid='16';
+let recEvents=[];        // {onSec, offSec, midi} — seconds relative to recStartSec
+let recActiveNotes={};   // midi -> onSec, for notes currently held down
+let recStartSec=0;       // Tone.now() reference at the instant true recording begins
+let recMetroId=null;     // Tone.Transport repeat-event id, so it can be cancelled
+
+let _clickSynth=null;
+function getClickSynth(){
+  if(_clickSynth)return _clickSynth;
+  _clickSynth=new Tone.MembraneSynth({pitchDecay:.008,octaves:4,envelope:{attack:.001,decay:.06,sustain:0,release:.02},volume:-6}).connect(getMasterBus());
+  return _clickSynth;
+}
+function metroClick(time,accent){
+  try{ getClickSynth().triggerAttackRelease(accent?'C5':'C4',0.03,time); }catch(e){}
+}
+
+function setRecGrid(g){
+  recGrid=g;
+  document.querySelectorAll('.rec-grid-btn').forEach(b=>b.classList.toggle('on',b.dataset.grid===g));
+}
+function updateRecUI(){
+  const btn=document.getElementById('rec-btn');
+  const status=document.getElementById('rec-status');
+  if(btn) btn.classList.toggle('recording',recState!=='idle');
+  if(status) status.textContent = recState==='recording' ? '● Recording — tap ⏺ again to stop' : (recState==='idle' ? '' : status.textContent);
+}
+function updateRecCountUI(n,total){
+  const status=document.getElementById('rec-status');
+  if(status) status.textContent='Count-in '+n+' / '+total+'…';
+}
+
+async function toggleRecord(){
+  if(recState!=='idle'){ stopRecording(); return; }
+  if(playing){ alert('Stop playback before recording.'); return; }
+  const pill=document.getElementById('midi-pill');
+  if(!pill||!pill.classList.contains('on')){ alert("Connect a MIDI keyboard first — the MIDI pill in the toolbar turns green once one is detected."); return; }
+  startRecording();
+}
+async function startRecording(){
+  await Tone.start();
+  const bpm=parseInt(document.getElementById('bpm-inp').value)||80;
+  const secPerBeat=60/bpm;
+  const beatsPerBar=currentTimeSig.beats;
+  const countBeats=beatsPerBar*2;
+  recEvents=[]; recActiveNotes={};
+  recState='counting';
+  updateRecUI();
+  Tone.getTransport().bpm.value=bpm;
+  Tone.getTransport().cancel();
+  for(let i=0;i<countBeats;i++){
+    Tone.getTransport().schedule(time=>{
+      metroClick(time,i%beatsPerBar===0);
+      updateRecCountUI(i+1,countBeats);
+    },i*secPerBeat);
+  }
+  Tone.getTransport().schedule(time=>{
+    recState='recording';
+    recStartSec=time;
+    updateRecUI();
+  },countBeats*secPerBeat);
+  recMetroId=Tone.getTransport().scheduleRepeat(time=>{
+    if(recState!=='recording')return;
+    const beatIdx=Math.round((time-recStartSec)/secPerBeat);
+    metroClick(time,(beatIdx%beatsPerBar)===0);
+  },secPerBeat,countBeats*secPerBeat);
+  Tone.getTransport().start();
+}
+function stopRecording(){
+  if(recState==='idle')return;
+  Tone.getTransport().stop();
+  Tone.getTransport().cancel();
+  if(recMetroId!=null){ try{Tone.getTransport().clear(recMetroId);}catch(e){} recMetroId=null; }
+  const wasRecording=recState==='recording';
+  if(wasRecording){
+    const now=Tone.now();
+    Object.entries(recActiveNotes).forEach(([midi,onSec])=>{
+      recEvents.push({onSec,offSec:Math.max(onSec+0.05,now-recStartSec),midi:parseInt(midi)});
+    });
+  }
+  recActiveNotes={};
+  recState='idle';
+  updateRecUI();
+  if(wasRecording&&recEvents.length){
+    const bpm=parseInt(document.getElementById('bpm-inp').value)||80;
+    const notes=quantizeRecording(recEvents,recGrid,bpm);
+    if(notes.length) insertRecordedNotes(notes);
+  }
+  recEvents=[];
+}
+function insertRecordedNotes(notes){
+  const part=parts[apIdx];
+  const at=(selectedNote&&selectedNote.partIdx===apIdx)?selectedNote.noteIdx+1
+          :(caretGap&&caretGap.partIdx===apIdx)?caretGap.index
+          :part.notes.length;
+  part.notes.splice(at,0,...notes);
+  selectedNote={partIdx:apIdx,noteIdx:at+notes.length-1}; caretGap=null;
+  render(); scrollAfterEntry();
+}
+
+// ── Quantization ─────────────────────────────────────────
+const REC_GRID_BEATS={q:1,'8':0.5,'16':0.25,'8t':1/3,'16t':1/6};
+function quantizeRecording(events,gridId,bpm){
+  if(!events.length)return[];
+  const unit=REC_GRID_BEATS[gridId]||0.25;
+  const secPerBeat=60/bpm;
+  const toBeat=sec=>sec/secPerBeat;
+  events=events.slice().sort((a,b)=>a.onSec-b.onSec);
+  if(gridId==='8t'||gridId==='16t') return quantizeTripletGrid(events,unit,toBeat,gridId==='8t'?'8':'16');
+  return quantizeSimpleGrid(events,unit,toBeat);
+}
+// Triplet grids: every cell is exactly one grid unit, never merged across
+// cells — that keeps every complete run of 3 consecutive cells aligned to one
+// beat, so it can always be bracketed as a clean triplet without needing ties
+// (which this app doesn't support).
+function quantizeTripletGrid(events,unit,toBeat,baseDur){
+  const lastOff=Math.max(...events.map(e=>toBeat(e.offSec)));
+  let numCells=Math.max(3,Math.round(lastOff/unit));
+  numCells=Math.ceil(numCells/3)*3; // pad to a whole number of triplet groups
+  const cellNotes=Array.from({length:numCells},()=>[]);
+  events.forEach(e=>{
+    const c=Math.max(0,Math.min(numCells-1,Math.round(toBeat(e.onSec)/unit)));
+    cellNotes[c].push(e.midi);
+  });
+  return cellNotes.map(midis=>{
+    if(!midis.length) return {keys:['b/4'],dur:composeDur(baseDur,false,3,true),vfAccs:[null],midiVals:[],rest:true,lyric:null,dyn:null,arts:[],tempo:null,rud:null,grace:[],sticking:null};
+    const uniq=[...new Set(midis)].sort((a,b)=>a-b);
+    const res=uniq.map(m=>midiToNote(m));
+    return {keys:res.map(r=>r.name+'/'+r.oct),dur:composeDur(baseDur,false,3,false),vfAccs:res.map(r=>r.acc),midiVals:uniq,rest:false,lyric:null,dyn:null,arts:[],tempo:null,rud:null,grace:[],sticking:null};
+  });
+}
+// Simple (non-triplet) grids: consecutive cells with the same held pitch(es)
+// and no new onset merge into one longer notatable note.
+function quantizeSimpleGrid(events,unit,toBeat){
+  const lastOff=Math.max(...events.map(e=>toBeat(e.offSec)));
+  const numCells=Math.max(1,Math.round(lastOff/unit));
+  const cellOnset=Array.from({length:numCells},()=>[]);
+  const cellHeld=Array.from({length:numCells},()=>new Set());
+  events.forEach(e=>{
+    const onC=Math.max(0,Math.min(numCells-1,Math.round(toBeat(e.onSec)/unit)));
+    cellOnset[onC].push(e.midi);
+    let offC=Math.round(toBeat(e.offSec)/unit);
+    offC=Math.max(onC+1,Math.min(numCells,offC));
+    for(let c=onC;c<offC;c++) cellHeld[c].add(e.midi);
+  });
+  const eqSet=(a,b)=>a.size===b.size&&[...a].every(x=>b.has(x));
+  const out=[];
+  let i=0;
+  while(i<numCells){
+    if(!cellOnset[i].length&&!cellHeld[i].size){
+      let j=i; while(j<numCells&&!cellOnset[j].length&&!cellHeld[j].size) j++;
+      out.push(restNote((j-i)*unit));
+      i=j; continue;
+    }
+    const heldSet=new Set(cellOnset[i].length?cellOnset[i]:[...cellHeld[i]]);
+    let j=i+1;
+    while(j<numCells&&!cellOnset[j].length&&eqSet(cellHeld[j],heldSet)) j++;
+    const beats=(j-i)*unit;
+    const sorted=[...heldSet].sort((a,b)=>a-b);
+    const res=sorted.map(m=>midiToNote(m));
+    out.push({keys:res.map(r=>r.name+'/'+r.oct),dur:beatsToDur(beats),vfAccs:res.map(r=>r.acc),midiVals:sorted,rest:false,lyric:null,dyn:null,arts:[],tempo:null,rud:null,grace:[],sticking:null});
+    i=j;
+  }
+  return out;
 }
 
 // ═══════════════════════════════════════════════════════
@@ -1966,6 +2209,35 @@ function drumsetHit(midi,dur,time,vel){
   }catch(e){}
 }
 
+// ═══════════════════════════════════════════════════════
+// Audition — hear a pitch/chord immediately as you enter or edit it, using
+// the active part's instrument. Independent of full playback (Play/Stop);
+// on by default, most useful when writing at the piano-style note grid.
+// ═══════════════════════════════════════════════════════
+let auditionEnabled=true;
+function toggleAudition(){
+  auditionEnabled=!auditionEnabled;
+  document.getElementById('audition-pill')?.classList.toggle('on',auditionEnabled);
+}
+async function auditionPreview(midiVals,instId){
+  if(!auditionEnabled||!midiVals||!midiVals.length)return;
+  try{
+    await Tone.start();
+    const inst=IMAP[instId]||IMAP.piano;
+    const dur=0.35,vel=0.7,time=Tone.now();
+    if(inst.drumset){ midiVals.forEach(m=>drumsetHit(m,dur,time,vel)); return; }
+    if(inst.unpitched||inst.pitchedDrum){
+      const voice=getDrum(instId);
+      if(inst.unpitched){ if(inst.osc==='noise')voice.triggerAttackRelease(dur,time,vel); else voice.triggerAttackRelease('C2',dur,time,vel); }
+      else voice.triggerAttackRelease(Tone.Frequency(midiVals[0],'midi').toNote(),dur,time,vel);
+      return;
+    }
+    const voice=getSampler(instId);
+    const notes=midiVals.map(m=>Tone.Frequency(m,'midi').toNote());
+    voice.triggerAttackRelease(notes.length===1?notes[0]:notes,dur,time,vel);
+  }catch(e){}
+}
+
 let playing=false,_activeVoices=[];
 // Expands repeat barlines into the actual order measures play in — e.g.
 // start=[0] end=[1] over 5 measures becomes [0,1,0,1,2,3,4] (play the marked
@@ -2001,7 +2273,7 @@ function resolveMeasureNotes(measuresForPart, mi, depth){
   return arr;
 }
 async function playScore(){
-  if(playing)return;await Tone.start();
+  if(playing||recState!=='idle')return;await Tone.start();
   const playBtn=document.querySelector('.tb.play');
   const bpm=parseInt(document.getElementById('bpm-inp').value)||80;
   // Pre-create + load all samplers needed
@@ -2667,6 +2939,12 @@ function positionTour(step,i){
   const hole=document.getElementById('tour-hole'), card=document.getElementById('tour-card');
   const el=step.sel?document.querySelector(step.sel):null;
   const r=el?el.getBoundingClientRect():null;
+  const vh=window.innerHeight, margin=8;
+  // Cap how tall the card can ever get before measuring anything below — on a
+  // short phone screen this forces the description to scroll internally
+  // instead of the card (and its Next/Skip buttons) growing past the edge.
+  card.style.maxHeight=(vh-margin*2)+'px';
+  card.style.transform='translateX(-50%)'; // horizontal-only from here on, so pixel top/bottom math below isn't fighting a translateY too
   if(r && r.width>0 && r.height>0){
     const pad=6;
     hole.style.display='block';
@@ -2674,14 +2952,24 @@ function positionTour(step,i){
     hole.style.width=(r.width+pad*2)+'px'; hole.style.height=(r.height+pad*2)+'px';
     card.style.maxWidth='340px'; card.style.width='calc(100% - 24px)';
     // Put the card in the roomy staff area when the target is low; below it when high.
-    if(r.top < window.innerHeight*0.42){ card.style.top=(r.bottom+14)+'px'; card.style.bottom='auto'; }
-    else { card.style.top='auto'; card.style.bottom=(window.innerHeight-r.top+14)+'px'; }
-    card.style.left='50%'; card.style.transform='translateX(-50%)';
+    if(r.top < vh*0.42){ card.style.top=(r.bottom+14)+'px'; card.style.bottom='auto'; }
+    else { card.style.top='auto'; card.style.bottom=(vh-r.top+14)+'px'; }
+    card.style.left='50%';
   } else {
     hole.style.display='none';
     card.style.maxWidth='340px'; card.style.width='calc(100% - 24px)';
-    card.style.left='50%'; card.style.top='50%'; card.style.bottom='auto'; card.style.transform='translate(-50%,-50%)';
+    card.style.left='50%'; card.style.top='50%'; card.style.bottom='auto';
   }
+  // Safety net: whatever the branch above computed, make sure the card ends
+  // up fully on-screen. A spotlighted control near the top/bottom edge of a
+  // short phone (plus a longer description) could otherwise push the
+  // Next/Skip/Back buttons past the viewport with no scroll (body is
+  // overflow:hidden) and no pinch-zoom (viewport is pinned) to reach them —
+  // silently bricking the tour until the page is reloaded. Do not remove.
+  const cr=card.getBoundingClientRect();
+  let top = (!r||!(r.width>0&&r.height>0)) ? (vh-cr.height)/2 : cr.top;
+  top=Math.max(margin, Math.min(top, vh-margin-cr.height));
+  card.style.top=top+'px'; card.style.bottom='auto';
 }
 function tourReposition(){ if(tourActive) positionTour(TOUR[tourIdx],tourIdx); }
 function endTour(){
