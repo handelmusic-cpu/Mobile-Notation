@@ -1907,6 +1907,19 @@ const INST_SAMPLE={
   soprano:'organ', mezzo:'organ', altov:'organ', tenorv:'organ', baritonev:'organ', bassv:'organ',
   timpani:'piano', xyloph:'xylophone', marimba:'xylophone'
 };
+// Every instrument routes here instead of straight toDestination(). With each
+// voice going directly to the speakers, playing several parts at once (or a
+// thick MIDI/keyboard chord, or the drum set alongside anything else) could
+// sum well past 0dB with nothing to catch it — a brick-wall limiter just
+// under full scale stops that clipping without touching the level of normal,
+// single-part playback (it only engages once the sum actually gets loud).
+let _masterBus=null;
+function getMasterBus(){
+  if(_masterBus)return _masterBus;
+  _masterBus=new Tone.Limiter(-1).toDestination();
+  return _masterBus;
+}
+
 const _samplerCache={}, _drumCache={};
 function getSampler(instId){
   const key=INST_SAMPLE[instId]||'piano';
@@ -1915,15 +1928,15 @@ function getSampler(instId){
   const urls={};
   if(def.map)Object.assign(urls,def.map);
   else def.pitches.forEach(p=>{urls[p]=p.replace('#','s')+'.mp3';});
-  const s=new Tone.Sampler({urls,baseUrl:def.base,release:1,volume:-4}).toDestination();
+  const s=new Tone.Sampler({urls,baseUrl:def.base,release:1,volume:-4}).connect(getMasterBus());
   _samplerCache[key]=s;return s;
 }
 function getDrum(instId){
   if(_drumCache[instId])return _drumCache[instId];
   const inst=IMAP[instId];const e={attack:inst.env.a,decay:inst.env.d,sustain:inst.env.s,release:inst.env.r};
   let s;
-  if(inst.osc==='noise')s=new Tone.NoiseSynth({noise:{type:'white'},envelope:e,volume:inst.vol}).toDestination();
-  else s=new Tone.MembraneSynth({pitchDecay:.05,octaves:5,envelope:e,volume:inst.vol}).toDestination();
+  if(inst.osc==='noise')s=new Tone.NoiseSynth({noise:{type:'white'},envelope:e,volume:inst.vol}).connect(getMasterBus());
+  else s=new Tone.MembraneSynth({pitchDecay:.05,octaves:5,envelope:e,volume:inst.vol}).connect(getMasterBus());
   _drumCache[instId]=s;return s;
 }
 // Drum set: one 5-line percussion staff whose notes route to different drum
@@ -1932,11 +1945,11 @@ function getDrum(instId){
 let _drumset=null;
 function getDrumset(){
   if(_drumset)return _drumset;
-  const kick =new Tone.MembraneSynth({pitchDecay:.03,octaves:6,envelope:{attack:.001,decay:.28,sustain:0,release:.2},volume:-3}).toDestination();
-  const tom  =new Tone.MembraneSynth({pitchDecay:.05,octaves:4,envelope:{attack:.001,decay:.25,sustain:0,release:.2},volume:-5}).toDestination();
-  const snare=new Tone.NoiseSynth({noise:{type:'white'},envelope:{attack:.001,decay:.16,sustain:0,release:.05},volume:-7}).toDestination();
+  const kick =new Tone.MembraneSynth({pitchDecay:.03,octaves:6,envelope:{attack:.001,decay:.28,sustain:0,release:.2},volume:-6}).connect(getMasterBus());
+  const tom  =new Tone.MembraneSynth({pitchDecay:.05,octaves:4,envelope:{attack:.001,decay:.25,sustain:0,release:.2},volume:-6}).connect(getMasterBus());
+  const snare=new Tone.NoiseSynth({noise:{type:'white'},envelope:{attack:.001,decay:.16,sustain:0,release:.05},volume:-7}).connect(getMasterBus());
   // Hi-hat/cymbal: high-passed short noise so it reads as metal, not a snare.
-  const hatFilter=new Tone.Filter(7000,'highpass').toDestination();
+  const hatFilter=new Tone.Filter(7000,'highpass').connect(getMasterBus());
   const hat  =new Tone.NoiseSynth({noise:{type:'white'},envelope:{attack:.001,decay:.045,sustain:0,release:.02},volume:-13}).connect(hatFilter);
   _drumset={kick,tom,snare,hat,voices:[kick,tom,snare,hat]};
   return _drumset;
