@@ -2283,7 +2283,7 @@ async function playScore(){
   if(needLoad){ if(playBtn)playBtn.textContent='…'; }
   await Tone.loaded();
   if(playBtn)playBtn.textContent='▶';
-  playing=true;stopScore(true);
+  stopScore(true);playing=true;
   Tone.getTransport().bpm.value=bpm;Tone.getTransport().cancel();
 
   const allM=parts.map(p=>toMeasures(p.notes));
