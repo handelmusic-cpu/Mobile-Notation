@@ -11,6 +11,8 @@ html,body { height:100%; overflow:hidden; }
 body { font-family:-apple-system,BlinkMacSystemFont,sans-serif; background:#12121f; color:#e0e4ef; display:flex; flex-direction:column; height:100dvh; }
 
 #score-wrap { flex:1 1 0; min-height:0; background:#f4efe4; overflow:auto; -webkit-overflow-scrolling:touch; padding:8px; cursor:pointer; }
+#quick-edit-bar{display:none;align-items:center;gap:4px;padding:5px 7px;background:#0d1f35;border-top:1.5px solid #2980b9;border-bottom:1.5px solid #2980b9;flex-shrink:0;overflow-x:auto;-webkit-overflow-scrolling:touch;}
+#qe-label{font-size:11px;font-weight:700;color:#5dade2;flex-shrink:0;margin-right:2px;white-space:nowrap;}
 
 #toolbar { display:flex; gap:4px; padding:5px 7px; background:#1e1e35; flex-shrink:0; align-items:center; flex-wrap:wrap; }
 .tb { flex:1; padding:8px 2px; border:none; border-radius:7px; font-size:14px; font-weight:700; cursor:pointer; max-width:60px; touch-action:manipulation; }
@@ -141,11 +143,11 @@ body { font-family:-apple-system,BlinkMacSystemFont,sans-serif; background:#1212
 /* Guided tour overlay */
 #tour-overlay{position:fixed;inset:0;z-index:99999;}
 #tour-hole{position:absolute;border-radius:9px;box-shadow:0 0 0 9999px rgba(0,0,0,.74);transition:left .25s,top .25s,width .25s,height .25s;pointer-events:none;}
-#tour-card{position:fixed;z-index:100000;background:#20203a;border:2px solid #e94560;border-radius:14px;padding:15px 17px;box-shadow:0 10px 34px rgba(0,0,0,.55);}
+#tour-card{position:fixed;z-index:100000;background:#20203a;border:2px solid #e94560;border-radius:14px;padding:15px 17px;box-shadow:0 10px 34px rgba(0,0,0,.55);overflow-y:auto;}
 #tour-title{font-size:17px;font-weight:800;color:#fff;margin-bottom:6px;}
 #tour-text{font-size:14px;line-height:1.45;color:#d5d8e5;margin-bottom:11px;}
 #tour-dots{text-align:center;margin-bottom:11px;line-height:1;}
-#tour-btns{display:flex;align-items:center;gap:8px;}
+#tour-btns{display:flex;align-items:center;gap:8px;position:sticky;bottom:0;background:#20203a;padding-top:8px;margin-top:4px;}
 #tour-btns button{padding:9px 15px;border:none;border-radius:9px;font-size:14px;font-weight:700;cursor:pointer;touch-action:manipulation;}
 #tour-skip{background:#2a2a44;color:#99a;}
 #tour-back{background:#2a2a44;color:#d5d8e5;}
@@ -155,6 +157,27 @@ body { font-family:-apple-system,BlinkMacSystemFont,sans-serif; background:#1212
 <body>
 
 <div id="score-wrap"><div id="score-div" style="position:relative;"></div></div>
+
+<!-- Quick note edit — shown only when a note is selected on the staff, so
+     changing its length/pitch never requires leaving the score to dig into
+     the Notes tab. -->
+<div id="quick-edit-bar">
+  <span id="qe-label"></span>
+  <button class="chip" id="qe-d-w"   onclick="setDur('w')"></button>
+  <button class="chip" id="qe-d-h"   onclick="setDur('h')"></button>
+  <button class="chip" id="qe-d-q"   onclick="setDur('q')"></button>
+  <button class="chip" id="qe-d-8"   onclick="setDur('8')"></button>
+  <button class="chip" id="qe-d-16"  onclick="setDur('16')"></button>
+  <button class="chip" id="qe-d-32"  onclick="setDur('32')"></button>
+  <button class="chip" id="qe-d-dot" onclick="toggleDot()" style="font-size:16px">·</button>
+  <button class="chip qe-pitch-btn" onclick="moveSelNote(-1)"  title="Down semitone">↓½</button>
+  <button class="chip qe-pitch-btn" onclick="moveSelNote(1)"   title="Up semitone">↑½</button>
+  <button class="chip qe-pitch-btn" onclick="moveSelNote(-12)" title="Down octave" style="font-size:10px">↓8va</button>
+  <button class="chip qe-pitch-btn" onclick="moveSelNote(12)"  title="Up octave" style="font-size:10px">↑8va</button>
+  <button class="chip qe-pitch-btn" onclick="setSelAcc('#')">♯</button>
+  <button class="chip qe-pitch-btn" onclick="setSelAcc('b')">♭</button>
+  <button class="chip qe-pitch-btn" onclick="setSelAcc('n')">♮</button>
+</div>
 
 <div id="toolbar">
   <button class="tb play"  onclick="playScore()">▶</button>
@@ -258,9 +281,7 @@ body { font-family:-apple-system,BlinkMacSystemFont,sans-serif; background:#1212
     <button class="chip"    id="a-ss" onclick="setAcc('##')" style="font-size:10px">𝄪</button>
     <button class="chip"    id="a-ff" onclick="setAcc('bb')" style="font-size:10px">𝄫</button>
   </div>
-  <div class="hint">Note buttons show the current key's scale in order, tonic first. “Key” enters the in-key pitch; ♯/♭/♮ force an accidental. Each new note lands in the octave closest to the last one you played — use Nudge to shift a note an octave further when that guess isn't what you want.</div>
-  <div class="hint">Tuplets: use −/+ to pick how many notes (3 = triplet, 5 = quintuplet, etc.), pick a length, tap the number to arm it, then enter that many notes — they group under a bracket in the time the next-smaller normal grouping would take. Turns itself off once you've entered that many; tap the number again to cancel early.</div>
-  <div class="hint">Computer keyboard: <b>A–G</b> enter notes, <b>1–6</b> set length (whole→32nd), <b>.</b> dot, <b>R</b> rest, <b>T</b> tuplet, <b>←/→</b> select, <b>↑/↓</b> move pitch (with Shift = octave), <b>Backspace</b> delete, <b>Space</b> play, <b>Ctrl/⌘+Z</b> undo.</div>
+  <div class="hint">Tuplets: pick a count with −/+, tap the number to arm it, then enter that many notes.</div>
 </div>
 
 <!-- Parts panel -->
@@ -693,7 +714,9 @@ function durIcon(base, isRest, dot){
 }
 function refreshDurIcons(){
   [['w','d-w'],['h','d-h'],['q','d-q'],['8','d-8'],['16','d-16'],['32','d-32']].forEach(([b,id])=>{
-    document.getElementById(id).innerHTML=durIcon(b,false,false);
+    const icon=durIcon(b,false,false);
+    document.getElementById(id).innerHTML=icon;
+    const qe=document.getElementById('qe-'+id); if(qe) qe.innerHTML=icon;
   });
   document.getElementById('rest-btn').innerHTML=durIcon(selDur,true,dotted);
 }
@@ -858,8 +881,12 @@ function switchSubTab(name){
 function refreshDurRow(){
   const n=selectedNoteAny();
   const d = n ? decomposeDur(n.dur) : {base:selDur,dot:dotted,tupN:tupletMode?tupletN:0};
-  ['w','h','q','8','16','32'].forEach(x=>document.getElementById('d-'+x).classList.toggle('on',x===d.base));
+  ['w','h','q','8','16','32'].forEach(x=>{
+    document.getElementById('d-'+x).classList.toggle('on',x===d.base);
+    document.getElementById('qe-d-'+x)?.classList.toggle('on',x===d.base);
+  });
   document.getElementById('d-dot').classList.toggle('on',d.dot);
+  document.getElementById('qe-d-dot')?.classList.toggle('on',d.dot);
   document.getElementById('d-tuplet').classList.toggle('on',!!d.tupN);
   document.getElementById('d-tuplet').textContent=d.tupN||tupletN;
 }
@@ -1335,12 +1362,16 @@ function clearAll(){
 // ═══════════════════════════════════════════════════════
 function updateSelectionUI(){
   const sec=document.getElementById('edit-section');
-  if(!selectedNote){sec.style.display='none';refreshDurRow();syncEditorsToSelection();return;}
+  const qe=document.getElementById('quick-edit-bar');
+  if(!selectedNote){sec.style.display='none';qe.style.display='none';refreshDurRow();syncEditorsToSelection();return;}
   const n=parts[selectedNote.partIdx]?.notes[selectedNote.noteIdx];
-  if(!n){sec.style.display='none';refreshDurRow();syncEditorsToSelection();return;}
+  if(!n){sec.style.display='none';qe.style.display='none';refreshDurRow();syncEditorsToSelection();return;}
   sec.style.display='block';
   const label=n.rest?'Rest':(n.keys||[]).map((k,i)=>{const[name,oct]=k.split('/');const acc=n.vfAccs?.[i];return name+(acc&&acc!=='n'?acc:'')+oct;}).join(' ');
   document.getElementById('sel-note-label').textContent=label;
+  qe.style.display='flex';
+  document.getElementById('qe-label').textContent=label;
+  document.querySelectorAll('.qe-pitch-btn').forEach(b=>b.style.display=n.rest?'none':'');
   refreshDurRow();
   syncEditorsToSelection();
 }
@@ -2908,6 +2939,12 @@ function positionTour(step,i){
   const hole=document.getElementById('tour-hole'), card=document.getElementById('tour-card');
   const el=step.sel?document.querySelector(step.sel):null;
   const r=el?el.getBoundingClientRect():null;
+  const vh=window.innerHeight, margin=8;
+  // Cap how tall the card can ever get before measuring anything below — on a
+  // short phone screen this forces the description to scroll internally
+  // instead of the card (and its Next/Skip buttons) growing past the edge.
+  card.style.maxHeight=(vh-margin*2)+'px';
+  card.style.transform='translateX(-50%)'; // horizontal-only from here on, so pixel top/bottom math below isn't fighting a translateY too
   if(r && r.width>0 && r.height>0){
     const pad=6;
     hole.style.display='block';
@@ -2915,14 +2952,24 @@ function positionTour(step,i){
     hole.style.width=(r.width+pad*2)+'px'; hole.style.height=(r.height+pad*2)+'px';
     card.style.maxWidth='340px'; card.style.width='calc(100% - 24px)';
     // Put the card in the roomy staff area when the target is low; below it when high.
-    if(r.top < window.innerHeight*0.42){ card.style.top=(r.bottom+14)+'px'; card.style.bottom='auto'; }
-    else { card.style.top='auto'; card.style.bottom=(window.innerHeight-r.top+14)+'px'; }
-    card.style.left='50%'; card.style.transform='translateX(-50%)';
+    if(r.top < vh*0.42){ card.style.top=(r.bottom+14)+'px'; card.style.bottom='auto'; }
+    else { card.style.top='auto'; card.style.bottom=(vh-r.top+14)+'px'; }
+    card.style.left='50%';
   } else {
     hole.style.display='none';
     card.style.maxWidth='340px'; card.style.width='calc(100% - 24px)';
-    card.style.left='50%'; card.style.top='50%'; card.style.bottom='auto'; card.style.transform='translate(-50%,-50%)';
+    card.style.left='50%'; card.style.top='50%'; card.style.bottom='auto';
   }
+  // Safety net: whatever the branch above computed, make sure the card ends
+  // up fully on-screen. A spotlighted control near the top/bottom edge of a
+  // short phone (plus a longer description) could otherwise push the
+  // Next/Skip/Back buttons past the viewport with no scroll (body is
+  // overflow:hidden) and no pinch-zoom (viewport is pinned) to reach them —
+  // silently bricking the tour until the page is reloaded. Do not remove.
+  const cr=card.getBoundingClientRect();
+  let top = (!r||!(r.width>0&&r.height>0)) ? (vh-cr.height)/2 : cr.top;
+  top=Math.max(margin, Math.min(top, vh-margin-cr.height));
+  card.style.top=top+'px'; card.style.bottom='auto';
 }
 function tourReposition(){ if(tourActive) positionTour(TOUR[tourIdx],tourIdx); }
 function endTour(){
