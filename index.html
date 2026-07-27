@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>MōdScore</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%20100%20100'%3E%3Crect%20width='100'%20height='100'%20rx='22'%20fill='%2312121f'/%3E%3Ctext%20x='50'%20y='70'%20font-family='Arial,Helvetica,sans-serif'%20font-size='58'%20font-weight='800'%20fill='%23e94560'%20text-anchor='middle'%3EM%3C/text%3E%3C/svg%3E">
 <style>
 * { box-sizing:border-box; margin:0; padding:0; -webkit-tap-highlight-color:transparent; }
 html,body { height:100%; overflow:hidden; }
@@ -25,7 +26,7 @@ body { font-family:-apple-system,BlinkMacSystemFont,sans-serif; background:#1212
 #midi-pill.on{background:#27ae60;color:#fff;}
 
 #tab-bar{display:flex;background:#16162a;border-top:1px solid #2a2a45;flex-shrink:0;}
-.tab-btn{flex:1;padding:11px 1px;border:none;background:transparent;color:#778;font-size:12.5px;font-weight:700;cursor:pointer;border-bottom:2px solid transparent;white-space:nowrap;}
+.tab-btn{flex:1;padding:11px 1px;border:none;background:transparent;color:#778;font-size:11.5px;font-weight:700;cursor:pointer;border-bottom:2px solid transparent;white-space:nowrap;text-transform:uppercase;letter-spacing:.5px;}
 .tab-btn.on{color:#e94560;border-bottom-color:#e94560;}
 
 /* Collapsed controls (landscape / more staff room): hide the tall control stack. */
@@ -98,6 +99,12 @@ body { font-family:-apple-system,BlinkMacSystemFont,sans-serif; background:#1212
 
 /* Files / projects */
 #proj-list{display:flex;flex-direction:column;gap:4px;max-height:150px;overflow-y:auto;}
+
+/* Brand wordmark — shown on the Songs tab rather than the always-visible
+   toolbar, so it never competes with the score for space on a small screen. */
+#brand{text-align:center;padding:6px 0 12px;}
+#brand-mark{font-size:26px;font-weight:800;letter-spacing:.5px;background:linear-gradient(90deg,#2ecc71,#f0c040,#e94560);-webkit-background-clip:text;background-clip:text;color:transparent;}
+#brand-tag{font-size:10px;color:#667;letter-spacing:1.5px;text-transform:uppercase;margin-top:2px;}
 
 /* Diatonic chord palette — always visible */
 #chord-palette{flex-shrink:0;background:#0e0e1e;padding:4px 6px 3px;border-top:1px solid #2a2a45;}
@@ -384,6 +391,7 @@ body { font-family:-apple-system,BlinkMacSystemFont,sans-serif; background:#1212
 
 <!-- Files / projects panel -->
 <div id="panel-proj" class="panel">
+  <div id="brand"><div id="brand-mark">MōdScore</div><div id="brand-tag">Mobile Music Notation</div></div>
   <div class="row" style="gap:6px">
     <button class="chip on2" onclick="newProjectPrompt()" style="font-size:11px">+ New Song</button>
   </div>
