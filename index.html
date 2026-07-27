@@ -18,10 +18,15 @@ body { font-family:-apple-system,BlinkMacSystemFont,sans-serif; background:#1212
 .tb:disabled{opacity:.3;cursor:default;}
 .play{background:#2ecc71;color:#fff;} .stop{background:#e74c3c;color:#fff;}
 .undo{background:#e67e22;color:#fff;} .clear{background:#9b59b6;color:#fff;}
+.rec{background:#c0392b;color:#fff;}
+.rec.recording{animation:recPulse 1s ease-in-out infinite;}
+@keyframes recPulse{0%,100%{opacity:1;}50%{opacity:.45;}}
 #bpm-wrap{display:flex;align-items:center;gap:3px;font-size:12px;color:#889;margin-left:4px;}
 #bpm-inp{width:46px;background:#2a2a40;border:none;border-radius:5px;color:#dde;padding:4px 5px;font-size:14px;}
 .pill{font-size:12px;font-weight:700;padding:5px 10px;border-radius:10px;background:#2a2a40;color:#dde;cursor:pointer;flex-shrink:0;white-space:nowrap;}
 #proj-pill{color:#9bd;max-width:78px;overflow:hidden;text-overflow:ellipsis;}
+#audition-pill{color:#778;}
+#audition-pill.on{background:#27ae60;color:#fff;}
 #midi-pill{margin-left:auto;color:#778;}
 #midi-pill.on{background:#27ae60;color:#fff;}
 
@@ -154,6 +159,7 @@ body { font-family:-apple-system,BlinkMacSystemFont,sans-serif; background:#1212
 <div id="toolbar">
   <button class="tb play"  onclick="playScore()">▶</button>
   <button class="tb stop"  onclick="stopScore()">■</button>
+  <button class="tb rec"   id="rec-btn" onclick="toggleRecord()" title="Record from a MIDI keyboard (2-bar count-in + metronome)">⏺</button>
   <button class="tb undo"  id="undo-btn" onclick="undo()" title="Undo (Ctrl/Cmd+Z)">↶</button>
   <button class="tb undo"  id="redo-btn" onclick="redo()" title="Redo (Ctrl/Cmd+Shift+Z)">↷</button>
   <button class="tb clear" onclick="clearAll()" title="Clear all notes">✕</button>
@@ -164,6 +170,7 @@ body { font-family:-apple-system,BlinkMacSystemFont,sans-serif; background:#1212
   <span class="pill" id="proj-pill" onclick="switchTab('proj')">Song</span>
   <span class="pill" id="part-pill" onclick="switchTab('parts')" style="color:#f0c040;max-width:110px;overflow:hidden;text-overflow:ellipsis;" title="Instrument you're writing to — tap to switch">Treble · Piano</span>
   <span class="pill" id="key-pill" onclick="switchTab('score')">C</span>
+  <span class="pill on" id="audition-pill" onclick="toggleAudition()" title="Hear each note as you enter or edit it">🔊 Audition</span>
   <span class="pill" id="midi-pill">No MIDI</span>
 </div>
 
@@ -190,6 +197,21 @@ body { font-family:-apple-system,BlinkMacSystemFont,sans-serif; background:#1212
       <button class="chip on2" onclick="pasteClipboard()" style="font-size:10px">📋 Paste</button>
       <button class="chip" onclick="clearClipboard()" style="font-size:10px">✗ Clear</button>
     </div>
+  </div>
+  <div id="record-section" style="background:#2f0d16;border-radius:8px;padding:5px 7px;margin-bottom:4px;border:1.5px solid #c0392b;">
+    <div class="row">
+      <span style="font-size:9px;color:#e74c3c;font-weight:700;flex-shrink:0">RECORD (MIDI):</span>
+      <span id="rec-status" style="font-size:11px;color:#ff8a8a;font-weight:700;flex:1"></span>
+    </div>
+    <div class="row" style="margin-top:2px">
+      <span class="lbl">Grid</span>
+      <button class="chip rec-grid-btn" data-grid="q"   onclick="setRecGrid('q')"   style="font-size:11px">♩</button>
+      <button class="chip rec-grid-btn" data-grid="8"   onclick="setRecGrid('8')"   style="font-size:11px">♪</button>
+      <button class="chip rec-grid-btn on" data-grid="16"  onclick="setRecGrid('16')"  style="font-size:11px">♬</button>
+      <button class="chip rec-grid-btn" data-grid="8t"  onclick="setRecGrid('8t')"  style="font-size:10px">♪3</button>
+      <button class="chip rec-grid-btn" data-grid="16t" onclick="setRecGrid('16t')" style="font-size:10px">♬3</button>
+    </div>
+    <div class="hint">Sets the quantize grid your playing snaps to. Tap ⏺ in the toolbar: 2 bars of metronome count-in, then it records whatever you play on your MIDI keyboard until you tap ⏺ again.</div>
   </div>
   <div id="edit-section">
     <div class="row">
@@ -1036,6 +1058,7 @@ function exitChordBuildMode(){
 function cancelChord(){pendingChordNotes=[];updatePendingDisplay();exitChordBuildMode();}
 function commitChord(){
   if(!pendingChordNotes.length)return;
+  auditionPreview(pendingChordNotes.map(n=>n.midi), parts[apIdx]?.instId);
   const {lyric,dyn,arts,tempo,rud,grace,sticking}=grabPending();
   insertNoteAtCursor({
     keys:pendingChordNotes.map(n=>n.name+'/'+n.oct),
@@ -1084,9 +1107,11 @@ function enterDiatonicChord(deg,kd,seventh=false){
   const tones=buildChordTones(deg,kd.scale,rootOct,seventh);
   if(chordBuildMode){
     tones.forEach(t=>pendingChordNotes.push({...t,vfAcc:null}));
+    auditionPreview(tones.map(t=>t.midi), parts[apIdx]?.instId);
     updatePendingDisplay();
     return;
   }
+  auditionPreview(tones.map(t=>t.midi), parts[apIdx]?.instId);
   const {lyric,dyn,arts,tempo,rud,grace,sticking}=grabPending();
   insertNoteAtCursor({
     keys:tones.map(t=>t.name+'/'+t.oct),
@@ -1155,6 +1180,7 @@ function enterPitch(name, acc, oct, vfAcc){
   const activeInst=IMAP[parts[apIdx]?.instId]||IMAP.piano;
   if(activeInst.staffLines===1){ ({name,acc,oct}=SINGLE_LINE_KEY); vfAcc=null; }
   const midi=noteToMidi(name,acc,oct);
+  auditionPreview([midi], parts[apIdx]?.instId);
   if(chordBuildMode){
     pendingChordNotes.push({name,acc,oct,midi,vfAcc});
     updatePendingDisplay();
@@ -1327,6 +1353,7 @@ function moveSelNote(semitones){
   const results=n.midiVals.map(m=>midiToNote(m));
   n.keys=results.map(r=>r.name+'/'+r.oct);
   n.vfAccs=results.map(r=>r.acc);
+  auditionPreview(n.midiVals, parts[selectedNote.partIdx]?.instId);
   render(); updateSelectionUI();
 }
 
@@ -1339,6 +1366,7 @@ function setSelAcc(acc){
   n.keys[0]=name+'/'+oct;
   if(acc==='n'){ n.vfAccs[0]='n'; n.midiVals[0]=noteToMidi(name,null,oct); }
   else { n.vfAccs[0]=acc; n.midiVals[0]=noteToMidi(name,acc,oct); }
+  auditionPreview(n.midiVals, parts[selectedNote.partIdx]?.instId);
   render(); updateSelectionUI();
 }
 
@@ -1832,6 +1860,7 @@ function flushMidiChordBuffer(){
     return;
   }
   notes.sort((a,b)=>a.midi-b.midi);
+  auditionPreview(notes.map(n=>n.midi), parts[apIdx]?.instId);
   const {lyric,dyn,arts,tempo,rud,grace,sticking}=grabPending();
   insertNoteAtCursor({
     keys:notes.map(n=>n.name+'/'+n.oct),
@@ -1844,22 +1873,205 @@ function flushMidiChordBuffer(){
   render();scrollAfterEntry();
 }
 
+// Split out from initMidi's message handler so it's directly callable — both
+// by real MIDI input and, e.g., by tests that can't drive actual hardware.
+function handleMidiNoteEvent(status,note,vel){
+  const type=status&0xf0;
+  if(type===0x90&&vel>0){
+    if(recState==='recording'){
+      recActiveNotes[note]=Tone.now()-recStartSec;
+      auditionPreview([note], parts[apIdx]?.instId);
+    } else {
+      const name=MN[note%12],acc=MA[note%12],oct=Math.floor(note/12)-1;
+      queueMidiNote(name,acc,oct,note);
+    }
+  } else if(type===0x80||(type===0x90&&vel===0)){
+    if(recState==='recording'&&recActiveNotes[note]!=null){
+      const onSec=recActiveNotes[note]; delete recActiveNotes[note];
+      recEvents.push({onSec,offSec:Math.max(onSec+0.02,Tone.now()-recStartSec),midi:note});
+    }
+  }
+}
 async function initMidi(){
   if(!navigator.requestMIDIAccess)return;
   try{
     const ma=await navigator.requestMIDIAccess();
     const pill=document.getElementById('midi-pill');
-    const attach=inp=>{inp.onmidimessage=e=>{
-      const[st,note,vel]=e.data;
-      if((st&0xf0)===0x90&&vel>0){
-        const name=MN[note%12],acc=MA[note%12],oct=Math.floor(note/12)-1;
-        queueMidiNote(name,acc,oct,note);
-      }
-    };};
+    const attach=inp=>{inp.onmidimessage=e=>handleMidiNoteEvent(e.data[0],e.data[1],e.data[2]);};
     ma.inputs.forEach(attach);
     if(ma.inputs.size){pill.textContent='MIDI ●';pill.classList.add('on');}
     ma.onstatechange=e=>{if(e.port.type==='input'&&e.port.state==='connected'){attach(e.port);pill.textContent='MIDI ●';pill.classList.add('on');}};
   }catch(e){}
+}
+
+// ═══════════════════════════════════════════════════════
+// Live MIDI recording — 2-bar metronome count-in, then capture note-on/off
+// timestamps until stopped, quantized afterward to the chosen grid.
+// ═══════════════════════════════════════════════════════
+let recState='idle'; // 'idle' | 'counting' | 'recording'
+let recGrid='16';
+let recEvents=[];        // {onSec, offSec, midi} — seconds relative to recStartSec
+let recActiveNotes={};   // midi -> onSec, for notes currently held down
+let recStartSec=0;       // Tone.now() reference at the instant true recording begins
+let recMetroId=null;     // Tone.Transport repeat-event id, so it can be cancelled
+
+let _clickSynth=null;
+function getClickSynth(){
+  if(_clickSynth)return _clickSynth;
+  _clickSynth=new Tone.MembraneSynth({pitchDecay:.008,octaves:4,envelope:{attack:.001,decay:.06,sustain:0,release:.02},volume:-6}).connect(getMasterBus());
+  return _clickSynth;
+}
+function metroClick(time,accent){
+  try{ getClickSynth().triggerAttackRelease(accent?'C5':'C4',0.03,time); }catch(e){}
+}
+
+function setRecGrid(g){
+  recGrid=g;
+  document.querySelectorAll('.rec-grid-btn').forEach(b=>b.classList.toggle('on',b.dataset.grid===g));
+}
+function updateRecUI(){
+  const btn=document.getElementById('rec-btn');
+  const status=document.getElementById('rec-status');
+  if(btn) btn.classList.toggle('recording',recState!=='idle');
+  if(status) status.textContent = recState==='recording' ? '● Recording — tap ⏺ again to stop' : (recState==='idle' ? '' : status.textContent);
+}
+function updateRecCountUI(n,total){
+  const status=document.getElementById('rec-status');
+  if(status) status.textContent='Count-in '+n+' / '+total+'…';
+}
+
+async function toggleRecord(){
+  if(recState!=='idle'){ stopRecording(); return; }
+  if(playing){ alert('Stop playback before recording.'); return; }
+  const pill=document.getElementById('midi-pill');
+  if(!pill||!pill.classList.contains('on')){ alert("Connect a MIDI keyboard first — the MIDI pill in the toolbar turns green once one is detected."); return; }
+  startRecording();
+}
+async function startRecording(){
+  await Tone.start();
+  const bpm=parseInt(document.getElementById('bpm-inp').value)||80;
+  const secPerBeat=60/bpm;
+  const beatsPerBar=currentTimeSig.beats;
+  const countBeats=beatsPerBar*2;
+  recEvents=[]; recActiveNotes={};
+  recState='counting';
+  updateRecUI();
+  Tone.getTransport().bpm.value=bpm;
+  Tone.getTransport().cancel();
+  for(let i=0;i<countBeats;i++){
+    Tone.getTransport().schedule(time=>{
+      metroClick(time,i%beatsPerBar===0);
+      updateRecCountUI(i+1,countBeats);
+    },i*secPerBeat);
+  }
+  Tone.getTransport().schedule(time=>{
+    recState='recording';
+    recStartSec=time;
+    updateRecUI();
+  },countBeats*secPerBeat);
+  recMetroId=Tone.getTransport().scheduleRepeat(time=>{
+    if(recState!=='recording')return;
+    const beatIdx=Math.round((time-recStartSec)/secPerBeat);
+    metroClick(time,(beatIdx%beatsPerBar)===0);
+  },secPerBeat,countBeats*secPerBeat);
+  Tone.getTransport().start();
+}
+function stopRecording(){
+  if(recState==='idle')return;
+  Tone.getTransport().stop();
+  Tone.getTransport().cancel();
+  if(recMetroId!=null){ try{Tone.getTransport().clear(recMetroId);}catch(e){} recMetroId=null; }
+  const wasRecording=recState==='recording';
+  if(wasRecording){
+    const now=Tone.now();
+    Object.entries(recActiveNotes).forEach(([midi,onSec])=>{
+      recEvents.push({onSec,offSec:Math.max(onSec+0.05,now-recStartSec),midi:parseInt(midi)});
+    });
+  }
+  recActiveNotes={};
+  recState='idle';
+  updateRecUI();
+  if(wasRecording&&recEvents.length){
+    const bpm=parseInt(document.getElementById('bpm-inp').value)||80;
+    const notes=quantizeRecording(recEvents,recGrid,bpm);
+    if(notes.length) insertRecordedNotes(notes);
+  }
+  recEvents=[];
+}
+function insertRecordedNotes(notes){
+  const part=parts[apIdx];
+  const at=(selectedNote&&selectedNote.partIdx===apIdx)?selectedNote.noteIdx+1
+          :(caretGap&&caretGap.partIdx===apIdx)?caretGap.index
+          :part.notes.length;
+  part.notes.splice(at,0,...notes);
+  selectedNote={partIdx:apIdx,noteIdx:at+notes.length-1}; caretGap=null;
+  render(); scrollAfterEntry();
+}
+
+// ── Quantization ─────────────────────────────────────────
+const REC_GRID_BEATS={q:1,'8':0.5,'16':0.25,'8t':1/3,'16t':1/6};
+function quantizeRecording(events,gridId,bpm){
+  if(!events.length)return[];
+  const unit=REC_GRID_BEATS[gridId]||0.25;
+  const secPerBeat=60/bpm;
+  const toBeat=sec=>sec/secPerBeat;
+  events=events.slice().sort((a,b)=>a.onSec-b.onSec);
+  if(gridId==='8t'||gridId==='16t') return quantizeTripletGrid(events,unit,toBeat,gridId==='8t'?'8':'16');
+  return quantizeSimpleGrid(events,unit,toBeat);
+}
+// Triplet grids: every cell is exactly one grid unit, never merged across
+// cells — that keeps every complete run of 3 consecutive cells aligned to one
+// beat, so it can always be bracketed as a clean triplet without needing ties
+// (which this app doesn't support).
+function quantizeTripletGrid(events,unit,toBeat,baseDur){
+  const lastOff=Math.max(...events.map(e=>toBeat(e.offSec)));
+  let numCells=Math.max(3,Math.round(lastOff/unit));
+  numCells=Math.ceil(numCells/3)*3; // pad to a whole number of triplet groups
+  const cellNotes=Array.from({length:numCells},()=>[]);
+  events.forEach(e=>{
+    const c=Math.max(0,Math.min(numCells-1,Math.round(toBeat(e.onSec)/unit)));
+    cellNotes[c].push(e.midi);
+  });
+  return cellNotes.map(midis=>{
+    if(!midis.length) return {keys:['b/4'],dur:composeDur(baseDur,false,3,true),vfAccs:[null],midiVals:[],rest:true,lyric:null,dyn:null,arts:[],tempo:null,rud:null,grace:[],sticking:null};
+    const uniq=[...new Set(midis)].sort((a,b)=>a-b);
+    const res=uniq.map(m=>midiToNote(m));
+    return {keys:res.map(r=>r.name+'/'+r.oct),dur:composeDur(baseDur,false,3,false),vfAccs:res.map(r=>r.acc),midiVals:uniq,rest:false,lyric:null,dyn:null,arts:[],tempo:null,rud:null,grace:[],sticking:null};
+  });
+}
+// Simple (non-triplet) grids: consecutive cells with the same held pitch(es)
+// and no new onset merge into one longer notatable note.
+function quantizeSimpleGrid(events,unit,toBeat){
+  const lastOff=Math.max(...events.map(e=>toBeat(e.offSec)));
+  const numCells=Math.max(1,Math.round(lastOff/unit));
+  const cellOnset=Array.from({length:numCells},()=>[]);
+  const cellHeld=Array.from({length:numCells},()=>new Set());
+  events.forEach(e=>{
+    const onC=Math.max(0,Math.min(numCells-1,Math.round(toBeat(e.onSec)/unit)));
+    cellOnset[onC].push(e.midi);
+    let offC=Math.round(toBeat(e.offSec)/unit);
+    offC=Math.max(onC+1,Math.min(numCells,offC));
+    for(let c=onC;c<offC;c++) cellHeld[c].add(e.midi);
+  });
+  const eqSet=(a,b)=>a.size===b.size&&[...a].every(x=>b.has(x));
+  const out=[];
+  let i=0;
+  while(i<numCells){
+    if(!cellOnset[i].length&&!cellHeld[i].size){
+      let j=i; while(j<numCells&&!cellOnset[j].length&&!cellHeld[j].size) j++;
+      out.push(restNote((j-i)*unit));
+      i=j; continue;
+    }
+    const heldSet=new Set(cellOnset[i].length?cellOnset[i]:[...cellHeld[i]]);
+    let j=i+1;
+    while(j<numCells&&!cellOnset[j].length&&eqSet(cellHeld[j],heldSet)) j++;
+    const beats=(j-i)*unit;
+    const sorted=[...heldSet].sort((a,b)=>a-b);
+    const res=sorted.map(m=>midiToNote(m));
+    out.push({keys:res.map(r=>r.name+'/'+r.oct),dur:beatsToDur(beats),vfAccs:res.map(r=>r.acc),midiVals:sorted,rest:false,lyric:null,dyn:null,arts:[],tempo:null,rud:null,grace:[],sticking:null});
+    i=j;
+  }
+  return out;
 }
 
 // ═══════════════════════════════════════════════════════
@@ -1966,6 +2178,35 @@ function drumsetHit(midi,dur,time,vel){
   }catch(e){}
 }
 
+// ═══════════════════════════════════════════════════════
+// Audition — hear a pitch/chord immediately as you enter or edit it, using
+// the active part's instrument. Independent of full playback (Play/Stop);
+// on by default, most useful when writing at the piano-style note grid.
+// ═══════════════════════════════════════════════════════
+let auditionEnabled=true;
+function toggleAudition(){
+  auditionEnabled=!auditionEnabled;
+  document.getElementById('audition-pill')?.classList.toggle('on',auditionEnabled);
+}
+async function auditionPreview(midiVals,instId){
+  if(!auditionEnabled||!midiVals||!midiVals.length)return;
+  try{
+    await Tone.start();
+    const inst=IMAP[instId]||IMAP.piano;
+    const dur=0.35,vel=0.7,time=Tone.now();
+    if(inst.drumset){ midiVals.forEach(m=>drumsetHit(m,dur,time,vel)); return; }
+    if(inst.unpitched||inst.pitchedDrum){
+      const voice=getDrum(instId);
+      if(inst.unpitched){ if(inst.osc==='noise')voice.triggerAttackRelease(dur,time,vel); else voice.triggerAttackRelease('C2',dur,time,vel); }
+      else voice.triggerAttackRelease(Tone.Frequency(midiVals[0],'midi').toNote(),dur,time,vel);
+      return;
+    }
+    const voice=getSampler(instId);
+    const notes=midiVals.map(m=>Tone.Frequency(m,'midi').toNote());
+    voice.triggerAttackRelease(notes.length===1?notes[0]:notes,dur,time,vel);
+  }catch(e){}
+}
+
 let playing=false,_activeVoices=[];
 // Expands repeat barlines into the actual order measures play in — e.g.
 // start=[0] end=[1] over 5 measures becomes [0,1,0,1,2,3,4] (play the marked
@@ -2001,7 +2242,7 @@ function resolveMeasureNotes(measuresForPart, mi, depth){
   return arr;
 }
 async function playScore(){
-  if(playing)return;await Tone.start();
+  if(playing||recState!=='idle')return;await Tone.start();
   const playBtn=document.querySelector('.tb.play');
   const bpm=parseInt(document.getElementById('bpm-inp').value)||80;
   // Pre-create + load all samplers needed
