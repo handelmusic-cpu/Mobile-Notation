@@ -2283,7 +2283,7 @@ async function playScore(){
   if(needLoad){ if(playBtn)playBtn.textContent='…'; }
   await Tone.loaded();
   if(playBtn)playBtn.textContent='▶';
-  playing=true;stopScore(true);
+  stopScore(true);playing=true;
   Tone.getTransport().bpm.value=bpm;Tone.getTransport().cancel();
 
   const allM=parts.map(p=>toMeasures(p.notes));
@@ -2291,11 +2291,34 @@ async function playScore(){
   const playOrder=buildPlayOrder(numM);
   const secPerBeat=60/bpm;
 
+  // Default to starting playback from the selected/highlighted note (or the
+  // insertion caret) instead of always from the top — find its time offset
+  // in the playback timeline so every scheduled event can be shifted back by it.
+  let cursorTime=0, cursorOcc=0;
+  const cur=selectedNote?{partIdx:selectedNote.partIdx,noteIdx:selectedNote.noteIdx}
+           :caretGap?{partIdx:caretGap.partIdx,noteIdx:caretGap.index}:null;
+  if(cur && parts[cur.partIdx]){
+    const cNotes=parts[cur.partIdx].notes;
+    const BMAX=currentTimeSig.beats;
+    let mi=0,beats=0,posInMeasure=0;
+    for(let i=0;i<cur.noteIdx && i<cNotes.length;i++){
+      beats+=noteBeats(cNotes[i]); posInMeasure++;
+      if(beats>=BMAX-.001){ mi++; beats=0; posInMeasure=0; }
+    }
+    const occ=playOrder.indexOf(mi);
+    cursorOcc=occ>=0?occ:playOrder.length;
+    for(let k=0;k<cursorOcc;k++) cursorTime+=(measureBeats[playOrder[k]]||BMAX)*secPerBeat;
+    if(occ>=0){
+      const mNotes=resolveMeasureNotes(allM[cur.partIdx],mi);
+      for(let k=0;k<posInMeasure && k<mNotes.length;k++) cursorTime+=durSecs(mNotes[k].dur,bpm);
+    }
+  }
+
   // Follow the currently-playing measure across the staff view as it plays —
   // uses the expanded order, so the view jumps back during a repeat too.
   let cumScroll=0;
-  playOrder.forEach(mi=>{
-    Tone.getTransport().schedule(()=>scrollToMeasure(mi),'+'+cumScroll);
+  playOrder.forEach((mi,k)=>{
+    if(k>=cursorOcc) Tone.getTransport().schedule(()=>scrollToMeasure(mi),'+'+Math.max(0,cumScroll-cursorTime));
     cumScroll+=(measureBeats[mi]||currentTimeSig.beats)*secPerBeat;
   });
 
@@ -2328,19 +2351,19 @@ async function playScore(){
           const GRACE_GAP=.035;
           graceList.forEach((g,gi)=>{
             const gt=abs-(graceList.length-gi)*GRACE_GAP;
-            if(gt>=0) Tone.getTransport().schedule(time=>fire(GRACE_GAP*.85,time,.55),'+'+gt);
+            if(gt>=cursorTime) Tone.getTransport().schedule(time=>fire(GRACE_GAP*.85,time,.55),'+'+(gt-cursorTime));
           });
           // Rolls: subdivide the note into fast repeated hits instead of one sustained note.
           const ROLL_HITS={trem1:2,trem2:4,trem3:8,buzz:16,press:20};
           const hits=ROLL_HITS[n.rud];
           if(hits){
             const hitDur=secs/hits;
-            for(let k=0;k<hits;k++) Tone.getTransport().schedule(time=>fire(hitDur*.85,time,.8),'+'+(abs+k*hitDur));
+            for(let k=0;k<hits;k++){ const ht=abs+k*hitDur; if(ht>=cursorTime) Tone.getTransport().schedule(time=>fire(hitDur*.85,time,.8),'+'+(ht-cursorTime)); }
           } else {
             // Plain seconds (not a Tone.js Time-string like '8n') so arbitrary
             // N-tuplet ratios play at the right length — Tone's own 't' shorthand
             // only understands the 2:3 triplet case.
-            Tone.getTransport().schedule(time=>fire(secs*0.94,time,1),'+'+abs);
+            if(abs>=cursorTime) Tone.getTransport().schedule(time=>fire(secs*0.94,time,1),'+'+(abs-cursorTime));
           }
         }
         t+=secs;
@@ -2349,7 +2372,7 @@ async function playScore(){
     maxT=Math.max(maxT,t);
   });
   if(!_activeVoices.length){playing=false;return;}
-  Tone.getTransport().schedule(()=>stopScore(),'+' +(maxT+.8));
+  Tone.getTransport().schedule(()=>stopScore(),'+' +Math.max(0,maxT-cursorTime+.8));
   Tone.getTransport().start();
 }
 function stopScore(s){
