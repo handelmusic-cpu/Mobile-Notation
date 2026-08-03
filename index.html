@@ -12,14 +12,94 @@
 <title>MōdScore</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%20100%20100'%3E%3Crect%20width='100'%20height='100'%20rx='22'%20fill='%2312121f'/%3E%3Ctext%20x='50'%20y='70'%20font-family='Arial,Helvetica,sans-serif'%20font-size='58'%20font-weight='800'%20fill='%23e94560'%20text-anchor='middle'%3EM%3C/text%3E%3C/svg%3E">
 <style>
+/* ═══════════════════════════════════════════════════════
+   DESIGN TOKENS
+   Colours were hardcoded at every use site, which made a second theme
+   impossible and let near-identical greys drift apart. Everything routes
+   through these now, so light mode is a token swap rather than a rewrite.
+   ═══════════════════════════════════════════════════════ */
+:root{
+  color-scheme:dark;
+
+  /* ── Surfaces, back to front ── */
+  --bg:#12121f;        /* page, and the sunken interior of chips/buttons */
+  --sunk:#0e0e1e;      /* chord palette — reads as recessed below the panel */
+  --surf:#16162a;      /* tab bar, note grid */
+  --surf2:#1a1a30;     /* panels */
+  --surf3:#1e1e35;     /* toolbar */
+  --surf4:#20203a;     /* raised cards: tour, record sheet */
+  --ctl:#2a2a40;       /* pills, BPM field */
+  --ctl2:#2a2a44;      /* tour secondary buttons */
+  --border:#2a2a45;
+  --border2:#333;
+  --paper:#f4efe4;     /* the score's page — stays paper in both themes */
+
+  /* ── Text ── */
+  --text:#e0e4ef; --text2:#dde; --text3:#ccd; --text4:#d5d8e5;
+  --muted:#889; --muted2:#667; --muted3:#778; --muted4:#aab; --muted5:#99a;
+
+  /* ── Semantic accents ── */
+  --accent:#e94560;    /* primary / selected */
+  --info:#2980b9;      /* the selection colour on the staff */
+  --info-bg:#0d1f35; --info-fg:#5dade2;
+  --ok:#219a53; --ok-bg:#0d2f1f; --ok-fg:#6fcf97;
+  --warn:#c96a12; --danger:#e74c3c; --rec:#c0392b; --rec-fg:#ff8a8a;
+  --gold:#f0c040; --violet:#9b59b6; --green:#22a35c; --sky:#9bd;
+  --dot:#334;          /* inactive part indicator */
+  --rest-btn:#3a3f55;  /* rest key, held apart from the pitch keys */
+
+  /* ── Key hue ──
+     Set by applyKeyHue() from the key's position on the circle of fifths, so
+     the chord palette rotates through the colour wheel as the music moves
+     through keys. 210 is C, and every fifth turns it 30°. */
+  --kh:210;
+  --h-tonic:var(--kh);
+  --h-subdom:calc(var(--kh) + 195);
+  --h-dom:calc(var(--kh) + 150);
+  /* Lightness of the chord buttons, flipped wholesale for light mode. */
+  --ch-bg-l:18%; --ch-7-l:13%; --ch-bd-l:44%; --ch-fg-l:69%;
+}
+
+/* Light mode — for a phone on a music stand, where a dark UI beside a cream
+   score is a glare edge you keep re-adapting to. */
+body.light{
+  color-scheme:light;
+  --bg:#eceef6; --sunk:#dfe2ee; --surf:#e4e7f2; --surf2:#e9ebf5;
+  --surf3:#dde0ee; --surf4:#fff; --ctl:#ccd1e2; --ctl2:#d3d7e6;
+  --border:#c1c6dc; --border2:#b4b9d0;
+  --text:#1b1d2b; --text2:#262938; --text3:#2f3245; --text4:#2a2d3d;
+  --muted:#5c6078; --muted2:#6b6f87; --muted3:#5c6078; --muted4:#3c3f54; --muted5:#6b6f87;
+  --info-bg:#dbe7f5; --ok-bg:#d9f0e3; --sky:#2b6ca3; --gold:#7d5600;
+  --rec-fg:#a3251a; --ok-fg:#1c6b41;
+  --dot:#a9aec6; --rest-btn:#8d93ad;
+  --ch-bg-l:87%; --ch-7-l:81%; --ch-bd-l:52%; --ch-fg-l:30%;
+}
+
+/* Honour the OS "reduce motion" setting. The record button's pulse is the
+   one animation that carries meaning, so it also gets a static treatment
+   below rather than relying on movement alone. */
+@media (prefers-reduced-motion: reduce){
+  *,*::before,*::after{
+    animation-duration:.01ms !important; animation-iteration-count:1 !important;
+    transition-duration:.01ms !important; scroll-behavior:auto !important;
+  }
+}
+
 * { box-sizing:border-box; margin:0; padding:0; -webkit-tap-highlight-color:transparent; }
 html,body { height:100%; overflow:hidden; }
-body { font-family:-apple-system,BlinkMacSystemFont,sans-serif; background:#12121f; color:#e0e4ef; display:flex; flex-direction:column; height:100dvh;
+body { font-family:-apple-system,BlinkMacSystemFont,sans-serif; background:var(--bg); color:var(--text); display:flex; flex-direction:column; height:100dvh;
        padding-left:env(safe-area-inset-left,0px); padding-right:env(safe-area-inset-right,0px); }
 
 /* The staff is the point of the app, so it gets a guaranteed floor rather
    than being the only flexible box in a stack of unshrinkable ones. */
-#score-wrap { flex:1 1 auto; min-height:38vh; background:#f4efe4; overflow:auto; -webkit-overflow-scrolling:touch; padding:8px; cursor:pointer; }
+#score-wrap { position:relative; flex:1 1 auto; min-height:38vh; background:var(--paper); overflow:auto; -webkit-overflow-scrolling:touch; padding:8px; cursor:pointer; }
+
+/* Frozen clef + key signature. Once you scroll right the real ones leave the
+   screen, and a staff with no clef tells you nothing about what pitch a
+   notehead is — so this redraws them pinned to the left edge, the way every
+   desktop notation editor does. Positioned in JS on scroll (see
+   syncClefGutter); it only appears once you've actually scrolled off them. */
+#clef-gutter { position:absolute; top:0; left:0; display:none; overflow:hidden; pointer-events:none; background:var(--paper); box-shadow:7px 0 9px -5px rgba(0,0,0,.28); }
 
 /* Everything between the toolbar and the note grid. This wrapper is what
    makes the layout survive a short screen: previously #tab-bar, .panel and
@@ -30,36 +110,39 @@ body { font-family:-apple-system,BlinkMacSystemFont,sans-serif; background:#1212
    Letting this one box scroll means the stack can never push anything off
    screen again. */
 #control-rail { display:flex; flex-direction:column; flex:0 1 auto; min-height:0; overflow-y:auto; -webkit-overflow-scrolling:touch; }
-#quick-edit-bar{display:none;align-items:center;gap:4px;padding:5px 7px;background:#0d1f35;border-top:1.5px solid #2980b9;border-bottom:1.5px solid #2980b9;flex-shrink:0;overflow-x:auto;-webkit-overflow-scrolling:touch;}
-#qe-label{font-size:11px;font-weight:700;color:#5dade2;flex-shrink:0;margin-right:2px;white-space:nowrap;}
+#quick-edit-bar{display:none;align-items:center;gap:4px;padding:5px 7px;background:var(--info-bg);border-top:1.5px solid var(--info);border-bottom:1.5px solid var(--info);flex-shrink:0;overflow-x:auto;-webkit-overflow-scrolling:touch;}
+#qe-label{font-size:11px;font-weight:700;color:var(--info-fg);flex-shrink:0;margin-right:2px;white-space:nowrap;}
 
 /* One horizontally-scrolling row rather than a wrapping block. At 44px per
    target, ~14 controls can never fit across a phone, and wrapping cost three
    rows (~250px of a 667px screen) — vertical space the staff needs more. */
-#toolbar { display:flex; gap:4px; padding:calc(5px + env(safe-area-inset-top,0px)) 7px 5px; background:#1e1e35; flex-shrink:0; align-items:center; flex-wrap:nowrap; overflow-x:auto; -webkit-overflow-scrolling:touch; }
+#toolbar { display:flex; gap:4px; padding:calc(5px + env(safe-area-inset-top,0px)) 7px 5px; background:var(--surf3); flex-shrink:0; align-items:center; flex-wrap:nowrap; overflow-x:auto; -webkit-overflow-scrolling:touch; }
 /* 44x44 is the smallest reliably tappable target on a touch screen. These
    used to be flex:1 with max-width:60px, which on a 375px-wide phone
    collapsed them to 18px across — narrower than the glyph inside them. */
 .tb { flex:0 0 auto; padding:8px 4px; border:none; border-radius:7px; font-size:14px; font-weight:700; cursor:pointer; min-width:44px; min-height:44px; touch-action:manipulation; }
 .tb:active{opacity:.75;}
 .tb:disabled{opacity:.3;cursor:default;}
-.play{background:#2ecc71;color:#fff;} .stop{background:#e74c3c;color:#fff;}
-.undo{background:#e67e22;color:#fff;} .clear{background:#9b59b6;color:#fff;}
-.rec{background:#c0392b;color:#fff;}
-.rec.recording{animation:recPulse 1s ease-in-out infinite;}
+.play{background:var(--green);color:#fff;} .stop{background:var(--danger);color:#fff;}
+.undo{background:var(--warn);color:#fff;} .clear{background:var(--violet);color:#fff;}
+.rec{background:var(--rec);color:#fff;}
+/* The brighter fill and ring are what mark "armed" when the OS asks for
+   reduced motion — the pulse alone would leave recording and idle identical,
+   since both are already red. */
+.rec.recording{background:#ff5140;box-shadow:0 0 0 3px rgba(255,81,64,.45);animation:recPulse 1s ease-in-out infinite;}
 @keyframes recPulse{0%,100%{opacity:1;}50%{opacity:.45;}}
-#bpm-wrap{display:flex;align-items:center;gap:3px;font-size:12px;color:#889;margin-left:4px;}
-#bpm-inp{width:46px;background:#2a2a40;border:none;border-radius:5px;color:#dde;padding:4px 5px;font-size:14px;}
-.pill{font-size:12px;font-weight:700;padding:5px 10px;border-radius:10px;background:#2a2a40;color:#dde;cursor:pointer;flex-shrink:0;white-space:nowrap;}
-#proj-pill{color:#9bd;max-width:78px;overflow:hidden;text-overflow:ellipsis;}
-#audition-pill{color:#778;}
-#audition-pill.on{background:#27ae60;color:#fff;}
-#midi-pill{color:#778;}
-#midi-pill.on{background:#27ae60;color:#fff;}
+#bpm-wrap{display:flex;align-items:center;gap:3px;font-size:12px;color:var(--muted);margin-left:4px;}
+#bpm-inp{width:46px;background:var(--ctl);border:none;border-radius:5px;color:var(--text2);padding:4px 5px;font-size:14px;}
+.pill{font-size:12px;font-weight:700;padding:5px 10px;border-radius:10px;background:var(--ctl);color:var(--text2);cursor:pointer;flex-shrink:0;white-space:nowrap;}
+#proj-pill{color:var(--sky);max-width:78px;overflow:hidden;text-overflow:ellipsis;}
+#audition-pill{color:var(--muted3);}
+#audition-pill.on{background:var(--ok);color:#fff;}
+#midi-pill{color:var(--muted3);}
+#midi-pill.on{background:var(--ok);color:#fff;}
 
-#tab-bar{display:flex;background:#16162a;border-top:1px solid #2a2a45;flex-shrink:0;}
-.tab-btn{flex:1;padding:11px 1px;border:none;background:transparent;color:#778;font-size:11.5px;font-weight:700;cursor:pointer;border-bottom:2px solid transparent;white-space:nowrap;text-transform:uppercase;letter-spacing:.5px;}
-.tab-btn.on{color:#e94560;border-bottom-color:#e94560;}
+#tab-bar{display:flex;background:var(--surf);border-top:1px solid var(--border);flex-shrink:0;}
+.tab-btn{flex:1;padding:11px 1px;border:none;background:transparent;color:var(--muted3);font-size:11.5px;font-weight:700;cursor:pointer;border-bottom:2px solid transparent;white-space:nowrap;text-transform:uppercase;letter-spacing:.5px;}
+.tab-btn.on{color:var(--accent);border-bottom-color:var(--accent);}
 
 /* Collapsed controls (landscape / more staff room): hide the tall control
    stack. The rail wraps the tab bar, every panel and the chord palette, so
@@ -87,7 +170,7 @@ body { font-family:-apple-system,BlinkMacSystemFont,sans-serif; background:#1212
   .tab-btn{ font-size:9.5px; letter-spacing:0; padding:11px 1px; }
   #quick-edit-bar{ grid-area:qedit; }
   #score-wrap{ grid-area:score; min-height:0; }
-  #control-rail{ grid-area:rail; border-left:1px solid #2a2a45; }
+  #control-rail{ grid-area:rail; border-left:1px solid var(--border); }
   #note-grid{ grid-area:ngrid; }
   /* Collapsing gives the staff the full width, and the grid must reclaim
      the rail's column or the staff would keep a dead gutter beside it. */
@@ -98,70 +181,70 @@ body { font-family:-apple-system,BlinkMacSystemFont,sans-serif; background:#1212
   .dyn-grid,.key-major-grid,.key-minor-grid{ grid-template-columns:repeat(4,1fr); }
 }
 
-.panel{display:none;padding:6px 8px;background:#1a1a30;flex-shrink:0;}
+.panel{display:none;padding:6px 8px;background:var(--surf2);flex-shrink:0;}
 .panel.on{display:block;}
 .row{display:flex;align-items:center;gap:4px;margin-bottom:4px;flex-wrap:wrap;}
-.lbl{font-size:12px;color:#889;min-width:32px;flex-shrink:0;}
-.sec{font-size:11px;color:#667;margin:7px 0 4px;letter-spacing:.5px;text-transform:uppercase;}
+.lbl{font-size:12px;color:var(--muted);min-width:32px;flex-shrink:0;}
+.sec{font-size:11px;color:var(--muted2);margin:7px 0 4px;letter-spacing:.5px;text-transform:uppercase;}
 
 .subtab-bar{display:flex;gap:3px;margin-bottom:7px;}
-.subtab-btn{flex:1;padding:9px 2px;border:1.5px solid #2a2a45;border-radius:6px;background:#12121f;color:#aab;font-size:12px;font-weight:700;cursor:pointer;touch-action:manipulation;}
-.subtab-btn.on{background:#e94560;border-color:#e94560;color:#fff;}
+.subtab-btn{flex:1;padding:9px 2px;border:1.5px solid var(--border);border-radius:6px;background:var(--bg);color:var(--muted4);font-size:12px;font-weight:700;cursor:pointer;touch-action:manipulation;}
+.subtab-btn.on{background:var(--accent);border-color:var(--accent);color:#fff;}
 .subpanel{display:none;}
 .subpanel.on{display:block;}
 
-.chip{padding:6px 9px;border:1.5px solid #2a2a45;border-radius:6px;background:#12121f;color:#ccd;font-size:15px;cursor:pointer;min-height:34px;min-width:34px;display:inline-flex;align-items:center;justify-content:center;touch-action:manipulation;line-height:1;user-select:none;}
+.chip{padding:6px 9px;border:1.5px solid var(--border);border-radius:6px;background:var(--bg);color:var(--text3);font-size:15px;cursor:pointer;min-height:34px;min-width:34px;display:inline-flex;align-items:center;justify-content:center;touch-action:manipulation;line-height:1;user-select:none;}
 .chip:active{opacity:.7;}
-.chip.on{background:#e94560;border-color:#e94560;color:#fff;}
-.chip.on2{background:#2980b9;border-color:#2980b9;color:#fff;}
-.chip.on3{background:#27ae60;border-color:#27ae60;color:#fff;}
+.chip.on{background:var(--accent);border-color:var(--accent);color:#fff;}
+.chip.on2{background:var(--info);border-color:var(--info);color:#fff;}
+.chip.on3{background:var(--ok);border-color:var(--ok);color:#fff;}
 .chip svg{width:20px;height:24px;}
 
 /* Edit panel for selected note */
-#edit-section{display:none;background:#0d1f35;border-radius:8px;padding:5px 7px;margin-bottom:4px;border:1.5px solid #2980b9;}
+#edit-section{display:none;background:var(--info-bg);border-radius:8px;padding:5px 7px;margin-bottom:4px;border:1.5px solid var(--info);}
 #edit-section .row{margin-bottom:0;}
 
 /* Parts panel */
 #parts-list{display:flex;flex-direction:column;gap:4px;max-height:100px;overflow-y:auto;margin-bottom:5px;}
-.prow{display:flex;align-items:center;gap:5px;background:#12121f;border-radius:7px;padding:5px 7px;border:1.5px solid #2a2a45;cursor:pointer;}
-.prow.ap{border-color:#2980b9;background:#0d1f35;}
-.pdot{width:7px;height:7px;border-radius:50%;background:#334;flex-shrink:0;}
-.prow.ap .pdot{background:#2980b9;}
-.pname{font-size:12px;font-weight:700;color:#ccd;flex:0 0 auto;}
-.pinst{font-size:10px;color:#778;flex:1;}
-.pdel{background:none;border:none;color:#e74c3c;font-size:13px;cursor:pointer;padding:0 3px;}
+.prow{display:flex;align-items:center;gap:5px;background:var(--bg);border-radius:7px;padding:5px 7px;border:1.5px solid var(--border);cursor:pointer;}
+.prow.ap{border-color:var(--info);background:var(--info-bg);}
+.pdot{width:7px;height:7px;border-radius:50%;background:var(--dot);flex-shrink:0;}
+.prow.ap .pdot{background:var(--info);}
+.pname{font-size:12px;font-weight:700;color:var(--text3);flex:0 0 auto;}
+.pinst{font-size:10px;color:var(--muted3);flex:1;}
+.pdel{background:none;border:none;color:var(--danger);font-size:13px;cursor:pointer;padding:0 3px;}
 .cat-grid{display:flex;gap:3px;flex-wrap:wrap;margin-bottom:4px;}
 #inst-grid{display:flex;gap:3px;flex-wrap:wrap;min-height:0;margin-bottom:4px;}
 
 /* Dyn */
 .dyn-grid{display:grid;grid-template-columns:repeat(6,1fr);gap:3px;margin-bottom:5px;}
-.dyn-btn{padding:7px 2px;border:1.5px solid #2a2a45;border-radius:6px;background:#12121f;color:#dde;font-size:13px;font-style:italic;font-weight:700;cursor:pointer;min-height:34px;touch-action:manipulation;}
+.dyn-btn{padding:7px 2px;border:1.5px solid var(--border);border-radius:6px;background:var(--bg);color:var(--text2);font-size:13px;font-style:italic;font-weight:700;cursor:pointer;min-height:34px;touch-action:manipulation;}
 .dyn-btn:active{opacity:.7;}
-.dyn-btn.on{background:#e94560;border-color:#e94560;color:#fff;}
+.dyn-btn.on{background:var(--accent);border-color:var(--accent);color:#fff;}
 .hp-row{display:flex;gap:5px;align-items:center;margin-bottom:3px;}
-#hp-status{font-size:9px;color:#27ae60;min-height:11px;}
+#hp-status{font-size:9px;color:var(--ok);min-height:11px;}
 
 /* Art */
 .art-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:3px;}
-.art-btn{padding:7px 2px;border:1.5px solid #2a2a45;border-radius:6px;background:#12121f;color:#dde;font-size:18px;cursor:pointer;min-height:40px;touch-action:manipulation;}
+.art-btn{padding:7px 2px;border:1.5px solid var(--border);border-radius:6px;background:var(--bg);color:var(--text2);font-size:18px;cursor:pointer;min-height:40px;touch-action:manipulation;}
 .art-btn:active{opacity:.7;}
-.art-btn.on{background:#e94560;border-color:#e94560;color:#fff;}
+.art-btn.on{background:var(--accent);border-color:var(--accent);color:#fff;}
 
 /* Tempo */
 .tempo-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:3px;margin-bottom:4px;}
-.tempo-btn{padding:7px 2px;border:1.5px solid #2a2a45;border-radius:6px;background:#12121f;color:#dde;font-size:11px;font-style:italic;cursor:pointer;min-height:34px;touch-action:manipulation;}
+.tempo-btn{padding:7px 2px;border:1.5px solid var(--border);border-radius:6px;background:var(--bg);color:var(--text2);font-size:11px;font-style:italic;cursor:pointer;min-height:34px;touch-action:manipulation;}
 .tempo-btn:active{opacity:.7;}
-.tempo-btn.on{background:#e94560;border-color:#e94560;color:#fff;}
+.tempo-btn.on{background:var(--accent);border-color:var(--accent);color:#fff;}
 
 /* Score setup */
 .key-major-grid{display:grid;grid-template-columns:repeat(6,1fr);gap:3px;margin-bottom:3px;}
 .key-minor-grid{display:grid;grid-template-columns:repeat(6,1fr);gap:3px;margin-bottom:5px;}
-.key-btn{padding:6px 2px;border:1.5px solid #2a2a45;border-radius:6px;background:#12121f;color:#dde;font-size:13px;cursor:pointer;min-height:34px;touch-action:manipulation;text-align:center;}
+.key-btn{padding:6px 2px;border:1.5px solid var(--border);border-radius:6px;background:var(--bg);color:var(--text2);font-size:13px;cursor:pointer;min-height:34px;touch-action:manipulation;text-align:center;}
 .key-btn:active{opacity:.7;}
-.key-btn.on{background:#e94560;border-color:#e94560;color:#fff;}
+.key-btn.on{background:var(--accent);border-color:var(--accent);color:#fff;}
 .time-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:3px;}
-.time-btn{padding:7px 2px;border:1.5px solid #2a2a45;border-radius:6px;background:#12121f;color:#dde;font-size:14px;cursor:pointer;min-height:34px;touch-action:manipulation;text-align:center;}
-.time-btn.on{background:#e94560;border-color:#e94560;color:#fff;}
+.time-btn{padding:7px 2px;border:1.5px solid var(--border);border-radius:6px;background:var(--bg);color:var(--text2);font-size:14px;cursor:pointer;min-height:34px;touch-action:manipulation;text-align:center;}
+.time-btn.on{background:var(--accent);border-color:var(--accent);color:#fff;}
 
 /* Files / projects */
 #proj-list{display:flex;flex-direction:column;gap:4px;max-height:150px;overflow-y:auto;}
@@ -169,35 +252,40 @@ body { font-family:-apple-system,BlinkMacSystemFont,sans-serif; background:#1212
 /* Brand wordmark — shown on the Songs tab rather than the always-visible
    toolbar, so it never competes with the score for space on a small screen. */
 #brand{text-align:center;padding:6px 0 12px;}
-#brand-mark{font-size:26px;font-weight:800;letter-spacing:.5px;background:linear-gradient(90deg,#2ecc71,#f0c040,#e94560);-webkit-background-clip:text;background-clip:text;color:transparent;}
-#brand-tag{font-size:10px;color:#667;letter-spacing:1.5px;text-transform:uppercase;margin-top:2px;}
+#brand-mark{font-size:26px;font-weight:800;letter-spacing:.5px;background:linear-gradient(90deg,var(--green),var(--gold),var(--accent));-webkit-background-clip:text;background-clip:text;color:transparent;}
+#brand-tag{font-size:10px;color:var(--muted2);letter-spacing:1.5px;text-transform:uppercase;margin-top:2px;}
 
 /* Diatonic chord palette — always visible */
-#chord-palette{flex-shrink:0;background:#0e0e1e;padding:4px 6px 3px;border-top:1px solid #2a2a45;}
+#chord-palette{flex-shrink:0;background:var(--sunk);padding:4px 6px 3px;border-top:1px solid var(--border);}
 #chord-palette-top{display:flex;align-items:center;gap:5px;margin-bottom:3px;}
-#chord-palette-label{font-size:11px;color:#667;letter-spacing:.5px;text-transform:uppercase;flex:1;}
+#chord-palette-label{font-size:11px;color:var(--muted2);letter-spacing:.5px;text-transform:uppercase;flex:1;}
 #diatonic-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:3px;}
-.dchord-btn{border:1.5px solid #333;border-radius:8px;cursor:pointer;min-height:44px;text-align:center;touch-action:manipulation;display:flex;flex-direction:column;overflow:hidden;user-select:none;}
+.dchord-btn{border:1.5px solid var(--border2);border-radius:8px;cursor:pointer;min-height:44px;text-align:center;touch-action:manipulation;display:flex;flex-direction:column;overflow:hidden;user-select:none;}
 .dchord-btn:active{opacity:.75;}
 .dchord-7{padding:3px 2px;font-size:10px;font-weight:700;border-bottom:1px solid rgba(255,255,255,.1);flex-shrink:0;letter-spacing:.3px;}
 .dchord-triad{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:2px 1px;}
 .dchord-roman{font-size:10px;line-height:1;opacity:.75;}
 .dchord-root{font-size:15px;font-weight:800;line-height:1.2;}
-.dc-tonic  {background:#0e3050;border-color:#2980b9;color:#7ec8e3;}
-.dc-tonic .dchord-7{background:#0a2040;}
-.dc-subdom {background:#2d1e00;border-color:#b8860b;color:#f0c040;}
-.dc-subdom .dchord-7{background:#1e1400;}
-.dc-dom    {background:#2d0a0a;border-color:#c0392b;color:#f08080;}
-.dc-dom .dchord-7{background:#1e0505;}
+/* Tonic / subdominant / dominant are derived from the key hue instead of
+   being three fixed palettes, so the chord grid turns with the circle of
+   fifths as you change key — the colour tells you where you are, not just
+   which function you're looking at. The offsets reproduce the original
+   blue/gold/red at C. */
+.dc-tonic  {background:hsl(var(--h-tonic) 70% var(--ch-bg-l));border-color:hsl(var(--h-tonic) 64% var(--ch-bd-l));color:hsl(var(--h-tonic) 62% var(--ch-fg-l));}
+.dc-tonic .dchord-7{background:hsl(var(--h-tonic) 74% var(--ch-7-l));}
+.dc-subdom {background:hsl(var(--h-subdom) 100% var(--ch-bg-l));border-color:hsl(var(--h-subdom) 85% var(--ch-bd-l));color:hsl(var(--h-subdom) 84% var(--ch-fg-l));}
+.dc-subdom .dchord-7{background:hsl(var(--h-subdom) 100% var(--ch-7-l));}
+.dc-dom    {background:hsl(var(--h-dom) 63% var(--ch-bg-l));border-color:hsl(var(--h-dom) 64% var(--ch-bd-l));color:hsl(var(--h-dom) 79% var(--ch-fg-l));}
+.dc-dom .dchord-7{background:hsl(var(--h-dom) 70% var(--ch-7-l));}
 
 /* Note grid */
-#note-grid{display:grid;grid-template-columns:repeat(8,1fr);gap:4px;padding:5px 7px calc(5px + env(safe-area-inset-bottom,0px));background:#16162a;flex-shrink:0;border-top:1px solid #2a2a45;}
+#note-grid{display:grid;grid-template-columns:repeat(8,1fr);gap:4px;padding:5px 7px calc(5px + env(safe-area-inset-bottom,0px));background:var(--surf);flex-shrink:0;border-top:1px solid var(--border);}
 .nbtn{padding:9px 2px;border:none;border-radius:9px;font-size:17px;font-weight:800;cursor:pointer;min-height:42px;color:#fff;touch-action:manipulation;user-select:none;display:flex;align-items:center;justify-content:center;}
 .nbtn:active{transform:scale(.91);}
-.np{background:#e94560;} .nr{background:#3a3f55;}
+.np{background:var(--accent);} .nr{background:var(--rest-btn);}
 .nr svg{width:22px;height:26px;}
 
-.hint{font-size:11.5px;line-height:1.35;color:#667;margin-top:4px;}
+.hint{font-size:11.5px;line-height:1.35;color:var(--muted2);margin-top:4px;}
 
 /* Record sheet — the MIDI capture settings used to sit permanently at the
    top of the Notes panel, taking 130px of its 207px even on a phone with no
@@ -205,31 +293,31 @@ body { font-family:-apple-system,BlinkMacSystemFont,sans-serif; background:#1212
    behind the ⏺ button rather than in front of the notes. */
 #rec-sheet{display:none;position:fixed;inset:0;z-index:900;background:rgba(5,6,12,.82);align-items:center;justify-content:center;padding:14px;}
 #rec-sheet.on{display:flex;}
-#rec-sheet-card{background:#20203a;border:2px solid #c0392b;border-radius:14px;padding:15px 17px;width:100%;max-width:400px;max-height:100%;overflow-y:auto;box-shadow:0 10px 34px rgba(0,0,0,.55);}
+#rec-sheet-card{background:var(--surf4);border:2px solid var(--rec);border-radius:14px;padding:15px 17px;width:100%;max-width:400px;max-height:100%;overflow-y:auto;box-shadow:0 10px 34px rgba(0,0,0,.55);}
 #rec-sheet-title{font-size:16px;font-weight:800;color:#fff;margin-bottom:9px;}
 #rec-sheet .hint{margin-bottom:8px;}
-#rec-status{font-size:12px;color:#ff8a8a;font-weight:700;min-height:16px;margin-bottom:4px;}
+#rec-status{font-size:12px;color:var(--rec-fg);font-weight:700;min-height:16px;margin-bottom:4px;}
 #rec-sheet-btns{display:flex;gap:7px;align-items:center;margin-top:10px;}
-#rec-start-btn{flex:1;background:#c0392b;border-color:#c0392b;color:#fff;font-weight:700;}
+#rec-start-btn{flex:1;background:var(--rec);border-color:var(--rec);color:#fff;font-weight:700;}
 #rec-start-btn:disabled{opacity:.4;}
 
 /* Guided tour overlay */
 #tour-overlay{position:fixed;inset:0;z-index:99999;}
 #tour-hole{position:absolute;border-radius:9px;box-shadow:0 0 0 9999px rgba(0,0,0,.74);transition:left .25s,top .25s,width .25s,height .25s;pointer-events:none;}
-#tour-card{position:fixed;z-index:100000;background:#20203a;border:2px solid #e94560;border-radius:14px;padding:15px 17px;box-shadow:0 10px 34px rgba(0,0,0,.55);overflow-y:auto;}
+#tour-card{position:fixed;z-index:100000;background:var(--surf4);border:2px solid var(--accent);border-radius:14px;padding:15px 17px;box-shadow:0 10px 34px rgba(0,0,0,.55);overflow-y:auto;}
 #tour-title{font-size:17px;font-weight:800;color:#fff;margin-bottom:6px;}
-#tour-text{font-size:14px;line-height:1.45;color:#d5d8e5;margin-bottom:11px;}
+#tour-text{font-size:14px;line-height:1.45;color:var(--text4);margin-bottom:11px;}
 #tour-dots{text-align:center;margin-bottom:11px;line-height:1;}
-#tour-btns{display:flex;align-items:center;gap:8px;position:sticky;bottom:0;background:#20203a;padding-top:8px;margin-top:4px;}
+#tour-btns{display:flex;align-items:center;gap:8px;position:sticky;bottom:0;background:var(--surf4);padding-top:8px;margin-top:4px;}
 #tour-btns button{padding:9px 15px;border:none;border-radius:9px;font-size:14px;font-weight:700;cursor:pointer;touch-action:manipulation;}
-#tour-skip{background:#2a2a44;color:#99a;}
-#tour-back{background:#2a2a44;color:#d5d8e5;}
-#tour-next{background:#e94560;color:#fff;}
+#tour-skip{background:var(--ctl2);color:var(--muted5);}
+#tour-back{background:var(--ctl2);color:var(--text4);}
+#tour-next{background:var(--accent);color:#fff;}
 </style>
 </head>
 <body>
 
-<div id="score-wrap"><div id="score-div" style="position:relative;"></div></div>
+<div id="score-wrap"><div id="score-div" style="position:relative;"></div><div id="clef-gutter"></div></div>
 
 <!-- Quick note edit — shown only when a note is selected on the staff, so
      changing its length/pitch never requires leaving the score to dig into
@@ -259,12 +347,12 @@ body { font-family:-apple-system,BlinkMacSystemFont,sans-serif; background:#1212
   <button class="tb undo"  id="undo-btn" onclick="undo()" title="Undo (Ctrl/Cmd+Z)">↶</button>
   <button class="tb undo"  id="redo-btn" onclick="redo()" title="Redo (Ctrl/Cmd+Shift+Z)">↷</button>
   <button class="tb clear" onclick="clearAll()" title="Clear all notes">✕</button>
-  <button class="tb" id="copy-toggle-btn" onclick="toggleCopyMode()" style="background:#2a2a40;color:#9bd;">✂</button>
-  <button class="tb" id="help-btn" onclick="startTour()" style="background:#2a2a40;color:#9bd;">?</button>
-  <button class="tb" id="collapse-btn" onclick="toggleControls()" style="background:#2a2a40;color:#9bd;" title="Hide/show controls">▼</button>
+  <button class="tb" id="copy-toggle-btn" onclick="toggleCopyMode()" style="background:var(--ctl);color:var(--sky);">✂</button>
+  <button class="tb" id="help-btn" onclick="startTour()" style="background:var(--ctl);color:var(--sky);">?</button>
+  <button class="tb" id="collapse-btn" onclick="toggleControls()" style="background:var(--ctl);color:var(--sky);" title="Hide/show controls">▼</button>
   <div id="bpm-wrap"><span>BPM</span><input type="number" id="bpm-inp" value="80" min="20" max="320"></div>
   <span class="pill" id="proj-pill" onclick="switchTab('proj')">Song</span>
-  <span class="pill" id="part-pill" onclick="switchTab('parts')" style="color:#f0c040;max-width:110px;overflow:hidden;text-overflow:ellipsis;" title="Instrument you're writing to — tap to switch">Treble · Piano</span>
+  <span class="pill" id="part-pill" onclick="switchTab('parts')" style="color:var(--gold);max-width:110px;overflow:hidden;text-overflow:ellipsis;" title="Instrument you're writing to — tap to switch">Treble · Piano</span>
   <span class="pill" id="key-pill" onclick="switchTab('score')">C</span>
   <span class="pill on" id="audition-pill" onclick="toggleAudition()" title="Hear each note as you enter or edit it">🔊 Audition</span>
   <span class="pill" id="midi-pill">No MIDI</span>
@@ -284,24 +372,24 @@ body { font-family:-apple-system,BlinkMacSystemFont,sans-serif; background:#1212
 
 <!-- Notes panel -->
 <div id="panel-notes" class="panel on">
-  <div id="copy-section" style="display:none;background:#0d2f1f;border-radius:8px;padding:5px 7px;margin-bottom:4px;border:1.5px solid #27ae60;">
+  <div id="copy-section" style="display:none;background:var(--ok-bg);border-radius:8px;padding:5px 7px;margin-bottom:4px;border:1.5px solid var(--ok);">
     <div class="row">
-      <span id="copy-status" style="font-size:11px;color:#6fcf97;font-weight:700;flex:1"></span>
+      <span id="copy-status" style="font-size:11px;color:var(--ok-fg);font-weight:700;flex:1"></span>
       <button class="chip on3" id="copy-btn" onclick="copySelectedRange()" style="font-size:10px;display:none">✓ Copy</button>
       <button class="chip" onclick="cancelCopyRange()" style="font-size:10px">✗ Cancel</button>
     </div>
   </div>
-  <div id="paste-section" style="display:none;background:#0d1f35;border-radius:8px;padding:5px 7px;margin-bottom:4px;border:1.5px solid #2980b9;">
+  <div id="paste-section" style="display:none;background:var(--info-bg);border-radius:8px;padding:5px 7px;margin-bottom:4px;border:1.5px solid var(--info);">
     <div class="row">
-      <span id="paste-status" style="font-size:11px;color:#5dade2;font-weight:700;flex:1"></span>
+      <span id="paste-status" style="font-size:11px;color:var(--info-fg);font-weight:700;flex:1"></span>
       <button class="chip on2" onclick="pasteClipboard()" style="font-size:10px">📋 Paste</button>
       <button class="chip" onclick="clearClipboard()" style="font-size:10px">✗ Clear</button>
     </div>
   </div>
   <div id="edit-section">
     <div class="row">
-      <span style="font-size:9px;color:#2980b9;font-weight:700;flex-shrink:0">SELECTED:</span>
-      <span id="sel-note-label" style="font-size:12px;color:#5dade2;font-weight:700;min-width:32px"></span>
+      <span style="font-size:9px;color:var(--info);font-weight:700;flex-shrink:0">SELECTED:</span>
+      <span id="sel-note-label" style="font-size:12px;color:var(--info-fg);font-weight:700;min-width:32px"></span>
       <button class="chip" onclick="moveSelNote(1)" title="Up semitone">↑½</button>
       <button class="chip" onclick="moveSelNote(-1)" title="Down semitone">↓½</button>
       <button class="chip" onclick="moveSelNote(2)" title="Up whole step">↑W</button>
@@ -311,8 +399,8 @@ body { font-family:-apple-system,BlinkMacSystemFont,sans-serif; background:#1212
       <button class="chip" onclick="setSelAcc('#')">♯</button>
       <button class="chip" onclick="setSelAcc('b')">♭</button>
       <button class="chip" onclick="setSelAcc('n')">♮</button>
-      <button class="chip" onclick="removeSelected()" style="color:#e74c3c;border-color:#e74c3c;font-weight:700">🗑 Delete</button>
-      <button class="chip" onclick="makeRest()" style="color:#e67e22;border-color:#e67e22;font-size:11px">⇢Rest</button>
+      <button class="chip" onclick="removeSelected()" style="color:var(--danger);border-color:var(--danger);font-weight:700">🗑 Delete</button>
+      <button class="chip" onclick="makeRest()" style="color:var(--warn);border-color:var(--warn);font-size:11px">⇢Rest</button>
     </div>
     <div class="hint">↑½/↓½/♯/♭ change this note's pitch, ↑8va/↓8va move it a whole octave; the Dur row below changes its length. New notes you type land right after it. 🗑 Delete removes it; ⇢Rest turns it into a rest (same timing). Lyrics/dynamics/articulations are in the ✎ Markings tab.</div>
   </div>
@@ -331,7 +419,7 @@ body { font-family:-apple-system,BlinkMacSystemFont,sans-serif; background:#1212
     <button class="chip" onclick="changeTupletN(1)" style="font-size:13px;padding:6px 8px" title="More notes per tuplet">+</button>
     <span class="lbl" style="margin-left:4px">Nudge</span>
     <button class="chip" onclick="changeOct(-1)">−</button>
-    <span id="oct-val" style="font-size:15px;font-weight:700;color:#fff;min-width:20px;text-align:center">±0</span>
+    <span id="oct-val" style="font-size:15px;font-weight:700;color:var(--text);min-width:20px;text-align:center">±0</span>
     <button class="chip" onclick="changeOct(1)">+</button>
   </div>
   <div class="row" id="acc-row">
@@ -348,7 +436,7 @@ body { font-family:-apple-system,BlinkMacSystemFont,sans-serif; background:#1212
 
 <!-- Parts panel -->
 <div id="panel-parts" class="panel">
-  <div style="font-size:9px;color:#556;margin-bottom:3px">TAP TO SELECT ACTIVE PART FOR NOTE ENTRY</div>
+  <div style="font-size:9px;color:var(--muted2);margin-bottom:3px">TAP TO SELECT ACTIVE PART FOR NOTE ENTRY</div>
   <div id="parts-list"></div>
   <div class="sec">Add new part</div>
   <div class="cat-grid" id="cat-grid"></div>
@@ -368,9 +456,9 @@ body { font-family:-apple-system,BlinkMacSystemFont,sans-serif; background:#1212
   <div class="hint" style="margin-bottom:6px">If a note is selected on the staff, these apply to that note. Otherwise they'll attach to the next note you enter.</div>
 
   <div id="sub-lyrics" class="subpanel on">
-    <div class="row"><span style="font-size:10px;color:#778">Syllable:</span></div>
-    <input type="text" id="lyric-inp" style="width:100%;padding:7px 9px;background:#12121f;border:1.5px solid #2a2a45;border-radius:7px;color:#dde;font-size:14px;" placeholder="Type syllable…" maxlength="24">
-    <div class="hint"><span onclick="clearPending()" style="color:#e94560;cursor:pointer">Clear all pending</span></div>
+    <div class="row"><span style="font-size:10px;color:var(--muted3)">Syllable:</span></div>
+    <input type="text" id="lyric-inp" style="width:100%;padding:7px 9px;background:var(--bg);border:1.5px solid var(--border);border-radius:7px;color:var(--text2);font-size:14px;" placeholder="Type syllable…" maxlength="24">
+    <div class="hint"><span onclick="clearPending()" style="color:var(--accent);cursor:pointer">Clear all pending</span></div>
   </div>
 
   <div id="sub-dyn" class="subpanel">
@@ -390,12 +478,12 @@ body { font-family:-apple-system,BlinkMacSystemFont,sans-serif; background:#1212
     </div>
     <div class="sec">Hairpins</div>
     <div class="hp-row">
-      <span style="font-size:10px;color:#aab;min-width:52px">Cresc &lt;</span>
+      <span style="font-size:10px;color:var(--muted4);min-width:52px">Cresc &lt;</span>
       <button class="chip on3" onclick="startHairpin('cresc')" style="font-size:10px">▸ Start</button>
       <button class="chip"     onclick="endHairpin('cresc')"  style="font-size:10px">▪ End</button>
     </div>
     <div class="hp-row">
-      <span style="font-size:10px;color:#aab;min-width:52px">Decresc &gt;</span>
+      <span style="font-size:10px;color:var(--muted4);min-width:52px">Decresc &gt;</span>
       <button class="chip on3" onclick="startHairpin('decresc')" style="font-size:10px">▸ Start</button>
       <button class="chip"     onclick="endHairpin('decresc')"  style="font-size:10px">▪ End</button>
     </div>
@@ -460,8 +548,8 @@ body { font-family:-apple-system,BlinkMacSystemFont,sans-serif; background:#1212
       <button class="chip on" id="grace-8"  onclick="setGraceDur('8')">♪ 8th</button>
       <button class="chip"    id="grace-16" onclick="setGraceDur('16')">♬ 16th</button>
     </div>
-    <div id="grace-pending" style="font-size:10px;color:#e94560;min-height:14px;"></div>
-    <div class="hint">Turn this on, tap letters below to queue grace notes (1 tap = flam, 2 = drag, 3 = ruff, or add more), then turn it back off and tap the main note — the queue attaches automatically. <span onclick="clearGraceQueue()" style="color:#e94560;cursor:pointer">Clear queue</span></div>
+    <div id="grace-pending" style="font-size:10px;color:var(--accent);min-height:14px;"></div>
+    <div class="hint">Turn this on, tap letters below to queue grace notes (1 tap = flam, 2 = drag, 3 = ruff, or add more), then turn it back off and tap the main note — the queue attaches automatically. <span onclick="clearGraceQueue()" style="color:var(--accent);cursor:pointer">Clear queue</span></div>
 
     <div class="sec" style="margin-top:8px">Sticking</div>
     <div class="row">
@@ -499,6 +587,7 @@ body { font-family:-apple-system,BlinkMacSystemFont,sans-serif; background:#1212
   <div id="brand"><div id="brand-mark">MōdScore</div><div id="brand-tag">Mobile Music Notation</div></div>
   <div class="row" style="gap:6px">
     <button class="chip on2" onclick="newProjectPrompt()" style="font-size:11px">+ New Song</button>
+    <button class="chip" id="theme-btn" onclick="toggleTheme()" style="font-size:11px" title="Switch between the dark and light interface">☀ Light mode</button>
   </div>
   <div class="sec">Backup — save a song file to your device</div>
   <div class="row" style="gap:6px">
@@ -532,7 +621,7 @@ body { font-family:-apple-system,BlinkMacSystemFont,sans-serif; background:#1212
   </div>
   <div id="diatonic-grid"></div>
   <div id="pending-row" style="display:none;align-items:center;gap:5px;margin-top:3px;">
-    <span id="pending-display" style="font-size:10px;color:#e94560;flex:1;min-height:14px;"></span>
+    <span id="pending-display" style="font-size:10px;color:var(--accent);flex:1;min-height:14px;"></span>
     <button class="chip on3" onclick="commitChord()" style="font-size:10px">✓ Add</button>
     <button class="chip"     onclick="cancelChord()" style="font-size:10px">✗</button>
   </div>
@@ -557,7 +646,7 @@ body { font-family:-apple-system,BlinkMacSystemFont,sans-serif; background:#1212
 <div id="rec-sheet">
   <div id="rec-sheet-card">
     <div id="rec-sheet-title">⏺ Record from a MIDI keyboard</div>
-    <div id="rec-no-midi" class="hint" style="color:#ff8a8a;display:none">No MIDI keyboard detected. Connect one and it'll be picked up automatically — the MIDI pill in the toolbar turns green.</div>
+    <div id="rec-no-midi" class="hint" style="color:var(--rec-fg);display:none">No MIDI keyboard detected. Connect one and it'll be picked up automatically — the MIDI pill in the toolbar turns green.</div>
     <div class="row">
       <span class="lbl">Grid</span>
       <button class="chip rec-grid-btn" data-grid="q"   onclick="setRecGrid('q')"   style="font-size:11px">♩</button>
@@ -575,8 +664,23 @@ body { font-family:-apple-system,BlinkMacSystemFont,sans-serif; background:#1212
   </div>
 </div>
 
-<script src="https://cdn.jsdelivr.net/npm/vexflow@4.2.2/build/cjs/vexflow.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/tone@14.7.77/build/Tone.js"></script>
+<!-- Vendored rather than pulled from a CDN (VexFlow 4.2.2, Tone 14.7.77, both
+     MIT). These were loading from jsdelivr, and when that fetch failed the
+     page rendered as a blank sheet with every button silently dead — no
+     error, nothing. A phone on a patchy connection is exactly the case this
+     app has to survive, and now it works offline too. -->
+<script src="lib/vexflow.js"></script>
+<script src="lib/Tone.js"></script>
+<script>
+// A missing engine used to be invisible; say so instead of rendering nothing.
+if(typeof Vex==='undefined'||typeof Tone==='undefined'){
+  document.body.innerHTML='<div style="padding:28px;font:15px/1.5 -apple-system,BlinkMacSystemFont,sans-serif;color:var(--text)">'
+    +'<h2 style="color:var(--accent);margin-bottom:10px">MōdScore could not start</h2>'
+    +'<p>The notation and audio engines failed to load. If you opened this file directly from disk, serve the folder over HTTP instead — the <code>lib/</code> folder has to load alongside this page.</p>'
+    +'<p style="margin-top:10px"><a href="" onclick="location.reload();return false" style="color:var(--info-fg)">Reload</a></p></div>';
+  throw new Error('MōdScore: VexFlow/Tone failed to load');
+}
+</script>
 <script>
 // ═══════════════════════════════════════════════════════
 // Instruments
@@ -846,14 +950,48 @@ function updatePartPill(){
   const inst=IMAP[p.instId]||IMAP.piano;
   pill.textContent=p.name+' · '+inst.label;
 }
+// Position on the circle of fifths, keyed by the signature a key carries —
+// so a key and its relative minor (same signature) land on the same colour.
+const FIFTHS_OF_SIG={'C':0,'G':1,'D':2,'A':3,'E':4,'B':5,'F#':6,'Db':7,'Ab':8,'Eb':9,'Bb':10,'F':11};
+// Drives --kh, from which the chord palette's tonic/subdominant/dominant
+// colours are derived. One fifth = 30° of hue, so the palette walks the
+// colour wheel in step with the music walking the circle of fifths, and C
+// keeps the blue/gold/red the app has always had.
+function applyKeyHue(){
+  const sig=KMAP[currentKeyId]?.vfSig||'C';
+  const fifths=FIFTHS_OF_SIG[sig]??0;
+  document.documentElement.style.setProperty('--kh',((210+fifths*30)%360));
+}
 function setKey(kid){
   currentKeyId=kid;
   document.querySelectorAll('.key-btn').forEach(b=>b.classList.toggle('on',b.dataset.kid===kid));
   document.getElementById('key-pill').textContent=KMAP[kid]?.label||kid;
+  applyKeyHue();
   relabelNoteButtons();
   renderDiatonicChords();
   render();
 }
+
+// ── Theme ───────────────────────────────────────────────
+// Defaults to the OS preference on first run, then remembers whatever the
+// user picked.
+function applyTheme(light){
+  document.body.classList.toggle('light',!!light);
+  const btn=document.getElementById('theme-btn');
+  if(btn) btn.textContent=light?'☾ Dark mode':'☀ Light mode';
+  try{ localStorage.setItem('mn_theme',light?'light':'dark'); }catch(e){}
+}
+function toggleTheme(){ applyTheme(!document.body.classList.contains('light')); }
+function initTheme(){
+  let saved=null;
+  try{ saved=localStorage.getItem('mn_theme'); }catch(e){}
+  const prefersLight=window.matchMedia&&window.matchMedia('(prefers-color-scheme: light)').matches;
+  applyTheme(saved?saved==='light':prefersLight);
+}
+// Smooth scrolling is motion too — respect the OS setting for the staff's
+// auto-scroll the same way the stylesheet does for animations.
+const PREFERS_REDUCED_MOTION = !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+const SCROLL_BEHAVIOR = PREFERS_REDUCED_MOTION ? 'auto' : 'smooth';
 function setTimeSig(sig){
   currentTimeSig=TIME_SIGS.find(t=>t.sig===sig)||TIME_SIGS[0];
   document.querySelectorAll('.time-btn').forEach(b=>b.classList.toggle('on',b.dataset.sig===sig));
@@ -1277,7 +1415,7 @@ function scrollAfterEntry(){
     const pos=notePositions.find(p=>p.partIdx===apIdx && p.noteIdx===selectedNote.noteIdx);
     const wrap=document.getElementById('score-wrap');
     if(pos && (pos.x>wrap.scrollLeft+wrap.clientWidth-40 || pos.x<wrap.scrollLeft+40)){
-      wrap.scrollTo({left:Math.max(0,pos.x-wrap.clientWidth/2),top:wrap.scrollTop,behavior:'smooth'});
+      wrap.scrollTo({left:Math.max(0,pos.x-wrap.clientWidth/2),top:wrap.scrollTop,behavior:SCROLL_BEHAVIOR});
       return;
     }
     if(pos) return;
@@ -1818,10 +1956,63 @@ function render(){
   });
 
   renderCaret();
+  renderClefGutter();
   updatePartPill();
   maybeRecordHistory();
   scheduleAutosave();
 }
+
+// Draws the frozen clef+key overlay: one stave per part at the same vertical
+// geometry as the real score, so the glyphs line up exactly with the staff
+// lines scrolling behind them. Deliberately omits the time signature — that
+// applies at the start of the piece, and repeating it beside bar 30 would
+// assert a meter change that isn't there.
+let _gutterW=0;
+function renderClefGutter(){
+  const host=document.getElementById('clef-gutter');
+  if(!host)return;
+  host.innerHTML='';
+  if(!parts.length){ host.style.display='none'; return; }
+  const VF=Vex.Flow, {Renderer,Stave,StaveConnector}=VF;
+  const kd=KMAP[currentKeyId];
+  const numP=parts.length;
+  const PROBE=260;  // generous stave width; the host clips to what's used
+  try{
+    const renderer=new Renderer(host,Renderer.Backends.SVG);
+    renderer.resize(PROBE,TP+numP*PG+30);
+    const ctx=renderer.getContext();
+    let endX=0;
+    const staves=parts.map((p,pi)=>{
+      const inst=IMAP[p.instId]||IMAP['piano'];
+      const st=new Stave(10,TP+pi*PG,PROBE);
+      if(inst.staffLines===1)st.setConfigForLines([{visible:false},{visible:false},{visible:true},{visible:false},{visible:false}]);
+      st.addClef(partClefFor(p)).addKeySignature(kd.vfSig);
+      st.setContext(ctx).draw();
+      endX=Math.max(endX,st.getNoteStartX());
+      return st;
+    });
+    if(numP>=2) new StaveConnector(staves[0],staves[numP-1]).setType('singleLeft').setContext(ctx).draw();
+    _gutterW=Math.min(PROBE,Math.round(endX)+4);
+    host.style.width=_gutterW+'px';
+    host.style.height=(TP+numP*PG+30)+'px';
+  }catch(e){ host.innerHTML=''; _gutterW=0; }
+  syncClefGutter();
+}
+// Pins the overlay to the left edge of the scroll viewport. Absolute children
+// of the scroller scroll with the content, so left must track scrollLeft;
+// top stays 0 so it scrolls vertically with the staves it belongs to.
+function syncClefGutter(){
+  const wrap=document.getElementById('score-wrap');
+  const host=document.getElementById('clef-gutter');
+  if(!wrap||!host||!_gutterW)return;
+  const sl=wrap.scrollLeft;
+  // Below this the real clef is still on screen and the overlay would just
+  // be a smudged double image of it.
+  if(sl<=6){ host.style.display='none'; return; }
+  host.style.display='block';
+  host.style.left=sl+'px';
+}
+document.getElementById('score-wrap').addEventListener('scroll',syncClefGutter,{passive:true});
 
 // Keep the note just written visible — scroll the staff view only if it's
 // currently out of frame, so composing never requires manually scrolling right.
@@ -1832,7 +2023,7 @@ function scrollToNoteEnd(partIdx){
   const last=cands[cands.length-1];
   const margin=90;
   if(last.x+margin>wrap.scrollLeft+wrap.clientWidth || last.x<wrap.scrollLeft){
-    wrap.scrollTo({left:Math.max(0,last.x+margin-wrap.clientWidth),top:wrap.scrollTop,behavior:'smooth'});
+    wrap.scrollTo({left:Math.max(0,last.x+margin-wrap.clientWidth),top:wrap.scrollTop,behavior:SCROLL_BEHAVIOR});
   }
 }
 
@@ -1843,7 +2034,7 @@ function scrollToMeasure(mi){
   const wrap=document.getElementById('score-wrap');
   const tx=measureXs[mi];
   if(tx==null)return;
-  wrap.scrollTo({left:Math.max(0,tx-30),top:wrap.scrollTop,behavior:'smooth'});
+  wrap.scrollTo({left:Math.max(0,tx-30),top:wrap.scrollTop,behavior:SCROLL_BEHAVIOR});
 }
 
 function drawVoice(ctx,stave,noteData,mw,VF,partIdx,partOffset,clef){
@@ -2278,6 +2469,20 @@ function getMasterBus(){
 }
 
 const _samplerCache={}, _drumCache={};
+// The recorded instruments stream from tonejs.github.io. That fetch can fail
+// — offline, captive wifi, the host having a bad day — and a Sampler that
+// never loads simply plays nothing, so the app looked broken with no clue
+// why. Every instrument already carries an oscillator/envelope definition
+// for exactly this shape of sound, so fall back to synthesizing it: quieter
+// than the samples, but the score still plays.
+function buildSynthVoice(instId){
+  const inst=IMAP[instId]||IMAP['piano'];
+  return new Tone.PolySynth(Tone.Synth,{
+    oscillator:{type:inst.osc==='fm'||inst.osc==='membrane'||inst.osc==='noise'?'triangle':inst.osc},
+    envelope:{attack:inst.env.a,decay:inst.env.d,sustain:inst.env.s,release:inst.env.r},
+    volume:inst.vol,
+  }).connect(getMasterBus());
+}
 function getSampler(instId){
   const key=INST_SAMPLE[instId]||'piano';
   if(_samplerCache[key])return _samplerCache[key];
@@ -2285,8 +2490,20 @@ function getSampler(instId){
   const urls={};
   if(def.map)Object.assign(urls,def.map);
   else def.pitches.forEach(p=>{urls[p]=p.replace('#','s')+'.mp3';});
-  const s=new Tone.Sampler({urls,baseUrl:def.base,release:1,volume:-4}).connect(getMasterBus());
-  _samplerCache[key]=s;return s;
+  let fallback=null;
+  const s=new Tone.Sampler({urls,baseUrl:def.base,release:1,volume:-4,
+    onerror:()=>{ if(!fallback){ try{ fallback=buildSynthVoice(instId); }catch(e){} } },
+  }).connect(getMasterBus());
+  // Route each note to whichever voice can actually sound it right now, so a
+  // sample set that fails mid-session degrades instead of going silent.
+  const voice={
+    triggerAttackRelease:(n,d,t,v)=>{
+      const target=(s.loaded||!fallback)?s:fallback;
+      try{ target.triggerAttackRelease(n,d,t,v); }catch(e){}
+    },
+    releaseAll:()=>{ try{s.releaseAll?.();}catch(e){} try{fallback?.releaseAll?.();}catch(e){} },
+  };
+  _samplerCache[key]=voice;return voice;
 }
 function getDrum(instId){
   if(_drumCache[instId])return _drumCache[instId];
@@ -2395,7 +2612,10 @@ async function playScore(){
   let needLoad=false;
   usedInst.forEach(id=>{const inst=IMAP[id];if(inst&&inst.drumset){getDrumset();}else if(inst&&(inst.unpitched||inst.pitchedDrum)){getDrum(id);}else{const key=INST_SAMPLE[id]||'piano';if(!_samplerCache[key])needLoad=true;getSampler(id);}});
   if(needLoad){ if(playBtn)playBtn.textContent='…'; }
-  await Tone.loaded();
+  // Tone.loaded() neither resolves nor usefully rejects when a sample host is
+  // unreachable, which left the play button stuck on '…' forever. Cap the
+  // wait; getSampler()'s fallback voice covers whatever didn't arrive.
+  try{ await Promise.race([Tone.loaded(), new Promise(r=>setTimeout(r,4000))]); }catch(e){}
   if(playBtn)playBtn.textContent='▶';
   stopScore(true);playing=true;
   Tone.getTransport().bpm.value=bpm;Tone.getTransport().cancel();
@@ -2540,6 +2760,7 @@ function applyProject(d){
   document.querySelectorAll('.key-btn').forEach(b=>b.classList.toggle('on',b.dataset.kid===currentKeyId));
   document.querySelectorAll('.time-btn').forEach(b=>b.classList.toggle('on',b.dataset.sig===currentTimeSig.sig));
   document.getElementById('key-pill').textContent=KMAP[currentKeyId]?.label||currentKeyId;
+  applyKeyHue();   // loading a song in a new key repaints the chord palette
   relabelNoteButtons();
   renderDiatonicChords();
   selectedNote=null; caretGap=null; updateSelectionUI(); updateProjPill();
@@ -3070,7 +3291,7 @@ function tourStep(i){
 function positionTour(step,i){
   document.getElementById('tour-title').textContent=step.title;
   document.getElementById('tour-text').textContent=step.text;
-  document.getElementById('tour-dots').innerHTML=TOUR.map((_,k)=>'<span style="width:6px;height:6px;border-radius:50%;display:inline-block;margin:0 3px;background:'+(k===i?'#e94560':'#556')+'"></span>').join('');
+  document.getElementById('tour-dots').innerHTML=TOUR.map((_,k)=>'<span style="width:6px;height:6px;border-radius:50%;display:inline-block;margin:0 3px;background:'+(k===i?'var(--accent)':'var(--muted2)')+'"></span>').join('');
   document.getElementById('tour-back').style.visibility=(i===0)?'hidden':'visible';
   document.getElementById('tour-next').textContent=(i===TOUR.length-1)?'Done ✓':'Next ›';
   const hole=document.getElementById('tour-hole'), card=document.getElementById('tour-card');
@@ -3120,11 +3341,13 @@ function endTour(){
 // ═══════════════════════════════════════════════════════
 // Boot
 // ═══════════════════════════════════════════════════════
+initTheme();
 setAcc('key');clearArts();setDyn(null);setTempo(null);
 refreshDurIcons();
 relabelNoteButtons();
 renderDiatonicChords();
 initProjects();
+applyKeyHue();   // initProjects() may have loaded a song in another key
 render();
 initMidi();
 document.getElementById('bpm-inp').addEventListener('change',scheduleAutosave);
