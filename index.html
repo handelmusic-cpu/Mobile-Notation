@@ -2,20 +2,45 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<!-- viewport-fit=cover lets the layout reach under the notch/home indicator;
+     the env(safe-area-inset-*) padding below keeps content out from under it.
+     maximum-scale/user-scalable are deliberately NOT pinned: this is a
+     notation app, and pinch-zooming the staff to read or place a note is a
+     core need. Buttons carry touch-action:manipulation, so allowing zoom
+     does not reintroduce double-tap-zoom on the controls. -->
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <title>MōdScore</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%20100%20100'%3E%3Crect%20width='100'%20height='100'%20rx='22'%20fill='%2312121f'/%3E%3Ctext%20x='50'%20y='70'%20font-family='Arial,Helvetica,sans-serif'%20font-size='58'%20font-weight='800'%20fill='%23e94560'%20text-anchor='middle'%3EM%3C/text%3E%3C/svg%3E">
 <style>
 * { box-sizing:border-box; margin:0; padding:0; -webkit-tap-highlight-color:transparent; }
 html,body { height:100%; overflow:hidden; }
-body { font-family:-apple-system,BlinkMacSystemFont,sans-serif; background:#12121f; color:#e0e4ef; display:flex; flex-direction:column; height:100dvh; }
+body { font-family:-apple-system,BlinkMacSystemFont,sans-serif; background:#12121f; color:#e0e4ef; display:flex; flex-direction:column; height:100dvh;
+       padding-left:env(safe-area-inset-left,0px); padding-right:env(safe-area-inset-right,0px); }
 
-#score-wrap { flex:1 1 0; min-height:0; background:#f4efe4; overflow:auto; -webkit-overflow-scrolling:touch; padding:8px; cursor:pointer; }
+/* The staff is the point of the app, so it gets a guaranteed floor rather
+   than being the only flexible box in a stack of unshrinkable ones. */
+#score-wrap { flex:1 1 auto; min-height:38vh; background:#f4efe4; overflow:auto; -webkit-overflow-scrolling:touch; padding:8px; cursor:pointer; }
+
+/* Everything between the toolbar and the note grid. This wrapper is what
+   makes the layout survive a short screen: previously #tab-bar, .panel and
+   #chord-palette were each flex-shrink:0, so their combined height simply
+   overflowed the viewport — on a 390px-tall landscape phone the stack came
+   to 439px, the staff was squeezed to 16px, and the note buttons ended up
+   65px below the fold with no way to reach them (body is overflow:hidden).
+   Letting this one box scroll means the stack can never push anything off
+   screen again. */
+#control-rail { display:flex; flex-direction:column; flex:0 1 auto; min-height:0; overflow-y:auto; -webkit-overflow-scrolling:touch; }
 #quick-edit-bar{display:none;align-items:center;gap:4px;padding:5px 7px;background:#0d1f35;border-top:1.5px solid #2980b9;border-bottom:1.5px solid #2980b9;flex-shrink:0;overflow-x:auto;-webkit-overflow-scrolling:touch;}
 #qe-label{font-size:11px;font-weight:700;color:#5dade2;flex-shrink:0;margin-right:2px;white-space:nowrap;}
 
-#toolbar { display:flex; gap:4px; padding:5px 7px; background:#1e1e35; flex-shrink:0; align-items:center; flex-wrap:wrap; }
-.tb { flex:1; padding:8px 2px; border:none; border-radius:7px; font-size:14px; font-weight:700; cursor:pointer; max-width:60px; touch-action:manipulation; }
+/* One horizontally-scrolling row rather than a wrapping block. At 44px per
+   target, ~14 controls can never fit across a phone, and wrapping cost three
+   rows (~250px of a 667px screen) — vertical space the staff needs more. */
+#toolbar { display:flex; gap:4px; padding:calc(5px + env(safe-area-inset-top,0px)) 7px 5px; background:#1e1e35; flex-shrink:0; align-items:center; flex-wrap:nowrap; overflow-x:auto; -webkit-overflow-scrolling:touch; }
+/* 44x44 is the smallest reliably tappable target on a touch screen. These
+   used to be flex:1 with max-width:60px, which on a 375px-wide phone
+   collapsed them to 18px across — narrower than the glyph inside them. */
+.tb { flex:0 0 auto; padding:8px 4px; border:none; border-radius:7px; font-size:14px; font-weight:700; cursor:pointer; min-width:44px; min-height:44px; touch-action:manipulation; }
 .tb:active{opacity:.75;}
 .tb:disabled{opacity:.3;cursor:default;}
 .play{background:#2ecc71;color:#fff;} .stop{background:#e74c3c;color:#fff;}
@@ -29,15 +54,49 @@ body { font-family:-apple-system,BlinkMacSystemFont,sans-serif; background:#1212
 #proj-pill{color:#9bd;max-width:78px;overflow:hidden;text-overflow:ellipsis;}
 #audition-pill{color:#778;}
 #audition-pill.on{background:#27ae60;color:#fff;}
-#midi-pill{margin-left:auto;color:#778;}
+#midi-pill{color:#778;}
 #midi-pill.on{background:#27ae60;color:#fff;}
 
 #tab-bar{display:flex;background:#16162a;border-top:1px solid #2a2a45;flex-shrink:0;}
 .tab-btn{flex:1;padding:11px 1px;border:none;background:transparent;color:#778;font-size:11.5px;font-weight:700;cursor:pointer;border-bottom:2px solid transparent;white-space:nowrap;text-transform:uppercase;letter-spacing:.5px;}
 .tab-btn.on{color:#e94560;border-bottom-color:#e94560;}
 
-/* Collapsed controls (landscape / more staff room): hide the tall control stack. */
-.controls-collapsed #tab-bar, .controls-collapsed .panel, .controls-collapsed #chord-palette { display:none !important; }
+/* Collapsed controls (landscape / more staff room): hide the tall control
+   stack. The rail wraps the tab bar, every panel and the chord palette, so
+   hiding it covers all three. */
+.controls-collapsed #control-rail { display:none !important; }
+
+/* ── Landscape: side-by-side instead of one tall column ──────────────────
+   In landscape the scarce axis is height (~390px) and the plentiful one is
+   width (~844px), so stacking staff-above-controls is exactly backwards.
+   The staff takes the left, the control stack becomes a scrolling rail on
+   the right, and the two things you reach for constantly — transport and
+   the note buttons — stay pinned full-width at top and bottom. */
+@media (orientation:landscape) and (max-height:600px){
+  body{
+    display:grid;
+    /* Wide enough for the densest panel, never so wide it starves the staff
+       on a small landscape phone (667px). */
+    grid-template-columns:1fr clamp(260px,36%,330px);
+    grid-template-rows:auto auto 1fr auto;
+    grid-template-areas:"tbar tbar" "qedit qedit" "score rail" "ngrid ngrid";
+  }
+  #toolbar{ grid-area:tbar; }
+  /* Five labels have to share the rail's width — the portrait letter-spacing
+     is what pushes "SONGS" off the end. */
+  .tab-btn{ font-size:9.5px; letter-spacing:0; padding:11px 1px; }
+  #quick-edit-bar{ grid-area:qedit; }
+  #score-wrap{ grid-area:score; min-height:0; }
+  #control-rail{ grid-area:rail; border-left:1px solid #2a2a45; }
+  #note-grid{ grid-area:ngrid; }
+  /* Collapsing gives the staff the full width, and the grid must reclaim
+     the rail's column or the staff would keep a dead gutter beside it. */
+  body.controls-collapsed{ grid-template-columns:1fr 0; }
+  /* The rail is narrow — let the denser grids inside it reflow rather than
+     overflow horizontally. */
+  #diatonic-grid{ grid-template-columns:repeat(4,1fr); }
+  .dyn-grid,.key-major-grid,.key-minor-grid{ grid-template-columns:repeat(4,1fr); }
+}
 
 .panel{display:none;padding:6px 8px;background:#1a1a30;flex-shrink:0;}
 .panel.on{display:block;}
@@ -132,13 +191,27 @@ body { font-family:-apple-system,BlinkMacSystemFont,sans-serif; background:#1212
 .dc-dom .dchord-7{background:#1e0505;}
 
 /* Note grid */
-#note-grid{display:grid;grid-template-columns:repeat(8,1fr);gap:4px;padding:5px 7px;background:#16162a;flex-shrink:0;border-top:1px solid #2a2a45;}
+#note-grid{display:grid;grid-template-columns:repeat(8,1fr);gap:4px;padding:5px 7px calc(5px + env(safe-area-inset-bottom,0px));background:#16162a;flex-shrink:0;border-top:1px solid #2a2a45;}
 .nbtn{padding:9px 2px;border:none;border-radius:9px;font-size:17px;font-weight:800;cursor:pointer;min-height:42px;color:#fff;touch-action:manipulation;user-select:none;display:flex;align-items:center;justify-content:center;}
 .nbtn:active{transform:scale(.91);}
 .np{background:#e94560;} .nr{background:#3a3f55;}
 .nr svg{width:22px;height:26px;}
 
 .hint{font-size:11.5px;line-height:1.35;color:#667;margin-top:4px;}
+
+/* Record sheet — the MIDI capture settings used to sit permanently at the
+   top of the Notes panel, taking 130px of its 207px even on a phone with no
+   MIDI keyboard attached. It's a once-per-take setup step, so it belongs
+   behind the ⏺ button rather than in front of the notes. */
+#rec-sheet{display:none;position:fixed;inset:0;z-index:900;background:rgba(5,6,12,.82);align-items:center;justify-content:center;padding:14px;}
+#rec-sheet.on{display:flex;}
+#rec-sheet-card{background:#20203a;border:2px solid #c0392b;border-radius:14px;padding:15px 17px;width:100%;max-width:400px;max-height:100%;overflow-y:auto;box-shadow:0 10px 34px rgba(0,0,0,.55);}
+#rec-sheet-title{font-size:16px;font-weight:800;color:#fff;margin-bottom:9px;}
+#rec-sheet .hint{margin-bottom:8px;}
+#rec-status{font-size:12px;color:#ff8a8a;font-weight:700;min-height:16px;margin-bottom:4px;}
+#rec-sheet-btns{display:flex;gap:7px;align-items:center;margin-top:10px;}
+#rec-start-btn{flex:1;background:#c0392b;border-color:#c0392b;color:#fff;font-weight:700;}
+#rec-start-btn:disabled{opacity:.4;}
 
 /* Guided tour overlay */
 #tour-overlay{position:fixed;inset:0;z-index:99999;}
@@ -197,6 +270,10 @@ body { font-family:-apple-system,BlinkMacSystemFont,sans-serif; background:#1212
   <span class="pill" id="midi-pill">No MIDI</span>
 </div>
 
+<!-- Scrolling container for the whole control stack — see #control-rail in the
+     stylesheet for why this wrapper exists. -->
+<div id="control-rail">
+
 <div id="tab-bar">
   <button class="tab-btn on"  onclick="switchTab('notes')">Notes</button>
   <button class="tab-btn"     onclick="switchTab('parts')">Instruments</button>
@@ -220,21 +297,6 @@ body { font-family:-apple-system,BlinkMacSystemFont,sans-serif; background:#1212
       <button class="chip on2" onclick="pasteClipboard()" style="font-size:10px">📋 Paste</button>
       <button class="chip" onclick="clearClipboard()" style="font-size:10px">✗ Clear</button>
     </div>
-  </div>
-  <div id="record-section" style="background:#2f0d16;border-radius:8px;padding:5px 7px;margin-bottom:4px;border:1.5px solid #c0392b;">
-    <div class="row">
-      <span style="font-size:9px;color:#e74c3c;font-weight:700;flex-shrink:0">RECORD (MIDI):</span>
-      <span id="rec-status" style="font-size:11px;color:#ff8a8a;font-weight:700;flex:1"></span>
-    </div>
-    <div class="row" style="margin-top:2px">
-      <span class="lbl">Grid</span>
-      <button class="chip rec-grid-btn" data-grid="q"   onclick="setRecGrid('q')"   style="font-size:11px">♩</button>
-      <button class="chip rec-grid-btn" data-grid="8"   onclick="setRecGrid('8')"   style="font-size:11px">♪</button>
-      <button class="chip rec-grid-btn on" data-grid="16"  onclick="setRecGrid('16')"  style="font-size:11px">♬</button>
-      <button class="chip rec-grid-btn" data-grid="8t"  onclick="setRecGrid('8t')"  style="font-size:10px">♪3</button>
-      <button class="chip rec-grid-btn" data-grid="16t" onclick="setRecGrid('16t')" style="font-size:10px">♬3</button>
-    </div>
-    <div class="hint">Sets the quantize grid your playing snaps to. Tap ⏺ in the toolbar: 2 bars of metronome count-in, then it records whatever you play on your MIDI keyboard until you tap ⏺ again.</div>
   </div>
   <div id="edit-section">
     <div class="row">
@@ -476,6 +538,8 @@ body { font-family:-apple-system,BlinkMacSystemFont,sans-serif; background:#1212
   </div>
 </div>
 
+</div><!-- /#control-rail -->
+
 <!-- Note grid -->
 <div id="note-grid">
   <button class="nbtn np" onclick="handleScaleBtn(0)">C</button>
@@ -487,6 +551,28 @@ body { font-family:-apple-system,BlinkMacSystemFont,sans-serif; background:#1212
   <button class="nbtn np" onclick="handleScaleBtn(6)">B</button>
   <button class="nbtn np" id="hit-btn" onclick="enterPitch('B',null,4,null)" style="display:none;grid-column:span 7">Hit</button>
   <button class="nbtn nr" id="rest-btn" onclick="addRest()"></button>
+</div>
+
+<!-- MIDI record settings — opened by the ⏺ toolbar button. -->
+<div id="rec-sheet">
+  <div id="rec-sheet-card">
+    <div id="rec-sheet-title">⏺ Record from a MIDI keyboard</div>
+    <div id="rec-no-midi" class="hint" style="color:#ff8a8a;display:none">No MIDI keyboard detected. Connect one and it'll be picked up automatically — the MIDI pill in the toolbar turns green.</div>
+    <div class="row">
+      <span class="lbl">Grid</span>
+      <button class="chip rec-grid-btn" data-grid="q"   onclick="setRecGrid('q')"   style="font-size:11px">♩</button>
+      <button class="chip rec-grid-btn" data-grid="8"   onclick="setRecGrid('8')"   style="font-size:11px">♪</button>
+      <button class="chip rec-grid-btn on" data-grid="16"  onclick="setRecGrid('16')"  style="font-size:11px">♬</button>
+      <button class="chip rec-grid-btn" data-grid="8t"  onclick="setRecGrid('8t')"  style="font-size:10px">♪3</button>
+      <button class="chip rec-grid-btn" data-grid="16t" onclick="setRecGrid('16t')" style="font-size:10px">♬3</button>
+    </div>
+    <div class="hint">Sets the quantize grid your playing snaps to. Starting gives you 2 bars of metronome count-in, then it records whatever you play until you tap ⏺ again.</div>
+    <div id="rec-status"></div>
+    <div id="rec-sheet-btns">
+      <button class="chip" onclick="closeRecSheet()">Cancel</button>
+      <button class="chip" id="rec-start-btn" onclick="startRecordingFromSheet()">● Start</button>
+    </div>
+  </div>
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/vexflow@4.2.2/build/cjs/vexflow.js"></script>
@@ -1929,9 +2015,16 @@ async function initMidi(){
     const ma=await navigator.requestMIDIAccess();
     const pill=document.getElementById('midi-pill');
     const attach=inp=>{inp.onmidimessage=e=>handleMidiNoteEvent(e.data[0],e.data[1],e.data[2]);};
+    // If a keyboard is plugged in while the record sheet is open, re-run
+    // openRecSheet() so the "no MIDI" notice and disabled Start button
+    // update in place instead of going stale.
+    const markConnected=()=>{
+      pill.textContent='MIDI ●'; pill.classList.add('on');
+      if(document.getElementById('rec-sheet').classList.contains('on')) openRecSheet();
+    };
     ma.inputs.forEach(attach);
-    if(ma.inputs.size){pill.textContent='MIDI ●';pill.classList.add('on');}
-    ma.onstatechange=e=>{if(e.port.type==='input'&&e.port.state==='connected'){attach(e.port);pill.textContent='MIDI ●';pill.classList.add('on');}};
+    if(ma.inputs.size) markConnected();
+    ma.onstatechange=e=>{if(e.port.type==='input'&&e.port.state==='connected'){attach(e.port);markConnected();}};
   }catch(e){}
 }
 
@@ -1971,12 +2064,29 @@ function updateRecCountUI(n,total){
   if(status) status.textContent='Count-in '+n+' / '+total+'…';
 }
 
+// ⏺ opens the settings sheet rather than firing straight into a count-in —
+// the quantize grid is the one thing you want to check before a take, and it
+// no longer lives on screen where you could glance at it.
+function midiConnected(){
+  const pill=document.getElementById('midi-pill');
+  return !!(pill&&pill.classList.contains('on'));
+}
+function openRecSheet(){
+  const connected=midiConnected();
+  document.getElementById('rec-no-midi').style.display=connected?'none':'block';
+  document.getElementById('rec-start-btn').disabled=!connected;
+  document.getElementById('rec-status').textContent='';
+  document.getElementById('rec-sheet').classList.add('on');
+}
+function closeRecSheet(){ document.getElementById('rec-sheet').classList.remove('on'); }
+function startRecordingFromSheet(){
+  if(!midiConnected())return;
+  startRecording();
+}
 async function toggleRecord(){
   if(recState!=='idle'){ stopRecording(); return; }
   if(playing){ alert('Stop playback before recording.'); return; }
-  const pill=document.getElementById('midi-pill');
-  if(!pill||!pill.classList.contains('on')){ alert("Connect a MIDI keyboard first — the MIDI pill in the toolbar turns green once one is detected."); return; }
-  startRecording();
+  openRecSheet();
 }
 async function startRecording(){
   await Tone.start();
@@ -1999,6 +2109,9 @@ async function startRecording(){
     recState='recording';
     recStartSec=time;
     updateRecUI();
+    // Count-in is over — get the sheet out of the way so the staff is
+    // visible while you play. The pulsing ⏺ carries the recording state.
+    closeRecSheet();
   },countBeats*secPerBeat);
   recMetroId=Tone.getTransport().scheduleRepeat(time=>{
     if(recState!=='recording')return;
@@ -2022,6 +2135,7 @@ function stopRecording(){
   recActiveNotes={};
   recState='idle';
   updateRecUI();
+  closeRecSheet();  // covers stopping during the count-in, sheet still open
   if(wasRecording&&recEvents.length){
     const bpm=parseInt(document.getElementById('bpm-inp').value)||80;
     const notes=quantizeRecording(recEvents,recGrid,bpm);
