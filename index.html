@@ -1808,23 +1808,100 @@ function renderCaret(){
 // ═══════════════════════════════════════════════════════
 // Measure grouping & dynamic width
 // ═══════════════════════════════════════════════════════
+// Every writable duration, longest first, in quarter-beats — used to express
+// an arbitrary leftover span as real note values.
+const SPLIT_DURS=[
+  ['w',4],['hd',3],['h',2],['qd',1.5],['q',1],
+  ['8d',.75],['8',.5],['16d',.375],['16',.25],['32',.125],
+];
+// Break a span of beats into the fewest notated durations that add up to it,
+// longest first — 2.5 beats becomes a half tied to an eighth.
+function beatsToDurs(beats){
+  const out=[]; let left=beats;
+  for(const [d,v] of SPLIT_DURS){
+    while(left>=v-1e-6){ out.push(d); left-=v; }
+    if(left<=1e-6) break;
+  }
+  return out.length?out:['32'];
+}
+function durWithFlags(base,src){
+  const d=decomposeDur(src.dur);
+  // base already encodes its own dot; carry the rest marker across.
+  return base+(d.rest?'r':'');
+}
+// Groups a part's notes into measures.
+//
+// A note whose value runs past the end of the bar used to be dropped into the
+// bar whole, so a half note starting on beat 3 of 3/4 produced a four-beat
+// bar. Nothing rejected it — the VexFlow voice is in SOFT mode — so the bar
+// simply held more music than the time signature allows, every later bar in
+// that part slid out of step with the other staves, and notes ended up
+// crowding and crossing the barlines.
+//
+// Such a note is now split at the barline into tied pieces, which is how the
+// value has to be written anyway. The split is a *view* of the note stream,
+// recomputed on every render: durations reflow as soon as anything earlier
+// changes, so where the barlines fall can't be baked into the stored notes.
+//
+// Items carry srcIdx (the index of the note they came from) so selection,
+// tapping, hairpins and playback all still speak in terms of real notes
+// rather than pieces.
 function toMeasures(notes){
   const BMAX=currentTimeSig.beats;
-  const ms=[]; let cur=[],beats=0;
-  for(const n of notes){cur.push(n);beats+=noteBeats(n);if(beats>=BMAX-.001){ms.push(cur);cur=[];beats=0;}}
+  const ms=[]; let cur=[], beats=0;
+  const closeIfFull=()=>{ if(beats>=BMAX-.001){ ms.push(cur); cur=[]; beats=0; } };
+  notes.forEach((n,srcIdx)=>{
+    // Measure repeats and tuplet members are never split: a repeat glyph owns
+    // a whole bar by definition, and cutting a tuplet apart would destroy the
+    // ratio the group is drawn and played with.
+    const atomic=n.repeatBars||tupletNumOf(n.dur);
+    let left=noteBeats(n), first=true;
+    if(atomic){
+      cur.push({...n,srcIdx,tieFrom:false,tieTo:false,soundBeats:left});
+      beats+=left; closeIfFull(); return;
+    }
+    while(left>1e-6){
+      const space=BMAX-beats;
+      if(space<=1e-6){ ms.push(cur); cur=[]; beats=0; continue; }
+      if(left<=space+1e-6){
+        if(first){
+          // Untouched note — keep its own duration string so dots and rests
+          // survive exactly as written.
+          cur.push({...n,srcIdx,tieFrom:false,tieTo:false,soundBeats:left});
+        }else{
+          // Tail of a split. It has to be written as whatever is actually
+          // left, not the note's original value — carrying the full duration
+          // over was what made the following bar overfull in turn.
+          const tail=beatsToDurs(left);
+          tail.forEach((pd,k)=>{
+            cur.push({...n,dur:durWithFlags(pd,n),srcIdx,tieFrom:true,tieTo:k<tail.length-1,soundBeats:noteBeats(n)});
+          });
+        }
+        beats+=left; left=0;
+      }else{
+        // Fill what's left of this bar, then carry the remainder over.
+        const pieces=beatsToDurs(space);
+        pieces.forEach((pd,k)=>{
+          cur.push({...n,dur:durWithFlags(pd,n),srcIdx,tieFrom:!first||k>0,tieTo:true,soundBeats:noteBeats(n)});
+        });
+        beats+=space; left-=space; first=false;
+      }
+      closeIfFull();
+    }
+  });
   if(cur.length)ms.push(cur);
   return ms;
 }
 // Which measure (0-based) a given note index in a part falls into.
 function measureIndexOfNote(partIdx, noteIdx){
-  const notes=parts[partIdx]?.notes||[];
-  const BMAX=currentTimeSig.beats;
-  let mi=0, beats=0;
-  for(let i=0;i<noteIdx;i++){
-    beats+=noteBeats(notes[i]);
-    if(beats>=BMAX-.001){ mi++; beats=0; }
+  // Derived from toMeasures rather than re-deriving the accumulation, so a
+  // note that got split at a barline reports the bar it starts in and the two
+  // can never disagree.
+  const ms=toMeasures(parts[partIdx]?.notes||[]);
+  for(let mi=0;mi<ms.length;mi++){
+    if(ms[mi].some(it=>it.srcIdx===noteIdx)) return mi;
   }
-  return mi;
+  return Math.max(0,ms.length-1);
 }
 function toggleRepeatStart(){
   if(!selectedNote){ alert('Select a note first to mark its measure.'); return; }
@@ -1943,7 +2020,7 @@ function render(){
 }
 function drawScore(){
   const VF=Vex.Flow;
-  const{Renderer,Stave,StaveNote,Voice,Formatter,Accidental,StaveConnector,Beam,Annotation,Articulation,StaveHairpin,Dot,Barline}=VF;
+  const{Renderer,Stave,StaveNote,Voice,Formatter,Accidental,StaveConnector,Beam,Annotation,Articulation,StaveHairpin,StaveTie,Dot,Barline}=VF;
   const div=document.getElementById('score-div');
   div.innerHTML='';
   notePositions=[];
@@ -1976,6 +2053,7 @@ function drawScore(){
 
   const vfRefs=parts.map(()=>({}));
   const partOff=new Array(numP).fill(0);
+  pendingTieOut=[]; pendingTieIn=[];
 
   // Full layout first — every measure's x and width. This is pure arithmetic
   // and cheap; it's the drawing that costs, so the window below decides what
@@ -2031,7 +2109,7 @@ function drawScore(){
     staves.forEach((st,pi)=>{
       const noteData=allM[pi][mi]||[];
       const vfNotes=drawVoice(ctx,st,noteData,mw,VF,pi,partOff[pi],partClefs[pi]);
-      noteData.forEach((_,li)=>{if(vfNotes[li])vfRefs[pi][partOff[pi]+li]={vfNote:vfNotes[li],stave:st};});
+      noteData.forEach((it,li)=>{if(vfNotes[li])vfRefs[pi][(it.srcIdx!=null)?it.srcIdx:partOff[pi]+li]={vfNote:vfNotes[li],stave:st};});
       partOff[pi]+=noteData.length;
     });
     x+=mw;
@@ -2047,6 +2125,18 @@ function drawScore(){
         h.setContext(ctx).setStave(s.stave).draw();
       }catch(err){console.warn('Hairpin:',err.message);}
     });
+  });
+
+  // Ties that cross a barline: match each note leaving a bar with the same
+  // note arriving in the next one. Both ends exist only when both bars are
+  // inside the render window, which is why this runs after the whole loop.
+  pendingTieOut.forEach(o=>{
+    const i=pendingTieIn.find(v=>v.partIdx===o.partIdx&&v.srcIdx===o.srcIdx);
+    if(!i)return;
+    try{
+      new StaveTie({first_note:o.vfNote,last_note:i.vfNote,first_indices:[0],last_indices:[0]})
+        .setContext(ctx).draw();
+    }catch(e){}
   });
 
   // VexFlow reports note metrics in unscaled user units. Everything that
@@ -2066,6 +2156,7 @@ function drawScore(){
 // lines scrolling behind them. Deliberately omits the time signature — that
 // applies at the start of the piece, and repeating it beside bar 30 would
 // assert a meter change that isn't there.
+let pendingTieOut=[], pendingTieIn=[];
 let _gutterW=0;
 function renderClefGutter(){
   const host=document.getElementById('clef-gutter');
@@ -2283,7 +2374,7 @@ function drawVoice(ctx,stave,noteData,mw,VF,partIdx,partOffset,clef){
   let vfNotes;
   try{
     vfNotes=noteData.map((n,li)=>{
-      const globalIdx=partOffset+li;
+      const globalIdx=(n.srcIdx!=null)?n.srcIdx:partOffset+li;
       // A measure-repeat marker replaces the whole measure with one glyph —
       // give it a 'w' duration so it fills the voice like a full measure would.
       if(n.repeatBars) return new RepeatNote(n.repeatBars,{duration:'w'});
@@ -2363,11 +2454,26 @@ function drawVoice(ctx,stave,noteData,mw,VF,partIdx,partOffset,clef){
     voice.draw(ctx,stave);
     beams.forEach(b=>b.setContext(ctx).draw());
     tuplets.forEach(t=>{ try{ t.setContext(ctx).draw(); }catch(e){} });
+    // Ties between the pieces of a split note. Drawn here, per measure, for
+    // pieces that sit in the same bar; the ones that straddle a barline are
+    // stitched together in drawScore(), which can see both bars.
+    for(let li=0;li+1<noteData.length;li++){
+      if(noteData[li].tieTo && noteData[li+1].tieFrom && noteData[li].srcIdx===noteData[li+1].srcIdx){
+        try{ new VF.StaveTie({first_note:vfNotes[li],last_note:vfNotes[li+1],first_indices:[0],last_indices:[0]}).setContext(ctx).draw(); }catch(e){}
+      }
+    }
+    // The last piece of a bar that ties onward, and the first that ties back,
+    // are reported so drawScore() can join them across the barline.
+    noteData.forEach((it,li)=>{
+      if(!vfNotes[li])return;
+      if(it.tieTo&&li===noteData.length-1) pendingTieOut.push({partIdx,srcIdx:it.srcIdx,vfNote:vfNotes[li],stave});
+      if(it.tieFrom&&li===0) pendingTieIn.push({partIdx,srcIdx:it.srcIdx,vfNote:vfNotes[li],stave});
+    });
     vfNotes.forEach((vn,li)=>{
       try{
         const nx=vn.getAbsoluteX();
         const bb=vn.getBoundingBox?.();
-        notePositions.push({partIdx,noteIdx:partOffset+li,x:nx,y:bb?bb.y:0,h:bb?bb.h:80});
+        notePositions.push({partIdx,noteIdx:(noteData[li]&&noteData[li].srcIdx!=null)?noteData[li].srcIdx:partOffset+li,x:nx,y:bb?bb.y:0,h:bb?bb.h:80});
       }catch(ex){}
     });
   }catch(e){console.warn('Voice draw:',e.message);}
@@ -2913,7 +3019,12 @@ async function playScore(){
       const measureNotes=resolveMeasureNotes(allM[pi],mi);
       measureNotes.forEach(n=>{
         const secs=durSecs(n.dur,bpm);
-        if(!n.rest&&!n.repeatBars&&(n.midiVals||[]).length){
+        // A note split across a barline is drawn as tied pieces but must
+        // still sound once, for its whole value — so only the head of a tie
+        // is struck, and it is held for the note's full length rather than
+        // the length of the piece that happens to sit in this bar.
+        const soundSecs=(n.soundBeats!=null)?n.soundBeats*(60/bpm):secs;
+        if(!n.rest&&!n.repeatBars&&!n.tieFrom&&(n.midiVals||[]).length){
           const abs=t;
           const toneNotes=n.midiVals.map(m=>Tone.Frequency(m,'midi').toNote());
           const mainNotes=toneNotes.length===1?toneNotes[0]:toneNotes;
@@ -2937,7 +3048,7 @@ async function playScore(){
             // Plain seconds (not a Tone.js Time-string like '8n') so arbitrary
             // N-tuplet ratios play at the right length — Tone's own 't' shorthand
             // only understands the 2:3 triplet case.
-            if(abs>=cursorTime) Tone.getTransport().schedule(time=>fire(secs*0.94,time,1),'+'+(abs-cursorTime));
+            if(abs>=cursorTime) Tone.getTransport().schedule(time=>fire(soundSecs*0.94,time,1),'+'+(abs-cursorTime));
           }
         }
         t+=secs;
