@@ -86,6 +86,9 @@ body.light{
 }
 
 * { box-sizing:border-box; margin:0; padding:0; -webkit-tap-highlight-color:transparent; }
+/* Nothing showed keyboard focus before, which made the app unusable without a
+   pointer even though it has full keyboard note entry. */
+:focus-visible{ outline:2.5px solid var(--info-fg); outline-offset:2px; }
 html,body { height:100%; overflow:hidden; }
 body { font-family:-apple-system,BlinkMacSystemFont,sans-serif; background:var(--bg); color:var(--text); display:flex; flex-direction:column; height:100dvh;
        padding-left:env(safe-area-inset-left,0px); padding-right:env(safe-area-inset-right,0px); }
@@ -139,6 +142,7 @@ body { font-family:-apple-system,BlinkMacSystemFont,sans-serif; background:var(-
 #audition-pill.on{background:var(--ok);color:#fff;}
 #midi-pill{color:var(--muted3);}
 #midi-pill.on{background:var(--ok);color:#fff;}
+#save-warn{background:var(--danger);color:#fff;}
 
 #tab-bar{display:flex;background:var(--surf);border-top:1px solid var(--border);flex-shrink:0;}
 .tab-btn{flex:1;padding:11px 1px;border:none;background:transparent;color:var(--muted3);font-size:11.5px;font-weight:700;cursor:pointer;border-bottom:2px solid transparent;white-space:nowrap;text-transform:uppercase;letter-spacing:.5px;}
@@ -317,7 +321,7 @@ body { font-family:-apple-system,BlinkMacSystemFont,sans-serif; background:var(-
 </head>
 <body>
 
-<div id="score-wrap"><div id="score-div" style="position:relative;"></div><div id="clef-gutter"></div></div>
+<div id="score-wrap" role="region" aria-label="Music score"><div id="score-div" style="position:relative;"></div><div id="clef-gutter"></div></div>
 
 <!-- Quick note edit — shown only when a note is selected on the staff, so
      changing its length/pitch never requires leaving the score to dig into
@@ -356,6 +360,7 @@ body { font-family:-apple-system,BlinkMacSystemFont,sans-serif; background:var(-
   <span class="pill" id="key-pill" onclick="switchTab('score')">C</span>
   <span class="pill on" id="audition-pill" onclick="toggleAudition()" title="Hear each note as you enter or edit it">🔊 Audition</span>
   <span class="pill" id="midi-pill">No MIDI</span>
+  <span class="pill" id="save-warn" onclick="switchTab('proj')" role="alert" title="Autosave failed — tap to open Songs and save a copy to your device" style="display:none">⚠ Not saved</span>
 </div>
 
 <!-- Scrolling container for the whole control stack — see #control-rail in the
@@ -374,14 +379,14 @@ body { font-family:-apple-system,BlinkMacSystemFont,sans-serif; background:var(-
 <div id="panel-notes" class="panel on">
   <div id="copy-section" style="display:none;background:var(--ok-bg);border-radius:8px;padding:5px 7px;margin-bottom:4px;border:1.5px solid var(--ok);">
     <div class="row">
-      <span id="copy-status" style="font-size:11px;color:var(--ok-fg);font-weight:700;flex:1"></span>
+      <span id="copy-status" aria-live="polite" style="font-size:11px;color:var(--ok-fg);font-weight:700;flex:1"></span>
       <button class="chip on3" id="copy-btn" onclick="copySelectedRange()" style="font-size:10px;display:none">✓ Copy</button>
       <button class="chip" onclick="cancelCopyRange()" style="font-size:10px">✗ Cancel</button>
     </div>
   </div>
   <div id="paste-section" style="display:none;background:var(--info-bg);border-radius:8px;padding:5px 7px;margin-bottom:4px;border:1.5px solid var(--info);">
     <div class="row">
-      <span id="paste-status" style="font-size:11px;color:var(--info-fg);font-weight:700;flex:1"></span>
+      <span id="paste-status" aria-live="polite" style="font-size:11px;color:var(--info-fg);font-weight:700;flex:1"></span>
       <button class="chip on2" onclick="pasteClipboard()" style="font-size:10px">📋 Paste</button>
       <button class="chip" onclick="clearClipboard()" style="font-size:10px">✗ Clear</button>
     </div>
@@ -487,7 +492,7 @@ body { font-family:-apple-system,BlinkMacSystemFont,sans-serif; background:var(-
       <button class="chip on3" onclick="startHairpin('decresc')" style="font-size:10px">▸ Start</button>
       <button class="chip"     onclick="endHairpin('decresc')"  style="font-size:10px">▪ End</button>
     </div>
-    <div id="hp-status"></div>
+    <div id="hp-status" aria-live="polite"></div>
   </div>
 
   <div id="sub-art" class="subpanel">
@@ -548,7 +553,7 @@ body { font-family:-apple-system,BlinkMacSystemFont,sans-serif; background:var(-
       <button class="chip on" id="grace-8"  onclick="setGraceDur('8')">♪ 8th</button>
       <button class="chip"    id="grace-16" onclick="setGraceDur('16')">♬ 16th</button>
     </div>
-    <div id="grace-pending" style="font-size:10px;color:var(--accent);min-height:14px;"></div>
+    <div id="grace-pending" aria-live="polite" style="font-size:10px;color:var(--accent);min-height:14px;"></div>
     <div class="hint">Turn this on, tap letters below to queue grace notes (1 tap = flam, 2 = drag, 3 = ruff, or add more), then turn it back off and tap the main note — the queue attaches automatically. <span onclick="clearGraceQueue()" style="color:var(--accent);cursor:pointer">Clear queue</span></div>
 
     <div class="sec" style="margin-top:8px">Sticking</div>
@@ -656,7 +661,7 @@ body { font-family:-apple-system,BlinkMacSystemFont,sans-serif; background:var(-
       <button class="chip rec-grid-btn" data-grid="16t" onclick="setRecGrid('16t')" style="font-size:10px">♬3</button>
     </div>
     <div class="hint">Sets the quantize grid your playing snaps to. Starting gives you 2 bars of metronome count-in, then it records whatever you play until you tap ⏺ again.</div>
-    <div id="rec-status"></div>
+    <div id="rec-status" aria-live="polite"></div>
     <div id="rec-sheet-btns">
       <button class="chip" onclick="closeRecSheet()">Cancel</button>
       <button class="chip" id="rec-start-btn" onclick="startRecordingFromSheet()">● Start</button>
@@ -828,7 +833,7 @@ let selectedNote=null;
 // index is "insert before notes[index]". Mutually exclusive with selectedNote;
 // both null = append at the end of the active part.
 let caretGap=null;
-let measureXs=[], measureBeats=[];
+let measureXs=[], measureBeats=[], measureWs=[];
 // Repeats are a whole-piece structural property (the ensemble repeats
 // together), not per-part — measure indices where a repeat barline draws.
 let repeatStartMeasures=[], repeatEndMeasures=[];
@@ -1872,7 +1877,58 @@ function calcMW(allM, mi){
 // ═══════════════════════════════════════════════════════
 // Rendering
 // ═══════════════════════════════════════════════════════
+// How much off-screen music to keep drawn either side of the viewport, in
+// screenfuls. Enough that ordinary scrolling and note entry stay ahead of the
+// window, without paying to draw the whole piece.
+const RENDER_MARGIN=1.5;
+// The measure the user is working in. It is drawn no matter where the score is
+// scrolled, so the code that runs straight after a render — scrollToNoteEnd(),
+// renderCaret(), the tap hit-test — always finds the note it just placed.
+function focusMeasureIndex(){
+  try{
+    if(selectedNote) return measureIndexOfNote(selectedNote.partIdx,selectedNote.noteIdx);
+    if(caretGap) return measureIndexOfNote(caretGap.partIdx,Math.max(0,caretGap.index-1));
+    const n=parts[apIdx]?.notes.length||0;
+    return n?measureIndexOfNote(apIdx,n-1):0;
+  }catch(e){ return 0; }
+}
+// Which measures are worth painting, given the scroll position. Measure x
+// positions come from the full layout, so the SVG keeps its true width and
+// scrolling geometry is identical whether or not a measure was drawn.
+function measureWindow(measureXs,mws,numM){
+  const wrap=document.getElementById('score-wrap');
+  const cw=wrap?.clientWidth||900, sl=wrap?.scrollLeft||0;
+  const lo=sl-cw*RENDER_MARGIN, hi=sl+cw*(1+RENDER_MARGIN);
+  let first=numM, last=-1;
+  for(let mi=0;mi<numM;mi++){
+    const x0=measureXs[mi], x1=x0+mws[mi];
+    if(x1>=lo && x0<=hi){ if(mi<first)first=mi; if(mi>last)last=mi; }
+  }
+  if(last<0){ first=0; last=Math.min(numM-1,0); }
+  // The cursor's measure is kept drawn as a separate small band, not by
+  // stretching the visible range to reach it — with the cursor at bar 90 and
+  // the view at bar 1, merging the two would mean drawing the whole piece.
+  const fm=focusMeasureIndex();
+  const fFirst=Math.max(0,Math.min(numM-1,fm-1)), fLast=Math.max(0,Math.min(numM-1,fm+1));
+  return {first,last,fFirst,fLast};
+}
+function inWindow(win,mi){
+  return (mi>=win.first&&mi<=win.last)||(mi>=win.fFirst&&mi<=win.fLast);
+}
+let _lastWindow='';
+const windowKey=w=>w.first+':'+w.last+':'+w.fFirst+':'+w.fLast;
+// Paint only. render() is for "the music changed"; this is for "the view
+// moved", and must not touch undo history or autosave.
+function redraw(){ drawScore(); renderCaret(); }
 function render(){
+  drawScore();
+  renderCaret();
+  renderClefGutter();
+  updatePartPill();
+  maybeRecordHistory();
+  scheduleAutosave();
+}
+function drawScore(){
   const VF=Vex.Flow;
   const{Renderer,Stave,StaveNote,Voice,Formatter,Accidental,StaveConnector,Beam,Annotation,Articulation,StaveHairpin,Dot,Barline}=VF;
   const div=document.getElementById('score-div');
@@ -1904,11 +1960,30 @@ function render(){
   const vfRefs=parts.map(()=>({}));
   const partOff=new Array(numP).fill(0);
 
+  // Full layout first — every measure's x and width. This is pure arithmetic
+  // and cheap; it's the drawing that costs, so the window below decides what
+  // to paint while the geometry stays complete for scrolling and playback.
+  {
+    let lx=10;
+    for(let mi=0;mi<numM;mi++){ measureXs.push(lx); lx+=(mi===0?mws[mi]+FX:mws[mi]); }
+  }
+  measureWs=mws.map((w,i)=>i===0?w+FX:w);
+  const win=measureWindow(measureXs,measureWs,numM);
+  _lastWindow=windowKey(win);
+
   let x=10;
   for(let mi=0;mi<numM;mi++){
     const first=mi===0;
     const mw=first?mws[mi]+FX:mws[mi];
-    measureXs.push(x);
+
+    // Outside the window: skip the drawing entirely, but keep each part's
+    // running note offset advancing, or every noteIdx after this measure
+    // would be wrong.
+    if(!inWindow(win,mi)){
+      parts.forEach((p,pi)=>{ partOff[pi]+=(allM[pi][mi]||[]).length; });
+      x+=mw;
+      continue;
+    }
 
     const staves=parts.map((p,pi)=>{
       const inst=IMAP[p.instId]||IMAP['piano'];
@@ -2012,7 +2087,22 @@ function syncClefGutter(){
   host.style.display='block';
   host.style.left=sl+'px';
 }
-document.getElementById('score-wrap').addEventListener('scroll',syncClefGutter,{passive:true});
+// Scrolling moves the render window, so the staff has to be repainted as new
+// measures come into range — but only when the window actually changes, and
+// never through render() (that would spam undo history and autosave with
+// entries for merely looking at the score).
+let _scrollRaf=0;
+function onScoreScroll(){
+  syncClefGutter();
+  if(_scrollRaf)return;
+  _scrollRaf=requestAnimationFrame(()=>{
+    _scrollRaf=0;
+    if(!measureXs.length||!measureWs.length)return;
+    const w=measureWindow(measureXs,measureWs,measureXs.length);
+    if(windowKey(w)!==_lastWindow) redraw();
+  });
+}
+document.getElementById('score-wrap').addEventListener('scroll',onScoreScroll,{passive:true});
 
 // Keep the note just written visible — scroll the staff view only if it's
 // currently out of frame, so composing never requires manually scrolling right.
@@ -2732,7 +2822,30 @@ function serializeProject(){
     repeatEndMeasures:repeatEndMeasures.slice()
   };
 }
-function saveAll(){ try{ localStorage.setItem('mn_projects',JSON.stringify(projects)); localStorage.setItem('mn_current',currentProjId||''); }catch(e){} }
+// Autosave used to swallow every error, including the QuotaExceededError you
+// get once browser storage fills up. The Songs tab promises your work is
+// saved in the browser, so a silent failure there is silent data loss — the
+// one outcome this app must never produce quietly.
+let saveFailed=false, saveFailAlerted=false;
+function updateSaveWarn(){
+  const el=document.getElementById('save-warn');
+  if(el) el.style.display=saveFailed?'inline-block':'none';
+}
+function saveAll(){
+  try{
+    localStorage.setItem('mn_projects',JSON.stringify(projects));
+    localStorage.setItem('mn_current',currentProjId||'');
+    if(saveFailed){ saveFailed=false; updateSaveWarn(); }
+  }catch(e){
+    if(!saveFailed){ saveFailed=true; updateSaveWarn(); }
+    // Once per session — the pill carries the state from then on, and an
+    // alert on every keystroke would be worse than the problem.
+    if(!saveFailAlerted){
+      saveFailAlerted=true;
+      setTimeout(()=>alert("This song can't be auto-saved — your browser's storage for this site is full.\n\nYour work is still here for now, but it won't survive a reload. Use Songs → “⇩ Save to device” to keep a copy."),0);
+    }
+  }
+}
 function scheduleAutosave(){
   clearTimeout(autosaveT);
   autosaveT=setTimeout(()=>{
@@ -3341,6 +3454,54 @@ function endTour(){
 // ═══════════════════════════════════════════════════════
 // Boot
 // ═══════════════════════════════════════════════════════
+// ── Accessible names ────────────────────────────────────
+// 19 controls were glyph-only or a bare SVG with no text, title or label, so
+// a screen reader announced them as "button" and nothing else. Applied here
+// rather than inline so the wording stays in one place — several of these
+// buttons have their visible glyph rewritten by refreshDurIcons().
+const ARIA_LABELS={
+  'd-w':'Whole note','d-h':'Half note','d-q':'Quarter note','d-8':'Eighth note',
+  'd-16':'Sixteenth note','d-32':'Thirty-second note','d-dot':'Dotted note',
+  'qe-d-w':'Whole note','qe-d-h':'Half note','qe-d-q':'Quarter note','qe-d-8':'Eighth note',
+  'qe-d-16':'Sixteenth note','qe-d-32':'Thirty-second note','qe-d-dot':'Dotted note',
+  'rest-btn':'Add a rest',
+  'a-key':'Follow the key signature','a-n':'Natural','a-s':'Sharp','a-f':'Flat',
+  'a-ss':'Double sharp','a-ff':'Double flat',
+  'd-tuplet':'Toggle tuplet','help-btn':'Help and guided tour',
+  'copy-toggle-btn':'Copy and paste a range of notes',
+  'btn-chord7':'Add sevenths to the chord buttons','btn-chord-mode':'Build a chord note by note',
+  'theme-btn':'Switch between light and dark interface',
+};
+const ARIA_BY_SELECTOR=[
+  ['.tb.play','Play the score'],
+  ['.tb.stop','Stop playback'],
+];
+function applyAriaLabels(){
+  for(const [id,label] of Object.entries(ARIA_LABELS)){
+    const el=document.getElementById(id);
+    if(el && !el.getAttribute('aria-label')) el.setAttribute('aria-label',label);
+  }
+  for(const [sel,label] of ARIA_BY_SELECTOR){
+    const el=document.querySelector(sel);
+    if(el && !el.getAttribute('aria-label')) el.setAttribute('aria-label',label);
+  }
+  // The accidental buttons appear twice (quick-edit bar and the Selected
+  // panel) and carry no id, so name them by what they do.
+  document.querySelectorAll('[onclick^="setSelAcc"]').forEach(el=>{
+    if(el.getAttribute('aria-label'))return;
+    const t=(el.textContent||'').trim();
+    el.setAttribute('aria-label', t==='♯'?'Make this note sharp':t==='♭'?'Make this note flat':'Make this note natural');
+  });
+  // The octave/tuplet steppers are bare − and + next to their own labels;
+  // sighted users get that from proximity, screen readers need it said.
+  document.querySelectorAll('#dur-row .chip').forEach(el=>{
+    const t=(el.textContent||'').trim();
+    if(el.getAttribute('aria-label')||el.getAttribute('title')) return;
+    if(t==='−') el.setAttribute('aria-label','Nudge down an octave');
+    if(t==='+') el.setAttribute('aria-label','Nudge up an octave');
+  });
+}
+
 initTheme();
 setAcc('key');clearArts();setDyn(null);setTempo(null);
 refreshDurIcons();
@@ -3348,6 +3509,7 @@ relabelNoteButtons();
 renderDiatonicChords();
 initProjects();
 applyKeyHue();   // initProjects() may have loaded a song in another key
+applyAriaLabels();
 render();
 initMidi();
 document.getElementById('bpm-inp').addEventListener('change',scheduleAutosave);
