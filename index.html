@@ -95,7 +95,7 @@ body { font-family:-apple-system,BlinkMacSystemFont,sans-serif; background:var(-
 
 /* The staff is the point of the app, so it gets a guaranteed floor rather
    than being the only flexible box in a stack of unshrinkable ones. */
-#score-wrap { position:relative; flex:1 1 auto; min-height:38vh; background:var(--paper); overflow:auto; -webkit-overflow-scrolling:touch; padding:8px; cursor:pointer; }
+#score-wrap { position:relative; flex:1 1 auto; min-height:38vh; background:var(--paper); overflow:auto; -webkit-overflow-scrolling:touch; padding:8px; cursor:pointer; touch-action:pan-x pan-y; }
 
 /* Frozen clef + key signature. Once you scroll right the real ones leave the
    screen, and a staff with no clef tells you nothing about what pitch a
@@ -291,6 +291,9 @@ body { font-family:-apple-system,BlinkMacSystemFont,sans-serif; background:var(-
 
 .hint{font-size:11.5px;line-height:1.35;color:var(--muted2);margin-top:4px;}
 
+/* Zoom readout — appears while pinching, fades out on its own. */
+#zoom-badge{display:none;position:fixed;z-index:600;background:rgba(13,31,53,.88);color:#fff;font-size:12px;font-weight:700;padding:4px 9px;border-radius:9px;pointer-events:none;}
+
 /* Record sheet — the MIDI capture settings used to sit permanently at the
    top of the Notes panel, taking 130px of its 207px even on a phone with no
    MIDI keyboard attached. It's a once-per-take setup step, so it belongs
@@ -322,6 +325,7 @@ body { font-family:-apple-system,BlinkMacSystemFont,sans-serif; background:var(-
 <body>
 
 <div id="score-wrap" role="region" aria-label="Music score"><div id="score-div" style="position:relative;"></div><div id="clef-gutter"></div></div>
+<div id="zoom-badge" aria-live="polite"></div>
 
 <!-- Quick note edit — shown only when a note is selected on the staff, so
      changing its length/pitch never requires leaving the score to dig into
@@ -834,6 +838,14 @@ let selectedNote=null;
 // both null = append at the end of the active part.
 let caretGap=null;
 let measureXs=[], measureBeats=[], measureWs=[];
+// Staff zoom. The page itself stays pinchable for anyone who needs bigger
+// controls; this scales only the music, which is what you actually want to
+// enlarge to read a dense passage or place a note precisely.
+let scoreZoom=1;
+const MIN_ZOOM=0.5, MAX_ZOOM=3;
+// Set while a pinch is in progress: the click that follows a two-finger
+// gesture must not be read as "tap a note".
+let selectedNoteSuppressed=false;
 // Repeats are a whole-piece structural property (the ensemble repeats
 // together), not per-part — measure indices where a repeat barline draws.
 let repeatStartMeasures=[], repeatEndMeasures=[];
@@ -1730,6 +1742,7 @@ function pasteClipboard(){
 function clearClipboard(){ clipboard=null; updatePasteUI(); }
 
 document.getElementById('score-wrap').addEventListener('click', e=>{
+  if(selectedNoteSuppressed) return;   // tail end of a pinch, not a tap
   const scoreDiv=document.getElementById('score-div');
   const rect=scoreDiv.getBoundingClientRect();
   const cx=e.clientX-rect.left, cy=e.clientY-rect.top;
@@ -1765,7 +1778,7 @@ document.getElementById('score-wrap').addEventListener('click', e=>{
 // and silently snapped the tap to whichever staff already had notes.
 function gapFromTap(cx,cy){
   const numP=parts.length;
-  let bestPart=Math.round((cy-TP-PG/2)/PG);
+  let bestPart=Math.round((cy/scoreZoom-TP-PG/2)/PG);
   bestPart=Math.max(0,Math.min(numP-1,bestPart));
   const inPart=notePositions.filter(p=>p.partIdx===bestPart);
   let index=0;
@@ -1782,13 +1795,13 @@ function renderCaret(){
   const pn=notePositions.filter(p=>p.partIdx===caretGap.partIdx);
   const at=pn.find(p=>p.noteIdx===caretGap.index);
   let x;
-  if(at) x=at.x-14;
-  else if(pn.length) x=Math.max(...pn.map(p=>p.x))+34;
-  else x=FX+30;
+  if(at) x=at.x-14*scoreZoom;
+  else if(pn.length) x=Math.max(...pn.map(p=>p.x))+34*scoreZoom;
+  else x=(FX+30)*scoreZoom;
   // VexFlow draws the 5 staff lines starting ~40px below the stave's sy
   // (default space-above); center the caret over that band (sy+40 .. sy+80).
-  const y=TP+caretGap.partIdx*PG+34;
-  caret.style.cssText='position:absolute;left:'+x+'px;top:'+y+'px;width:2.5px;height:52px;background:#2980b9;border-radius:2px;pointer-events:none;box-shadow:0 0 3px rgba(41,128,185,.6);';
+  const y=(TP+caretGap.partIdx*PG+34)*scoreZoom;
+  caret.style.cssText='position:absolute;left:'+x+'px;top:'+y+'px;width:2.5px;height:'+(52*scoreZoom)+'px;background:#2980b9;border-radius:2px;pointer-events:none;box-shadow:0 0 3px rgba(41,128,185,.6);';
   caret.style.display='block';
 }
 
@@ -1954,8 +1967,12 @@ function drawScore(){
   measureXs=[];
 
   const renderer=new Renderer(div,Renderer.Backends.SVG);
-  renderer.resize(totalW,totalH);
+  // Scale the surface and the drawing context rather than CSS-transforming
+  // the result, so the notation is re-rasterised at the new size and stays
+  // crisp instead of being blown up.
+  renderer.resize(Math.round(totalW*scoreZoom),Math.round(totalH*scoreZoom));
   const ctx=renderer.getContext();
+  if(scoreZoom!==1) ctx.scale(scoreZoom,scoreZoom);
 
   const vfRefs=parts.map(()=>({}));
   const partOff=new Array(numP).fill(0);
@@ -1965,9 +1982,11 @@ function drawScore(){
   // to paint while the geometry stays complete for scrolling and playback.
   {
     let lx=10;
-    for(let mi=0;mi<numM;mi++){ measureXs.push(lx); lx+=(mi===0?mws[mi]+FX:mws[mi]); }
+    // Stored scaled: every consumer (the render window, scrollToMeasure)
+    // compares these against scrollLeft, which is screen pixels.
+    for(let mi=0;mi<numM;mi++){ measureXs.push(lx*scoreZoom); lx+=(mi===0?mws[mi]+FX:mws[mi]); }
   }
-  measureWs=mws.map((w,i)=>i===0?w+FX:w);
+  measureWs=mws.map((w,i)=>(i===0?w+FX:w)*scoreZoom);
   const win=measureWindow(measureXs,measureWs,numM);
   _lastWindow=windowKey(win);
 
@@ -2030,6 +2049,11 @@ function drawScore(){
     });
   });
 
+  // VexFlow reports note metrics in unscaled user units. Everything that
+  // consumes notePositions — the tap hit-test, the caret, scrollToNoteEnd —
+  // works in screen pixels, so convert once here.
+  if(scoreZoom!==1) notePositions.forEach(q=>{ q.x*=scoreZoom; q.y*=scoreZoom; q.h*=scoreZoom; });
+
   renderCaret();
   renderClefGutter();
   updatePartPill();
@@ -2054,8 +2078,11 @@ function renderClefGutter(){
   const PROBE=260;  // generous stave width; the host clips to what's used
   try{
     const renderer=new Renderer(host,Renderer.Backends.SVG);
-    renderer.resize(PROBE,TP+numP*PG+30);
+    // Matches the staff's own zoom, or the frozen clef would drift out of
+    // alignment with the staff lines scrolling behind it.
+    renderer.resize(Math.round(PROBE*scoreZoom),Math.round((TP+numP*PG+30)*scoreZoom));
     const ctx=renderer.getContext();
+    if(scoreZoom!==1) ctx.scale(scoreZoom,scoreZoom);
     let endX=0;
     const staves=parts.map((p,pi)=>{
       const inst=IMAP[p.instId]||IMAP['piano'];
@@ -2067,9 +2094,9 @@ function renderClefGutter(){
       return st;
     });
     if(numP>=2) new StaveConnector(staves[0],staves[numP-1]).setType('singleLeft').setContext(ctx).draw();
-    _gutterW=Math.min(PROBE,Math.round(endX)+4);
+    _gutterW=Math.round(Math.min(PROBE,endX+4)*scoreZoom);
     host.style.width=_gutterW+'px';
-    host.style.height=(TP+numP*PG+30)+'px';
+    host.style.height=Math.round((TP+numP*PG+30)*scoreZoom)+'px';
   }catch(e){ host.innerHTML=''; _gutterW=0; }
   syncClefGutter();
 }
@@ -2103,6 +2130,129 @@ function onScoreScroll(){
   });
 }
 document.getElementById('score-wrap').addEventListener('scroll',onScoreScroll,{passive:true});
+
+// ═══════════════════════════════════════════════════════
+// Pinch to zoom the staff
+// ═══════════════════════════════════════════════════════
+// Spread two fingers to make the music bigger, pinch them together to make it
+// smaller. Only the staff scales — the controls stay the size they were, which
+// is the whole reason this exists rather than leaning on the browser's page
+// zoom. #score-wrap declares touch-action:pan-x pan-y so the browser hands us
+// the two-finger gesture instead of zooming the page out from under us.
+let _pinch=null, _zoomRaf=0;
+function clampZoom(z){ return Math.max(MIN_ZOOM,Math.min(MAX_ZOOM,z)); }
+function touchDist(t){
+  const dx=t[0].clientX-t[1].clientX, dy=t[0].clientY-t[1].clientY;
+  return Math.hypot(dx,dy)||1;
+}
+function touchMid(t){
+  return {x:(t[0].clientX+t[1].clientX)/2, y:(t[0].clientY+t[1].clientY)/2};
+}
+// Zoom about a fixed point on screen: whatever bar was under the midpoint of
+// your fingers stays under it, so the music grows around what you're looking
+// at instead of sliding away toward bar 1.
+function setScoreZoom(z,anchor){
+  const wrap=document.getElementById('score-wrap');
+  const prev=scoreZoom;
+  const next=clampZoom(z);
+  if(Math.abs(next-prev)<0.001) return;
+  let ax=0, ay=0, sx=0, sy=0;
+  if(wrap&&anchor){
+    const r=wrap.getBoundingClientRect();
+    ax=anchor.x-r.left; ay=anchor.y-r.top;
+    sx=(wrap.scrollLeft+ax)/prev; sy=(wrap.scrollTop+ay)/prev;   // score-space point under the fingers
+  }
+  scoreZoom=next;
+  redraw();
+  renderClefGutter();
+  if(wrap&&anchor){
+    wrap.scrollLeft=Math.max(0,sx*next-ax);
+    wrap.scrollTop=Math.max(0,sy*next-ay);
+  }
+  syncClefGutter();
+  showZoomBadge();
+}
+function resetScoreZoom(){ setScoreZoom(1,null); }
+
+let _zoomBadgeTimer=0;
+function showZoomBadge(){
+  const el=document.getElementById('zoom-badge'); if(!el)return;
+  const wrap=document.getElementById('score-wrap');
+  el.textContent=Math.round(scoreZoom*100)+'%';
+  el.style.display='block';
+  // Anchored to the score pane's top-right corner, which sits in a different
+  // place in portrait than in the landscape two-column grid.
+  if(wrap){
+    const r=wrap.getBoundingClientRect();
+    el.style.left=Math.round(r.right-el.offsetWidth-10)+'px';
+    el.style.top=Math.round(r.top+8)+'px';
+  }
+  clearTimeout(_zoomBadgeTimer);
+  _zoomBadgeTimer=setTimeout(()=>{ el.style.display='none'; },1100);
+}
+
+(function initPinch(){
+  const wrap=document.getElementById('score-wrap');
+  if(!wrap)return;
+  wrap.addEventListener('touchstart',e=>{
+    if(e.touches.length===2){
+      // Claim the gesture here. touch-action:pan-x pan-y stops the browser
+      // page-zooming, but it still treats two fingers as a pan and will
+      // swallow the rest of the moves unless the sequence is cancelled at
+      // its start — which is what leaves a pinch applying only its first
+      // increment and then dying.
+      e.preventDefault();
+      _pinch={d:touchDist(e.touches), z:scoreZoom, target:0, mid:touchMid(e.touches)};
+      selectedNoteSuppressed=true;   // a two-finger gesture is not a note tap
+    }
+  },{passive:false});
+  wrap.addEventListener('touchmove',e=>{
+    if(!_pinch||e.touches.length!==2)return;
+    e.preventDefault();
+    // Keep only the newest target and let the frame apply that. Capturing the
+    // value in the scheduled callback instead would pin the zoom to whichever
+    // move happened to win the race and silently drop the rest of the gesture,
+    // so a big spread would land far short of where the fingers went.
+    _pinch.target=_pinch.z*(touchDist(e.touches)/_pinch.d);
+    _pinch.mid=touchMid(e.touches);
+    if(_zoomRaf)return;
+    _zoomRaf=requestAnimationFrame(()=>{
+      _zoomRaf=0;
+      if(_pinch) setScoreZoom(_pinch.target,_pinch.mid);
+    });
+  },{passive:false});
+  const end=e=>{
+    if(_pinch&&(!e.touches||e.touches.length<2)){
+      // Settle on where the fingers actually finished — a pending frame that
+      // fires after this would otherwise be discarded mid-gesture.
+      const t=_pinch.target, m=_pinch.mid;
+      _pinch=null;
+      if(t) setScoreZoom(t,m);
+      // Let the tap handler run again only after the fingers are fully off,
+      // or lifting one finger from a pinch would drop a cursor.
+      setTimeout(()=>{ selectedNoteSuppressed=false; },80);
+    }
+  };
+  // Bound on document, not just the staff: a finger that drifts off the score
+  // before lifting ends the gesture somewhere else entirely, and if we miss
+  // that the tap handler would stay suppressed and the score would go dead to
+  // touch until reload.
+  wrap.addEventListener('touchend',end);
+  wrap.addEventListener('touchcancel',end);
+  document.addEventListener('touchend',end,true);
+  document.addEventListener('touchcancel',end,true);
+  // Last-resort release. Nothing should reach this, but "the score stopped
+  // responding to taps" is too costly a failure to leave to event bookkeeping.
+  setInterval(()=>{
+    if(selectedNoteSuppressed&&!_pinch) selectedNoteSuppressed=false;
+  },1500);
+  // Trackpad and mouse: ctrl/⌘ + wheel is the usual convention for zoom.
+  wrap.addEventListener('wheel',e=>{
+    if(!(e.ctrlKey||e.metaKey))return;
+    e.preventDefault();
+    setScoreZoom(scoreZoom*(e.deltaY<0?1.1:1/1.1),{x:e.clientX,y:e.clientY});
+  },{passive:false});
+})();
 
 // Keep the note just written visible — scroll the staff view only if it's
 // currently out of frame, so composing never requires manually scrolling right.
