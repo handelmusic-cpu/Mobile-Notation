@@ -9,6 +9,20 @@
      core need. Buttons carry touch-action:manipulation, so allowing zoom
      does not reintroduce double-tap-zoom on the controls. -->
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<!-- Installable, so "Add to Home Screen" launches it with no browser UI at
+     all. In an ordinary Safari tab the toolbars only retract when the
+     *document* scrolls, and this app's document deliberately never scrolls
+     (html,body are height:100% overflow:hidden so the staff and controls can
+     hold a fixed layout) — so there is no gesture for Safari to react to, and
+     in landscape its tab strip stays put. Installing sidesteps that entirely
+     and gives the whole screen in both orientations. -->
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="MōdScore">
+<meta name="theme-color" content="#12121f">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icon-180.png">
 <title>MōdScore</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%20100%20100'%3E%3Crect%20width='100'%20height='100'%20rx='22'%20fill='%2312121f'/%3E%3Ctext%20x='50'%20y='70'%20font-family='Arial,Helvetica,sans-serif'%20font-size='58'%20font-weight='800'%20fill='%23e94560'%20text-anchor='middle'%3EM%3C/text%3E%3C/svg%3E">
 <style>
@@ -1949,19 +1963,32 @@ const BASE_MW=190, PX_PER_NOTE=46, FX=115, PG=90, TP=22;
 // 32nd) squashed long-note measures and over-spread short-note ones, which is
 // most of what read as "wonky spacing."
 const DUR_WIDTH_UNITS={w:3.5,h:2.2,q:1.4,'8':1,'16':.75,'32':.6};
+// Duration-proportional spacing alone underestimates a bar packed with short
+// notes: sixteenths get 0.75 units (~35px) each, but a notehead plus its
+// accidental, dot and the gap to the next note simply cannot be drawn in that.
+// VexFlow then formatted past the stave and the last notes of dense bars were
+// laid down on top of, or beyond, the barline. These are the floors below
+// which a note cannot be squeezed, whatever its value.
+const MIN_NOTE_PX=46, ACC_PX=18, DOT_PX=10;
+// The floors above describe the room the *notes* need; the stave also gives up
+// EDGE_PAD before its barline (see the Formatter call in drawVoice), so the
+// measure has to be that much wider or the last note lands on the barline.
+const EDGE_PAD=30;
 function calcMW(allM, mi){
-  let maxUnits=0;
+  let maxW=0;
   for(const pm of allM){
-    const md=pm[mi]||[]; let units=0;
+    const md=pm[mi]||[]; let units=0, floor=0;
     md.forEach(n=>{
       const base=decomposeDur(n.dur).base;
       units+=DUR_WIDTH_UNITS[base]??1;
-      if(n.dur.includes('d')) units+=0.35;
-      if(n.vfAccs) units+=n.vfAccs.filter(a=>a&&a!=='n').length*0.5;
+      floor+=MIN_NOTE_PX;
+      if(n.dur.includes('d')){ units+=0.35; floor+=DOT_PX; }
+      const accs=(n.vfAccs||[]).filter(a=>a&&a!=='n').length;
+      units+=accs*0.5; floor+=accs*ACC_PX;
     });
-    maxUnits=Math.max(maxUnits,units);
+    maxW=Math.max(maxW, units*PX_PER_NOTE, floor);
   }
-  return Math.max(BASE_MW, Math.round(maxUnits*PX_PER_NOTE));
+  return Math.max(BASE_MW, Math.round(maxW)+EDGE_PAD);
 }
 
 // ═══════════════════════════════════════════════════════
@@ -2448,7 +2475,11 @@ function drawVoice(ctx,stave,noteData,mw,VF,partIdx,partOffset,clef){
   try{
     const voice=new Voice({numBeats:currentTimeSig.vfB,beatValue:currentTimeSig.vfV}).setMode(2);
     voice.addTickables(vfNotes);
-    new Formatter().joinVoices([voice]).format([voice],mw-32);
+    // Width actually available to notes: the stave's own width less whatever
+    // the clef/key/time signatures and any begin-repeat consumed on the left,
+    // less a little breathing room before the barline.
+    const leftUsed=Math.max(0,stave.getNoteStartX()-stave.getX());
+    new Formatter().joinVoices([voice]).format([voice],Math.max(60,mw-leftUsed-26));
     const beamable=vfNotes.filter((_,i)=>{const b=decomposeDur(noteData[i].dur).base;return !noteData[i].rest&&['8','16','32'].includes(b);});
     const beams=beamable.length>=2?Beam.generateBeams(beamable):[];
     voice.draw(ctx,stave);
