@@ -129,6 +129,9 @@ body { font-family:-apple-system,BlinkMacSystemFont,sans-serif; background:var(-
 #control-rail { display:flex; flex-direction:column; flex:0 1 auto; min-height:0; overflow-y:auto; -webkit-overflow-scrolling:touch; }
 #quick-edit-bar{display:none;align-items:center;gap:4px;padding:5px 7px;background:var(--info-bg);border-top:1.5px solid var(--info);border-bottom:1.5px solid var(--info);flex-shrink:0;overflow-x:auto;-webkit-overflow-scrolling:touch;}
 #qe-label{font-size:11px;font-weight:700;color:var(--info-fg);flex-shrink:0;margin-right:2px;white-space:nowrap;}
+.qe-sep{width:1px;align-self:stretch;background:var(--info);opacity:.45;flex-shrink:0;margin:2px 3px;}
+#qe-del{color:var(--danger);border-color:var(--danger);}
+#qe-rest{color:var(--warn);border-color:var(--warn);font-size:11px;}
 
 /* One horizontally-scrolling row rather than a wrapping block. At 44px per
    target, ~14 controls can never fit across a phone, and wrapping cost three
@@ -219,8 +222,6 @@ body { font-family:-apple-system,BlinkMacSystemFont,sans-serif; background:var(-
 .chip svg{width:20px;height:24px;}
 
 /* Edit panel for selected note */
-#edit-section{display:none;background:var(--info-bg);border-radius:8px;padding:5px 7px;margin-bottom:4px;border:1.5px solid var(--info);}
-#edit-section .row{margin-bottom:0;}
 
 /* Parts panel */
 #parts-list{display:flex;flex-direction:column;gap:4px;max-height:100px;overflow-y:auto;margin-bottom:5px;}
@@ -360,6 +361,11 @@ body { font-family:-apple-system,BlinkMacSystemFont,sans-serif; background:var(-
   <button class="chip qe-pitch-btn" onclick="setSelAcc('#')">♯</button>
   <button class="chip qe-pitch-btn" onclick="setSelAcc('b')">♭</button>
   <button class="chip qe-pitch-btn" onclick="setSelAcc('n')">♮</button>
+  <button class="chip qe-pitch-btn" onclick="moveSelNote(-2)" title="Down a whole step">↓W</button>
+  <button class="chip qe-pitch-btn" onclick="moveSelNote(2)"  title="Up a whole step">↑W</button>
+  <span class="qe-sep"></span>
+  <button class="chip" id="qe-rest" onclick="makeRest()" title="Turn this note into a rest, keeping its timing">⇢Rest</button>
+  <button class="chip" id="qe-del"  onclick="removeSelected()" title="Delete this note">🗑</button>
 </div>
 
 <div id="toolbar">
@@ -372,6 +378,8 @@ body { font-family:-apple-system,BlinkMacSystemFont,sans-serif; background:var(-
   <button class="tb" id="copy-toggle-btn" onclick="toggleCopyMode()" style="background:var(--ctl);color:var(--sky);">✂</button>
   <button class="tb" id="help-btn" onclick="startTour()" style="background:var(--ctl);color:var(--sky);">?</button>
   <button class="tb" id="collapse-btn" onclick="toggleControls()" style="background:var(--ctl);color:var(--sky);" title="Hide/show controls">▼</button>
+  <button class="tb" id="zoom-out" onclick="stepZoom(-1)" style="background:var(--ctl);color:var(--sky);" title="Make the staff smaller" aria-label="Zoom the staff out">−</button>
+  <button class="tb" id="zoom-in"  onclick="stepZoom(1)"  style="background:var(--ctl);color:var(--sky);" title="Make the staff bigger" aria-label="Zoom the staff in">+</button>
   <div id="bpm-wrap"><span>BPM</span><input type="number" id="bpm-inp" value="80" min="20" max="320"></div>
   <span class="pill" id="proj-pill" onclick="switchTab('proj')">Song</span>
   <span class="pill" id="part-pill" onclick="switchTab('parts')" style="color:var(--gold);max-width:110px;overflow:hidden;text-overflow:ellipsis;" title="Instrument you're writing to — tap to switch">Treble · Piano</span>
@@ -408,24 +416,6 @@ body { font-family:-apple-system,BlinkMacSystemFont,sans-serif; background:var(-
       <button class="chip on2" onclick="pasteClipboard()" style="font-size:10px">📋 Paste</button>
       <button class="chip" onclick="clearClipboard()" style="font-size:10px">✗ Clear</button>
     </div>
-  </div>
-  <div id="edit-section">
-    <div class="row">
-      <span style="font-size:9px;color:var(--info);font-weight:700;flex-shrink:0">SELECTED:</span>
-      <span id="sel-note-label" style="font-size:12px;color:var(--info-fg);font-weight:700;min-width:32px"></span>
-      <button class="chip" onclick="moveSelNote(1)" title="Up semitone">↑½</button>
-      <button class="chip" onclick="moveSelNote(-1)" title="Down semitone">↓½</button>
-      <button class="chip" onclick="moveSelNote(2)" title="Up whole step">↑W</button>
-      <button class="chip" onclick="moveSelNote(-2)" title="Down whole step">↓W</button>
-      <button class="chip" onclick="moveSelNote(12)" title="Up an octave" style="font-size:11px">↑8va</button>
-      <button class="chip" onclick="moveSelNote(-12)" title="Down an octave" style="font-size:11px">↓8va</button>
-      <button class="chip" onclick="setSelAcc('#')">♯</button>
-      <button class="chip" onclick="setSelAcc('b')">♭</button>
-      <button class="chip" onclick="setSelAcc('n')">♮</button>
-      <button class="chip" onclick="removeSelected()" style="color:var(--danger);border-color:var(--danger);font-weight:700">🗑 Delete</button>
-      <button class="chip" onclick="makeRest()" style="color:var(--warn);border-color:var(--warn);font-size:11px">⇢Rest</button>
-    </div>
-    <div class="hint">↑½/↓½/♯/♭ change this note's pitch, ↑8va/↓8va move it a whole octave; the Dur row below changes its length. New notes you type land right after it. 🗑 Delete removes it; ⇢Rest turns it into a rest (same timing). Lyrics/dynamics/articulations are in the ✎ Markings tab.</div>
   </div>
   <div class="row" id="dur-row">
     <span class="lbl">Dur</span>
@@ -1615,15 +1605,15 @@ function clearAll(){
 // ═══════════════════════════════════════════════════════
 // Note selection & editing
 // ═══════════════════════════════════════════════════════
+// Everything for editing the selected note lives in the one bar above the
+// staff. It used to be duplicated into a panel in the side rail as well,
+// which meant two places to look and two to keep in sync.
 function updateSelectionUI(){
-  const sec=document.getElementById('edit-section');
   const qe=document.getElementById('quick-edit-bar');
-  if(!selectedNote){sec.style.display='none';qe.style.display='none';refreshDurRow();syncEditorsToSelection();return;}
+  if(!selectedNote){qe.style.display='none';refreshDurRow();syncEditorsToSelection();return;}
   const n=parts[selectedNote.partIdx]?.notes[selectedNote.noteIdx];
-  if(!n){sec.style.display='none';qe.style.display='none';refreshDurRow();syncEditorsToSelection();return;}
-  sec.style.display='block';
+  if(!n){qe.style.display='none';refreshDurRow();syncEditorsToSelection();return;}
   const label=n.rest?'Rest':(n.keys||[]).map((k,i)=>{const[name,oct]=k.split('/');const acc=n.vfAccs?.[i];return name+(acc&&acc!=='n'?acc:'')+oct;}).join(' ');
-  document.getElementById('sel-note-label').textContent=label;
   qe.style.display='flex';
   document.getElementById('qe-label').textContent=label;
   document.querySelectorAll('.qe-pitch-btn').forEach(b=>b.style.display=n.rest?'none':'');
@@ -1775,6 +1765,12 @@ document.getElementById('score-wrap').addEventListener('click', e=>{
     apIdx=best.partIdx;                 // edit/insert in the staff you tapped
     selectedNote={partIdx:best.partIdx,noteIdx:best.noteIdx};
     caretGap=null;
+    // Sound the note you touched. On a multi-stave score the quickest way to
+    // know which part you have landed on is to hear it.
+    const tapped=parts[best.partIdx]?.notes[best.noteIdx];
+    if(tapped && !tapped.rest && (tapped.midiVals||[]).length){
+      auditionPreview(tapped.midiVals, parts[best.partIdx].instId);
+    }
     render(); updateSelectionUI(); switchTab('notes');
   } else {
     // Tapped empty space — drop an insertion cursor in the nearest gap.
@@ -2166,6 +2162,8 @@ function drawScore(){
     }catch(e){}
   });
 
+  drawPartLabels(div.querySelector('svg'),Math.round(4*scoreZoom));
+
   // VexFlow reports note metrics in unscaled user units. Everything that
   // consumes notePositions — the tap hit-test, the caret, scrollToNoteEnd —
   // works in screen pixels, so convert once here.
@@ -2183,6 +2181,50 @@ function drawScore(){
 // lines scrolling behind them. Deliberately omits the time signature — that
 // applies at the start of the piece, and repeating it beside bar 30 would
 // assert a meter change that isn't there.
+
+// Which instrument each staff is. On a multi-part score you would otherwise
+// have to scroll back to the top, or count staves, to know which line you are
+// writing into — so the name sits under every staff, and the one you are
+// actually editing is picked out in the accent colour.
+const SVGNS='http://www.w3.org/2000/svg';
+function partLabelText(p){
+  const inst=IMAP[p.instId];
+  const nm=(inst&&inst.label)||p.name||'Part';
+  return (p.name&&p.name!==nm)?(p.name+' · '+nm):nm;
+}
+function drawPartLabels(svg,xPx){
+  if(!svg)return 0;
+  let widest=0;
+  parts.forEach((p,pi)=>{
+    const t=document.createElementNS(SVGNS,'text');
+    t.setAttribute('x',xPx);
+    // In the gap below this staff's five lines, clear of both the clef above
+    // and the next staff below.
+    t.setAttribute('y',Math.round((TP+pi*PG+93)*scoreZoom));
+    t.setAttribute('font-size',Math.round(9*scoreZoom));
+    t.setAttribute('font-family','-apple-system,BlinkMacSystemFont,Helvetica,Arial,sans-serif');
+    t.setAttribute('font-weight',pi===apIdx?'700':'400');
+    t.setAttribute('fill',pi===apIdx?'#c62b45':'#000');
+    t.setAttribute('opacity',pi===apIdx?'0.9':'0.38');
+    t.setAttribute('pointer-events','none');
+    t.textContent=partLabelText(p);
+    svg.appendChild(t);
+    // Keep clear of the first notehead — a long name like
+    // "Marching Bass · Marching Bass" would otherwise run under the music.
+    try{
+      // Bar 0's first notehead sits ~75px in even in C major (the tightest
+      // key signature), so stay well short of it — stems from the staff above
+      // reach down into this band.
+      const cap=62*scoreZoom;
+      let txt=t.textContent;
+      while(t.getComputedTextLength()>cap && txt.length>4){
+        txt=txt.slice(0,-2); t.textContent=txt+'…';
+      }
+      widest=Math.max(widest,t.getComputedTextLength());
+    }catch(e){}
+  });
+  return widest;
+}
 let pendingTieOut=[], pendingTieIn=[];
 let _gutterW=0;
 function renderClefGutter(){
@@ -2212,7 +2254,9 @@ function renderClefGutter(){
       return st;
     });
     if(numP>=2) new StaveConnector(staves[0],staves[numP-1]).setType('singleLeft').setContext(ctx).draw();
-    _gutterW=Math.round(Math.min(PROBE,endX+4)*scoreZoom);
+    const labelW=drawPartLabels(host.querySelector('svg'),Math.round(4*scoreZoom));
+    // Wide enough for the clef and key, or the longest instrument name.
+    _gutterW=Math.round(Math.max(Math.min(PROBE,endX+4)*scoreZoom, labelW+20*scoreZoom));
     host.style.width=_gutterW+'px';
     host.style.height=Math.round((TP+numP*PG+30)*scoreZoom)+'px';
   }catch(e){ host.innerHTML=''; _gutterW=0; }
@@ -2291,6 +2335,19 @@ function setScoreZoom(z,anchor){
   showZoomBadge();
 }
 function resetScoreZoom(){ setScoreZoom(1,null); }
+// Deliberately coarse: pinching to half size means bringing your fingers all
+// the way together, so the buttons get there in two taps instead.
+const ZOOM_STEPS=[0.5,0.75,1,1.5,2,3];
+function stepZoom(dir){
+  const eps=0.01;
+  let next;
+  if(dir>0) next=ZOOM_STEPS.find(z=>z>scoreZoom+eps) ?? ZOOM_STEPS[ZOOM_STEPS.length-1];
+  else{ const below=ZOOM_STEPS.filter(z=>z<scoreZoom-eps); next=below.length?below[below.length-1]:ZOOM_STEPS[0]; }
+  // Zoom about the middle of the visible staff so the bar you are reading stays put.
+  const wrap=document.getElementById('score-wrap');
+  const r=wrap?wrap.getBoundingClientRect():null;
+  setScoreZoom(next, r?{x:r.left+r.width/2,y:r.top+r.height/2}:null);
+}
 
 let _zoomBadgeTimer=0;
 function showZoomBadge(){
@@ -3091,7 +3148,18 @@ async function playScore(){
   Tone.getTransport().schedule(()=>stopScore(),'+' +Math.max(0,maxT-cursorTime+.8));
   Tone.getTransport().start();
 }
+function rewindToStart(){
+  selectedNote=null;
+  caretGap={partIdx:apIdx,index:0};
+  const wrap=document.getElementById('score-wrap');
+  if(wrap) wrap.scrollTo({left:0,top:0,behavior:SCROLL_BEHAVIOR});
+  render(); updateSelectionUI();
+}
 function stopScore(s){
+  // Pressing stop when nothing is playing means "take me back to the start" —
+  // the same second press that rewinds a tape deck. `s` marks the internal
+  // call playScore() makes to clear the decks before starting.
+  if(!s && !playing){ rewindToStart(); return; }
   Tone.getTransport().stop();Tone.getTransport().cancel();
   _activeVoices.forEach(x=>{try{x.releaseAll?.();}catch(e){}});
   _activeVoices=[];playing=false;
@@ -3652,7 +3720,7 @@ const TOUR=[
   {title:'Welcome to MōdScore 🎵', text:'A quick tour of everything the app can do. Tap Next to step through — or Skip anytime. You can reopen this later with the “?” button.'},
   {tab:'notes', sel:'#note-grid', title:'Write notes', text:'Tap a letter (C–B) to add that note. Each one lands in the octave closest to the note before it, so melodies flow naturally. The last button adds a rest.'},
   {tab:'notes', sel:'#score-wrap', title:'The cursor', text:'Tap a note on the staff to select it (it turns blue). New notes insert right after it — so you can add music in the middle, not just the end. Tap an empty spot to drop the blue cursor where the next note will go.'},
-  {tab:'notes', sel:'#edit-section', title:'Change or delete a note', text:'With a note selected: ↑½ ↓½ move its pitch, ♯ ♭ ♮ set an accidental, 🗑 Delete removes it entirely, and ⇢Rest turns it into a rest (keeping the timing).'},
+  {tab:'notes', sel:'#quick-edit-bar', title:'Change or delete a note', text:'Select a note and this bar appears above the staff with everything for it: lengths, ↑½ ↓½ and ♯ ♭ ♮ for pitch, ↑8va ↓8va for octaves, ⇢Rest to turn it into a rest, and 🗑 to delete it.'},
   {tab:'notes', sel:'#dur-row', title:'Note length & octave', text:'Pick whole, half, quarter, 8th, 16th, 32nd — and the dot for dotted rhythms. With a note selected, tapping a length changes that note. “Nudge” shifts a note up or down an octave.'},
   {tab:'notes', sel:'#acc-row', title:'Sharps & flats', text:'“Key” follows the key signature automatically; ♯ ♭ ♮ force an accidental on the notes you enter.'},
   {tab:'markings', sel:'#panel-markings', title:'Markings', text:'Lyrics, dynamics (p, f, cresc.), articulations (accent, staccato), tempo words, and drumline rudiments (rolls, flams, stickings). They apply to a selected note, or attach to your next note.'},
