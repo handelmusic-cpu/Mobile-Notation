@@ -386,6 +386,7 @@ body { font-family:-apple-system,BlinkMacSystemFont,sans-serif; background:var(-
   <span class="pill" id="key-pill" onclick="switchTab('score')">C</span>
   <span class="pill on" id="audition-pill" onclick="toggleAudition()" title="Hear each note as you enter or edit it">🔊 Audition</span>
   <span class="pill" id="midi-pill">No MIDI</span>
+  <span class="pill" id="voice-pill" aria-live="polite" style="display:none"></span>
   <span class="pill" id="save-warn" onclick="switchTab('proj')" role="alert" title="Autosave failed — tap to open Songs and save a copy to your device" style="display:none">⚠ Not saved</span>
 </div>
 
@@ -608,6 +609,11 @@ body { font-family:-apple-system,BlinkMacSystemFont,sans-serif; background:var(-
     <button class="chip" onclick="openProjectFromFile()" style="font-size:11px">⇧ Open from device</button>
   </div>
   <div class="hint">Your songs also auto-save inside this browser, but saving a file is the safe backup — it survives clearing browser data or switching devices.</div>
+  <div class="sec">Offline</div>
+  <div class="row" style="gap:6px">
+    <button class="chip" id="offline-sounds-btn" onclick="saveSoundsOffline()" style="font-size:11px">⇩ Save sounds for offline</button>
+  </div>
+  <div class="hint">The app itself already works with no signal once you've opened it. The recorded instruments stream in the first time you play them — save them here and playback keeps its real sound offline instead of falling back to the synth.</div>
   <div class="sec">Import</div>
   <div class="row" style="gap:6px">
     <button class="chip" onclick="importFile('midi')" style="font-size:11px">⇧ MIDI (.mid)</button>
@@ -2977,6 +2983,26 @@ function buildSynthVoice(instId){
     volume:inst.vol,
   }).connect(getMasterBus());
 }
+// Which sample sets have actually arrived, so the app can say what you are
+// hearing instead of quietly swapping a piano for an oscillator.
+const sampleState={};   // key -> 'loading' | 'ready' | 'synth'
+function setSampleState(key,st){ if(sampleState[key]!==st){ sampleState[key]=st; updateVoicePill(); } }
+function updateVoicePill(){
+  const pill=document.getElementById('voice-pill'); if(!pill)return;
+  const states=Object.values(sampleState);
+  const synth=states.filter(s=>s==='synth').length;
+  if(!states.length || (!synth && !states.includes('loading'))){ pill.style.display='none'; return; }
+  pill.style.display='inline-block';
+  if(synth){
+    pill.textContent='〜 Synth voices';
+    pill.title='The recorded instruments could not be downloaded, so playback is using the built-in synth. Reconnect and play again, or use Songs → “Save sounds for offline”.';
+    pill.style.color='var(--warn)';
+  } else {
+    pill.textContent='… Loading sounds';
+    pill.title='Downloading the recorded instruments.';
+    pill.style.color='var(--muted4)';
+  }
+}
 function getSampler(instId){
   const key=INST_SAMPLE[instId]||'piano';
   if(_samplerCache[key])return _samplerCache[key];
@@ -2985,8 +3011,10 @@ function getSampler(instId){
   if(def.map)Object.assign(urls,def.map);
   else def.pitches.forEach(p=>{urls[p]=p.replace('#','s')+'.mp3';});
   let fallback=null;
+  setSampleState(key,'loading');
   const s=new Tone.Sampler({urls,baseUrl:def.base,release:1,volume:-4,
-    onerror:()=>{ if(!fallback){ try{ fallback=buildSynthVoice(instId); }catch(e){} } },
+    onload:()=>setSampleState(key,'ready'),
+    onerror:()=>{ if(!fallback){ try{ fallback=buildSynthVoice(instId); }catch(e){} } setSampleState(key,'synth'); },
   }).connect(getMasterBus());
   // Route each note to whichever voice can actually sound it right now, so a
   // sample set that fails mid-session degrades instead of going silent.
@@ -2996,8 +3024,30 @@ function getSampler(instId){
       try{ target.triggerAttackRelease(n,d,t,v); }catch(e){}
     },
     releaseAll:()=>{ try{s.releaseAll?.();}catch(e){} try{fallback?.releaseAll?.();}catch(e){} },
+    sampleKey:key,
   };
   _samplerCache[key]=voice;return voice;
+}
+// Warm the worker's sample cache on demand, so "offline" means the real
+// instruments rather than the fallback synth. Only the sets this song
+// actually uses, plus piano — the full library is tens of megabytes.
+async function saveSoundsOffline(){
+  const btn=document.getElementById('offline-sounds-btn');
+  const keys=[...new Set(['piano',...parts.filter(p=>p.notes.length).map(p=>INST_SAMPLE[p.instId]).filter(Boolean)])];
+  const urls=[];
+  keys.forEach(k=>{
+    const def=SAMP[k]||SALAMANDER;
+    if(def.map) Object.entries(def.map).forEach(([,f])=>urls.push(def.base+f));
+    else def.pitches.forEach(p=>urls.push(def.base+p.replace('#','s')+'.mp3'));
+  });
+  if(btn){ btn.disabled=true; btn.textContent='⇩ Saving sounds…'; }
+  let done=0,failed=0;
+  await Promise.all(urls.map(u=>fetch(u,{mode:'no-cors'}).then(()=>done++).catch(()=>failed++)));
+  if(btn){
+    btn.disabled=false;
+    btn.textContent=failed?`⇩ Saved ${done} of ${urls.length}`:`✓ ${done} sounds saved`;
+    setTimeout(()=>{ btn.textContent='⇩ Save sounds for offline'; },4000);
+  }
 }
 function getDrum(instId){
   if(_drumCache[instId])return _drumCache[instId];
@@ -3957,6 +4007,15 @@ render();
 initMidi();
 document.getElementById('bpm-inp').addEventListener('change',scheduleAutosave);
 if(!safeStore.get('mn_tutorial_seen')) setTimeout(startTour, 500);
+
+// Register the worker last, so a failure here can never hold up the app.
+// Opened straight off disk there is no worker (and no origin to scope one
+// to) — the app still runs, it just isn't installable.
+if('serviceWorker' in navigator && location.protocol.startsWith('http')){
+  window.addEventListener('load',()=>{
+    navigator.serviceWorker.register('sw.js').catch(()=>{});
+  });
+}
 </script>
 </body>
 </html>
