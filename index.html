@@ -3898,7 +3898,69 @@ function stopScore(s){
 }
 
 // ═══════════════════════════════════════════════════════
-// Projects + autosave (localStorage)
+// Song store (IndexedDB, with localStorage as the fallback)
+// ═══════════════════════════════════════════════════════
+// Every song lived in one localStorage string against a ~5MB origin quota. At
+// ~190 KB for a 1200-note piece that is roughly twenty songs before the (well
+// handled) "storage full" path starts firing, and every save rewrote every
+// song. IndexedDB holds one record per song, so the ceiling goes away and a
+// save costs the song you edited.
+//
+// localStorage stays as the fallback for browsers where IndexedDB is blocked —
+// which is the same set of privacy settings safeStore already handles — so
+// there is always somewhere to write.
+const IDB_NAME='modscore', IDB_STORE='songs', IDB_VERSION=1;
+let _idb=null, _idbReady=null;
+function idbOpen(){
+  if(_idbReady) return _idbReady;
+  _idbReady=new Promise(resolve=>{
+    let req;
+    try{ req=indexedDB.open(IDB_NAME,IDB_VERSION); }
+    catch(e){ resolve(null); return; }
+    if(!req){ resolve(null); return; }
+    req.onupgradeneeded=()=>{
+      const db=req.result;
+      if(!db.objectStoreNames.contains(IDB_STORE)) db.createObjectStore(IDB_STORE,{keyPath:'id'});
+    };
+    req.onsuccess=()=>{ _idb=req.result; resolve(_idb); };
+    req.onerror=()=>resolve(null);
+    req.onblocked=()=>resolve(null);
+    // Private-mode Firefox can leave the request hanging rather than failing.
+    setTimeout(()=>resolve(_idb),3000);
+  });
+  return _idbReady;
+}
+function idbTx(mode){
+  if(!_idb) return null;
+  try{ return _idb.transaction(IDB_STORE,mode).objectStore(IDB_STORE); }catch(e){ return null; }
+}
+function idbPut(rec){
+  return new Promise(resolve=>{
+    const st=idbTx('readwrite'); if(!st) return resolve(false);
+    const r=st.put(rec);
+    r.onsuccess=()=>resolve(true);
+    r.onerror=()=>resolve(false);
+  });
+}
+function idbDelete(id){
+  return new Promise(resolve=>{
+    const st=idbTx('readwrite'); if(!st) return resolve(false);
+    const r=st.delete(id);
+    r.onsuccess=()=>resolve(true);
+    r.onerror=()=>resolve(false);
+  });
+}
+function idbGetAll(){
+  return new Promise(resolve=>{
+    const st=idbTx('readonly'); if(!st) return resolve(null);
+    const r=st.getAll();
+    r.onsuccess=()=>resolve(r.result||[]);
+    r.onerror=()=>resolve(null);
+  });
+}
+
+// ═══════════════════════════════════════════════════════
+// Projects + autosave
 // ═══════════════════════════════════════════════════════
 let projects=[]; let currentProjId=null; let autosaveT=null;
 
@@ -3929,14 +3991,36 @@ function updateSaveWarn(){
   const el=document.getElementById('save-warn');
   if(el) el.style.display=saveFailed?'inline-block':'none';
 }
-function saveAll(){
+// Which songs still need writing. Saving one song should not rewrite the
+// others, so the dirty set is drained rather than the whole list dumped.
+const dirtySongs=new Set();
+let idbUsable=false;
+function saveAll(ids){
+  safeStore.set('mn_current',currentProjId||'');
+  if(ids) ids.forEach(i=>dirtySongs.add(i)); else projects.forEach(p=>dirtySongs.add(p.id));
+  if(idbUsable){
+    const pending=[...dirtySongs]; dirtySongs.clear();
+    Promise.all(pending.map(id=>{
+      const p=projects.find(x=>x.id===id);
+      return p?idbPut({id:p.id,name:p.name,data:p.data,updated:p.updated}):idbDelete(id);
+    })).then(results=>{
+      const failed=results.some(r=>r===false);
+      if(failed!==saveFailed){ saveFailed=failed; updateSaveWarn(); }
+      if(failed) warnSaveFailure();
+    });
+    return;
+  }
+  // No IndexedDB — fall back to the single localStorage blob.
+  dirtySongs.clear();
   const e1=safeStore.set('mn_projects',JSON.stringify(projects));
-  const e2=safeStore.set('mn_current',currentProjId||'');
-  if(!e1&&!e2){
+  if(!e1){
     if(saveFailed){ saveFailed=false; updateSaveWarn(); }
     return;
   }
   if(!saveFailed){ saveFailed=true; updateSaveWarn(); }
+  warnSaveFailure();
+}
+function warnSaveFailure(){
   // Once per session — the pill carries the state from then on, and an
   // alert on every keystroke would be worse than the problem.
   if(!saveFailAlerted){
@@ -3952,7 +4036,7 @@ function writeCurrentProject(){
   autosavePending=false;
   const p=projects.find(x=>x.id===currentProjId);
   if(!p) return;
-  p.data=serializeProject(); p.updated=Date.now(); saveAll();
+  p.data=serializeProject(); p.updated=Date.now(); saveAll([p.id]);
   if(document.getElementById('panel-proj').classList.contains('on')) renderProjectsList();
 }
 function scheduleAutosave(){
@@ -3968,6 +4052,14 @@ function flushAutosave(){
   if(!autosavePending) return;
   clearTimeout(autosaveT);
   writeCurrentProject();
+  // An IndexedDB write is asynchronous, and a page being torn down may not
+  // live long enough to commit one — which would undo the whole point of
+  // flushing here. localStorage is synchronous, so the song in progress also
+  // goes there as a recovery record, and the next boot folds it back in.
+  if(idbUsable){
+    const p=projects.find(x=>x.id===currentProjId);
+    if(p) safeStore.set('mn_pending',JSON.stringify({id:p.id,name:p.name,data:p.data,updated:p.updated}));
+  }
 }
 document.addEventListener('visibilitychange',()=>{ if(document.visibilityState==='hidden') flushAutosave(); });
 window.addEventListener('pagehide', flushAutosave);
@@ -4050,14 +4142,15 @@ function loadProject(id){
 function renameProject(id){
   const p=projects.find(x=>x.id===id); if(!p)return;
   const nm=prompt('Rename song:',p.name);
-  if(nm!==null&&nm.trim()){ p.name=nm.trim(); saveAll(); renderProjectsList(); updateProjPill(); }
+  if(nm!==null&&nm.trim()){ p.name=nm.trim(); saveAll([p.id]); renderProjectsList(); updateProjPill(); }
 }
 function deleteProject(id){
   if(projects.length<=1){alert('Keep at least one song.');return;}
   if(!confirm('Delete this song? This cannot be undone.'))return;
   projects=projects.filter(x=>x.id!==id);
   if(currentProjId===id){ currentProjId=projects[0].id; applyProject(projects[0].data); resetHistory(); }
-  saveAll(); renderProjectsList();
+  if(idbUsable) idbDelete(id); else safeStore.set('mn_projects',JSON.stringify(projects));
+  saveAll([currentProjId]); renderProjectsList();
 }
 function renderProjectsList(){
   const ul=document.getElementById('proj-list'); if(!ul)return; ul.innerHTML='';
@@ -4079,19 +4172,97 @@ function renderProjectsList(){
     ul.appendChild(row);
   });
 }
+// Boot without waiting on a database. Before the upgrade there is a
+// localStorage blob to read; after it, that blob is deliberately left frozen
+// (so rolling this build back does not lose anything) and is therefore stale —
+// mn_store records which of the two is authoritative so a stale song is never
+// shown. Whichever it is, the first paint happens immediately and IndexedDB
+// fills in a moment later.
+let _wantedProjId=null, bootAppliedId=null;
+function makeFirstSong(){
+  const id='p'+Date.now();
+  projects=[{id,name:'My First Song',data:serializeProject(),updated:Date.now()}];
+  currentProjId=id; bootAppliedId=id; saveAll(); updateProjPill();
+}
 function initProjects(){
-  try{ const raw=safeStore.get('mn_projects'); if(raw) projects=JSON.parse(raw)||[]; }catch(e){ projects=[]; }
-  if(!Array.isArray(projects)) projects=[];
-  currentProjId=safeStore.get('mn_current')||null;
-  if(!projects.length){
-    const id='p'+Date.now();
-    projects=[{id,name:'My First Song',data:serializeProject(),updated:Date.now()}];
-    currentProjId=id; saveAll(); updateProjPill();
+  const idbMode=safeStore.get('mn_store')==='idb';
+  _wantedProjId=safeStore.get('mn_current')||null;
+  if(!idbMode){
+    try{ const raw=safeStore.get('mn_projects'); if(raw) projects=JSON.parse(raw)||[]; }catch(e){ projects=[]; }
+    if(!Array.isArray(projects)) projects=[];
   } else {
+    projects=[];   // the database owns the songs; it is opening now
+  }
+  currentProjId=_wantedProjId;
+  if(projects.length){
     const p=projects.find(x=>x.id===currentProjId)||projects[0];
-    currentProjId=p.id; applyProject(p.data);
+    currentProjId=p.id; bootAppliedId=p.id; applyProject(p.data);
+  } else if(!idbMode){
+    makeFirstSong();
   }
   resetHistory();
+  upgradeToIDB();
+}
+async function upgradeToIDB(){
+  const db=await idbOpen();
+  if(!db){                              // blocked or unsupported
+    if(!projects.length) makeFirstSong();
+    return;
+  }
+  const stored=await idbGetAll();
+  if(stored===null){
+    if(!projects.length) makeFirstSong();
+    return;
+  }
+  idbUsable=true;
+  // Fold in anything the last teardown managed to write synchronously but not
+  // commit to the database.
+  const pendingRaw=safeStore.get('mn_pending');
+  if(pendingRaw){
+    try{
+      const rec=JSON.parse(pendingRaw);
+      if(rec&&rec.id){
+        const at=stored.findIndex(r=>r.id===rec.id);
+        if(at<0) stored.push(rec);
+        else if((rec.updated||0)>(stored[at].updated||0)) stored[at]=rec;
+        await idbPut(rec);
+      }
+    }catch(e){}
+    safeStore.set('mn_pending','');
+  }
+  const byId=new Map(stored.map(r=>[r.id,r]));
+  // Anything held in memory the database has not seen — the first run after
+  // the upgrade, or a song written while the database was unavailable.
+  const toMigrate=projects.filter(p=>!byId.has(p.id));
+  if(toMigrate.length) await Promise.all(toMigrate.map(p=>idbPut({id:p.id,name:p.name,data:p.data,updated:p.updated})));
+  // Keep whichever copy of a song is newer, except the one being edited: that
+  // one is live and may already have changes the database has not caught.
+  const merged=[]; const seen=new Set();
+  projects.forEach(p=>{
+    const rec=byId.get(p.id);
+    merged.push(rec&&(rec.updated||0)>(p.updated||0)&&p.id!==currentProjId?rec:p);
+    seen.add(p.id);
+  });
+  stored.forEach(r=>{ if(!seen.has(r.id)) merged.push(r); });
+  merged.sort((a,b)=>(b.updated||0)-(a.updated||0));
+  projects=merged;
+  if(!projects.length){ makeFirstSong(); safeStore.set('mn_store','idb'); return; }
+
+  // Show the song that was actually open last time. Only when nothing has been
+  // typed yet — an edit made in the moment before the database opened must
+  // never be thrown away by the handover.
+  const want=projects.find(p=>p.id===_wantedProjId)||projects[0];
+  if(want && want.id!==bootAppliedId && history.length<=1){
+    currentProjId=want.id;
+    applyProject(want.data);
+    resetHistory();
+    bootAppliedId=want.id;
+  } else if(!projects.find(p=>p.id===currentProjId)){
+    currentProjId=projects[0].id;
+  }
+  safeStore.set('mn_store','idb');
+  renderProjectsList();
+  updateProjPill();
 }
 
 // ═══════════════════════════════════════════════════════
