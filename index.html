@@ -232,6 +232,13 @@ body { font-family:-apple-system,BlinkMacSystemFont,sans-serif; background:var(-
 .pname{font-size:12px;font-weight:700;color:var(--text3);flex:0 0 auto;}
 .pinst{font-size:10px;color:var(--muted3);flex:1;}
 .pdel{background:none;border:none;color:var(--danger);font-size:13px;cursor:pointer;padding:0 3px;}
+/* Mute / solo, small enough to sit in the part row without crowding the name. */
+.pmix{background:var(--bg);border:1.5px solid var(--border);color:var(--muted4);font-size:10px;font-weight:800;
+  border-radius:5px;min-width:20px;height:20px;line-height:1;cursor:pointer;padding:0 4px;touch-action:manipulation;}
+.pmix.on{background:var(--accent);border-color:var(--accent);color:#fff;}
+/* The playhead sweeps inside #score-div, so it scrolls with the music. */
+#score-playhead{position:absolute;left:0;top:0;width:2px;background:var(--accent);opacity:.75;
+  pointer-events:none;display:none;border-radius:2px;will-change:transform;}
 .cat-grid{display:flex;gap:3px;flex-wrap:wrap;margin-bottom:4px;}
 #inst-grid{display:flex;gap:3px;flex-wrap:wrap;min-height:0;margin-bottom:4px;}
 
@@ -372,6 +379,7 @@ body { font-family:-apple-system,BlinkMacSystemFont,sans-serif; background:var(-
   <button class="tb play"  onclick="playScore()">▶</button>
   <button class="tb stop"  onclick="stopScore()">■</button>
   <button class="tb rec"   id="rec-btn" onclick="toggleRecord()" title="Record from a MIDI keyboard (2-bar count-in + metronome)">⏺</button>
+  <button class="tb" id="loop-btn" onclick="toggleLoop()" style="background:var(--ctl);color:var(--sky);" title="Loop playback, for drilling a passage" aria-label="Loop playback">⟳</button>
   <button class="tb undo"  id="undo-btn" onclick="undo()" title="Undo (Ctrl/Cmd+Z)">↶</button>
   <button class="tb undo"  id="redo-btn" onclick="redo()" title="Redo (Ctrl/Cmd+Shift+Z)">↷</button>
   <button class="tb clear" onclick="clearAll()" title="Clear all notes">✕</button>
@@ -1405,6 +1413,18 @@ function renderPartsList(){
     row.appendChild(el('div','pdot'));
     row.appendChild(el('span','pname',p.name));
     row.appendChild(el('span','pinst',inst.label));
+    // Mute and solo — the first thing anyone reaches for when checking one
+    // line inside a full score. Solo wins over mute when both are set.
+    if(parts.length>1){
+      const mk=(label,on,fn,title)=>{
+        const b=el('button','pmix'+(on?' on':''),label);
+        b.title=title;
+        b.onclick=e=>{ e.stopPropagation(); fn(); };
+        return b;
+      };
+      row.appendChild(mk('M',mutedParts.has(i),()=>toggleMute(i),'Mute this part'));
+      row.appendChild(mk('S',soloParts.has(i),()=>toggleSolo(i),'Play only the soloed parts'));
+    }
     if(parts.length>1){
       const del=el('button','pdel','✕');
       del.setAttribute('aria-label','Delete the '+p.name+' part');
@@ -2850,6 +2870,50 @@ function scrollToMeasure(mi){
   wrap.scrollTo({left:Math.max(0,tx-30),top:wrap.scrollTop,behavior:SCROLL_BEHAVIOR});
 }
 
+// ── Playhead ────────────────────────────────────────────
+// Playback scrolled the staff and marked nothing, so in a dense bar there was
+// no way to tell where you were. This sweeps a line across the bar being
+// played, driven by rAF against the transport clock rather than by scheduling
+// an event per note.
+let _phRaf=0, _phPlan=null;
+function ensurePlayhead(){
+  const div=document.getElementById('score-div');
+  if(!div) return null;
+  let ph=document.getElementById('score-playhead');
+  if(!ph){ ph=document.createElement('div'); ph.id='score-playhead'; div.appendChild(ph); }
+  return ph;
+}
+// plan: [{mi, startSec, endSec}] in playback order.
+function startPlayhead(plan,offsetSec){
+  _phPlan={plan,offset:offsetSec||0};
+  const ph=ensurePlayhead(); if(!ph)return;
+  ph.style.display='block';
+  const step=()=>{
+    if(!playing||!_phPlan){ stopPlayhead(); return; }
+    const now=Tone.getTransport().seconds+_phPlan.offset;
+    const seg=_phPlan.plan.find(s=>now>=s.startSec&&now<s.endSec);
+    if(seg){
+      const x0=measureXs[seg.mi], w=measureWs[seg.mi]||0;
+      if(x0!=null){
+        const frac=Math.max(0,Math.min(1,(now-seg.startSec)/Math.max(.001,seg.endSec-seg.startSec)));
+        ph.style.transform='translateX('+(x0+w*frac)+'px)';
+        // Same staff band the caret uses: VexFlow starts the 5 lines ~34px
+        // below the stave's y, and each part sits PG below the one above.
+        ph.style.top=((TP+34)*scoreZoom)+'px';
+        ph.style.height=(((parts.length-1)*PG+52)*scoreZoom)+'px';
+      }
+    }
+    _phRaf=requestAnimationFrame(step);
+  };
+  cancelAnimationFrame(_phRaf);
+  _phRaf=requestAnimationFrame(step);
+}
+function stopPlayhead(){
+  cancelAnimationFrame(_phRaf); _phRaf=0; _phPlan=null;
+  const ph=document.getElementById('score-playhead');
+  if(ph) ph.style.display='none';
+}
+
 function drawVoice(ctx,stave,noteData,mw,VF,partIdx,partOffset,clef,part,ts,mi){
   const{StaveNote,Voice,Formatter,Accidental,Beam,Annotation,Articulation,Dot,Tremolo,Ornament,GraceNote,GraceNoteGroup,RepeatNote,Tuplet}=VF;
   if(!noteData.length)return[];
@@ -3259,7 +3323,22 @@ function quantizeSimpleGrid(events,unit,toBeat){
 // Checking one line inside a full score is the first thing anyone wants from
 // multi-part playback. Solo wins over mute when both are set.
 let mutedParts=new Set(), soloParts=new Set();
+let loopPlayback=false;
 function partMuted(pi){ return soloParts.size?!soloParts.has(pi):mutedParts.has(pi); }
+function toggleMute(pi){
+  if(mutedParts.has(pi)) mutedParts.delete(pi); else mutedParts.add(pi);
+  renderPartsList();
+}
+function toggleSolo(pi){
+  if(soloParts.has(pi)) soloParts.delete(pi); else soloParts.add(pi);
+  renderPartsList();
+}
+function toggleLoop(){
+  loopPlayback=!loopPlayback;
+  const b=document.getElementById('loop-btn');
+  if(b) b.classList.toggle('on',loopPlayback);
+  if(playing){ stopScore(); playScore(); }
+}
 
 // Dynamics, hairpins, articulations and tempo words were all drawn and none of
 // them were heard: velocity was hardcoded (1 in the scheduler, 90 in the MIDI
@@ -3694,9 +3773,12 @@ async function playScore(){
   // Follow the currently-playing measure across the staff view as it plays —
   // uses the expanded order, so the view jumps back during a repeat too.
   let cumBeat=0;
+  const phPlan=[];
   playOrder.forEach((mi,k)=>{
-    if(k>=cursorOcc) Tone.getTransport().schedule(()=>scrollToMeasure(mi),'+'+Math.max(0,at(cumBeat)-cursorTime));
+    const s=at(cumBeat);
+    if(k>=cursorOcc) Tone.getTransport().schedule(()=>scrollToMeasure(mi),'+'+Math.max(0,s-cursorTime));
     cumBeat+=(measureBeats[mi]||beatsAt(mi));
+    phPlan.push({mi,startSec:s,endSec:at(cumBeat)});
   });
 
   _activeVoices=[];let maxT=0;
@@ -3762,7 +3844,19 @@ async function playScore(){
     maxT=Math.max(maxT,at(bt));
   });
   if(!_activeVoices.length){playing=false;return;}
-  Tone.getTransport().schedule(()=>stopScore(),'+' +Math.max(0,maxT-cursorTime+.8));
+  // Looping repeats the whole expanded order rather than stopping at the end,
+  // which is what practising a passage needs.
+  if(loopPlayback){
+    const span=Math.max(.25,maxT-cursorTime);
+    Tone.getTransport().scheduleRepeat(()=>{ startPlayhead(phPlan,cursorTime); }, span, 0);
+    Tone.getTransport().loop=true;
+    Tone.getTransport().loopStart=0;
+    Tone.getTransport().loopEnd=span;
+  } else {
+    Tone.getTransport().loop=false;
+    Tone.getTransport().schedule(()=>stopScore(),'+' +Math.max(0,maxT-cursorTime+.8));
+  }
+  startPlayhead(phPlan,cursorTime);
   Tone.getTransport().start();
 }
 function rewindToStart(){
@@ -3778,8 +3872,10 @@ function stopScore(s){
   // call playScore() makes to clear the decks before starting.
   if(!s && !playing){ rewindToStart(); return; }
   Tone.getTransport().stop();Tone.getTransport().cancel();
+  Tone.getTransport().loop=false;
   _activeVoices.forEach(x=>{try{x.releaseAll?.();}catch(e){}});
   _activeVoices=[];playing=false;
+  stopPlayhead();
   const playBtn=document.querySelector('.tb.play');if(playBtn)playBtn.textContent='▶';
 }
 
