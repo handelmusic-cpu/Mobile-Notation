@@ -577,6 +577,23 @@ body { font-family:-apple-system,BlinkMacSystemFont,sans-serif; background:var(-
 
 <!-- Score setup panel -->
 <div id="panel-score" class="panel">
+  <div class="row" style="margin-bottom:4px">
+    <button class="chip" id="scope-btn" onclick="toggleChangeScope()" style="font-size:11px">✎ Whole song</button>
+    <button class="chip" onclick="clearChangesHere()" style="font-size:10px">Remove change here</button>
+  </div>
+  <div class="hint">Tap “Whole song” to switch to changing key or metre <em>from the selected bar onwards</em> — that's how you write a modulation or a metre change. Select a note in that bar first.</div>
+  <div id="changes-list" class="row" style="flex-wrap:wrap;gap:4px;margin:3px 0"></div>
+  <div class="sec">Pickup (anacrusis)</div>
+  <div class="row">
+    <button class="chip" onclick="setPickup(0)" style="font-size:10px">none</button>
+    <button class="chip" onclick="setPickup(0.5)" style="font-size:10px">½</button>
+    <button class="chip" onclick="setPickup(1)" style="font-size:10px">1</button>
+    <button class="chip" onclick="setPickup(1.5)" style="font-size:10px">1½</button>
+    <button class="chip" onclick="setPickup(2)" style="font-size:10px">2</button>
+    <button class="chip" onclick="setPickup(3)" style="font-size:10px">3</button>
+    <span class="lbl" id="pickup-val" style="margin-left:4px">none</span>
+  </div>
+  <div class="hint">Shortens the first bar, for a piece that starts before beat 1.</div>
   <div class="sec">Key signature — Major</div>
   <div class="key-major-grid" id="key-major-grid"></div>
   <div class="sec">Key signature — Minor</div>
@@ -894,6 +911,30 @@ function spellInScale(midi,scale,preferFlat){
   return {name:n,acc:a,oct:octaveFor(n,a,midi),vfAcc:a||'n'};
 }
 
+// The key list stopped at 12 majors and 10 minors, which left out G♭ and C♭
+// major and four of the sharp minors — reachable keys that a modulation lands
+// in constantly. Now that the scale for any point on the circle can be
+// derived, the gaps fill themselves.
+(function fillOutKeys(){
+  const MAJ=[['Gb',-6],['Cb',-7]];
+  const MIN=[['Ebm',-6],['Abm',-7],['Gsm',5],['Dsm',6],['Asm',7]];
+  const MIN_LABEL={Ebm:'E♭m',Abm:'A♭m',Gsm:'G#m',Dsm:'D#m',Asm:'A#m'};
+  MAJ.forEach(([id,f])=>{
+    if(KMAP[id])return;
+    const k={id,label:FIFTHS_TO_MAJOR[String(f)],vfSig:FIFTHS_TO_MAJOR[String(f)],mode:'major',scale:scaleForFifths(f)};
+    KEYS_DATA.push(k); KMAP[id]=k;
+  });
+  MIN.forEach(([id,f])=>{
+    if(KMAP[id])return;
+    // A minor key shares its relative major's signature; its natural scale is
+    // that major scale started from the sixth degree.
+    const maj=scaleForFifths(f);
+    const scale=Array.from({length:7},(_,i)=>maj[(i+5)%7]);
+    const k={id,label:MIN_LABEL[id]||id,vfSig:FIFTHS_TO_MAJOR[String(f)],mode:'minor',scale};
+    KEYS_DATA.push(k); KMAP[id]=k;
+  });
+})();
+
 // 'concert' — the score as it sounds, which is how the app has always behaved.
 // 'written' — each part as its player reads it.
 let pitchView='written';
@@ -938,44 +979,83 @@ function isTransposing(p){
 }
 // The shift actually applied when drawing this part right now.
 function writtenSemis(p){ return pitchView==='written'?isTransposing(p):0; }
-function concertFifths(){ return MAJOR_TO_FIFTHS[KMAP[currentKeyId]?.vfSig]??0; }
-function partFifths(p){ return transposeFifths(concertFifths(),writtenSemis(p)); }
-function partVfSig(p){ return FIFTHS_TO_MAJOR[String(partFifths(p))]||'C'; }
-function partScale(p){
+// Every one of these takes an optional measure index, because the key can now
+// change part-way through the piece. Left out, they answer for the opening
+// key — which is what the whole song used to be.
+function concertFifths(mi){ return MAJOR_TO_FIFTHS[KMAP[keyAt(mi||0)]?.vfSig]??0; }
+function partFifths(p,mi){ return transposeFifths(concertFifths(mi),writtenSemis(p)); }
+function partVfSig(p,mi){ return FIFTHS_TO_MAJOR[String(partFifths(p,mi))]||'C'; }
+function partScale(p,mi){
   const s=writtenSemis(p);
-  return s?scaleForFifths(partFifths(p)):(KMAP[currentKeyId]?.scale||KEYS_DATA[0].scale);
+  return s?scaleForFifths(partFifths(p,mi)):(KMAP[keyAt(mi||0)]?.scale||KEYS_DATA[0].scale);
 }
 // What to draw for one note on one part. With no transposition in play the
 // stored spelling is used untouched, so a deliberate double-sharp or an odd
 // enharmonic the user chose is never quietly rewritten.
-function displayKeys(n,p){
+function displayKeys(n,p,mi){
   const semis=writtenSemis(p);
   if(!semis||n.rest||n.repeatBars||!(n.midiVals||[]).length) return {keys:n.keys,vfAccs:n.vfAccs};
-  const scale=partScale(p), flat=partFifths(p)<0;
+  const scale=partScale(p,mi), flat=partFifths(p,mi)<0;
   const res=n.midiVals.map(m=>spellInScale(m+semis,scale,flat));
   return {keys:res.map(r=>r.name+'/'+r.oct), vfAccs:res.map(r=>r.vfAcc)};
 }
 // The concert spelling to store for a note, so concert view stays correct for
 // music entered while reading written pitch.
-function spellConcert(midi){
-  const kd=KMAP[currentKeyId]||KEYS_DATA[0];
+function spellConcert(midi,mi){
+  const kd=KMAP[keyAt(mi||0)]||KEYS_DATA[0];
   return spellInScale(midi,kd.scale,FLAT_KEYS.includes(kd.vfSig||''));
 }
 
 // ═══════════════════════════════════════════════════════
 // Time signature data
 // ═══════════════════════════════════════════════════════
+// `beats` is the bar's length in quarter notes, which is the unit everything
+// downstream counts in — not the number the signature's top figure names.
 const TIME_SIGS = [
   {sig:'4/4', beats:4,   vfB:4,  vfV:4},
   {sig:'3/4', beats:3,   vfB:3,  vfV:4},
   {sig:'2/4', beats:2,   vfB:2,  vfV:4},
+  {sig:'5/4', beats:5,   vfB:5,  vfV:4},
+  {sig:'6/4', beats:6,   vfB:6,  vfV:4},
   {sig:'2/2', beats:4,   vfB:2,  vfV:2},
+  {sig:'3/2', beats:6,   vfB:3,  vfV:2},
   {sig:'6/8', beats:3,   vfB:6,  vfV:8},
   {sig:'9/8', beats:4.5, vfB:9,  vfV:8},
   {sig:'12/8',beats:6,   vfB:12, vfV:8},
   {sig:'3/8', beats:1.5, vfB:3,  vfV:8},
+  {sig:'5/8', beats:2.5, vfB:5,  vfV:8},
+  {sig:'7/8', beats:3.5, vfB:7,  vfV:8},
 ];
 let currentTimeSig = TIME_SIGS[0];
+
+// ── Changes of key and meter part-way through ───────────────────────────
+// Both used to be properties of the whole song, so a piece that changes
+// metre — or starts on beat 4 — could not be written at all. They are sparse
+// maps of measure index -> value; measure 0 falls back to the song's opening
+// key and metre, which is what currentKeyId/currentTimeSig now mean.
+let sigChanges={};    // {measureIndex: '3/4'}
+let keyChanges={};    // {measureIndex: 'G'}
+// A pickup bar holds fewer beats than the metre says. 0 = none.
+let pickupBeats=0;
+// Index of the latest change at or before mi, or -1 for none.
+function bestAt(map,mi){
+  let at=-1;
+  for(const k of Object.keys(map)){ const i=+k; if(i<=mi && i>at) at=i; }
+  return at;
+}
+function timeSigAt(mi){
+  const at=bestAt(sigChanges,mi);
+  return (at>=0 && TIME_SIGS.find(t=>t.sig===sigChanges[at])) || currentTimeSig;
+}
+function beatsAt(mi){ return mi===0&&pickupBeats>0?pickupBeats:timeSigAt(mi).beats; }
+function keyAt(mi){
+  const at=bestAt(keyChanges,mi);
+  return at>=0?(keyChanges[at]||currentKeyId):currentKeyId;
+}
+// True when measure mi opens with a signature the previous bar did not have,
+// i.e. the point where it has to be drawn.
+function sigChangeAt(mi){ return mi>0 && sigChanges[mi] && sigChanges[mi]!==timeSigAt(mi-1).sig; }
+function keyChangeAt(mi){ return mi>0 && keyChanges[mi] && keyChanges[mi]!==keyAt(mi-1); }
 
 // ═══════════════════════════════════════════════════════
 // State
@@ -1055,7 +1135,9 @@ function durBeats(dur){
 }
 // A measure-repeat marker always fills exactly one measure, regardless of
 // time signature — it has no meaningful `dur` string of its own.
-function noteBeats(n){ return n.repeatBars ? currentTimeSig.beats : durBeats(n.dur); }
+// A measure-repeat glyph fills whatever bar it lands in, which is no longer
+// a single fixed length once the metre can change part-way through.
+function noteBeats(n,mi){ return n.repeatBars ? beatsAt(mi==null?0:mi) : durBeats(n.dur); }
 
 // ═══════════════════════════════════════════════════════
 // Duration / rest SVG icons
@@ -1146,14 +1228,78 @@ function applyKeyHue(){
   const fifths=FIFTHS_OF_SIG[sig]??0;
   document.documentElement.style.setProperty('--kh',((210+fifths*30)%360));
 }
+// Which bar an edit applies to: the selected note's, else the cursor's, else
+// the end of the active part. The same rule the repeat markers already use.
+function editMeasureIndex(){
+  try{
+    if(selectedNote) return measureIndexOfNote(selectedNote.partIdx,selectedNote.noteIdx);
+    if(caretGap) return measureIndexOfNote(caretGap.partIdx,Math.max(0,caretGap.index-1));
+    const n=parts[apIdx]?.notes.length||0;
+    return n?measureIndexOfNote(apIdx,n-1):0;
+  }catch(e){ return 0; }
+}
+// With a note selected, changing key or metre changes it *from that bar on* —
+// the score keeps everything before it. With nothing selected the change is
+// the song's opening key or metre, which is how it always behaved.
 function setKey(kid){
-  currentKeyId=kid;
-  document.querySelectorAll('.key-btn').forEach(b=>b.classList.toggle('on',b.dataset.kid===kid));
-  document.getElementById('key-pill').textContent=KMAP[kid]?.label||kid;
+  const mi=changeScope?editMeasureIndex():0;
+  if(mi>0){
+    if(keyAt(mi-1)===kid) delete keyChanges[mi]; else keyChanges[mi]=kid;
+  } else {
+    currentKeyId=kid;
+    delete keyChanges[0];
+  }
+  syncKeyTimeUI();
   applyKeyHue();
   relabelNoteButtons();
   renderDiatonicChords();
   render();
+}
+function setPickup(beats){
+  pickupBeats=Math.max(0,Math.min(currentTimeSig.beats-0.5,beats));
+  syncKeyTimeUI(); render();
+}
+function clearChangesHere(){
+  const mi=editMeasureIndex();
+  if(mi<=0){ alert('Select a note in a later bar — bar 1 carries the song’s opening key and metre.'); return; }
+  delete keyChanges[mi]; delete sigChanges[mi];
+  syncKeyTimeUI(); relabelNoteButtons(); renderDiatonicChords(); render();
+}
+// 'song' = edit the opening key/metre, 'here' = change from the selected bar.
+let changeScope=false;
+function toggleChangeScope(){
+  changeScope=!changeScope;
+  syncKeyTimeUI(); render();
+}
+function syncKeyTimeUI(){
+  const mi=changeScope?editMeasureIndex():0;
+  const kNow=keyAt(mi), tNow=timeSigAt(mi);
+  document.querySelectorAll('.key-btn').forEach(b=>b.classList.toggle('on',b.dataset.kid===kNow));
+  document.querySelectorAll('.time-btn').forEach(b=>b.classList.toggle('on',b.dataset.sig===tNow.sig));
+  const pill=document.getElementById('key-pill');
+  if(pill) pill.textContent=(KMAP[currentKeyId]?.label||currentKeyId)+(Object.keys(keyChanges).length?' →':'');
+  const btn=document.getElementById('scope-btn');
+  if(btn){
+    btn.textContent=changeScope?('✎ Changing from bar '+(mi+1)):'✎ Whole song';
+    btn.classList.toggle('on',changeScope);
+  }
+  const pk=document.getElementById('pickup-val');
+  if(pk) pk.textContent=pickupBeats?pickupBeats+' beat'+(pickupBeats===1?'':'s'):'none';
+  const lst=document.getElementById('changes-list');
+  if(lst){
+    lst.innerHTML='';
+    const all=[...new Set([...Object.keys(keyChanges),...Object.keys(sigChanges)])].map(Number).filter(i=>i>0).sort((a,b)=>a-b);
+    if(!all.length){ lst.appendChild(el('span','hint','No changes yet — the whole song is '+(KMAP[currentKeyId]?.label||currentKeyId)+' in '+currentTimeSig.sig+'.')); return; }
+    all.forEach(i=>{
+      const bits=[];
+      if(keyChanges[i]) bits.push(KMAP[keyChanges[i]]?.label||keyChanges[i]);
+      if(sigChanges[i]) bits.push(sigChanges[i]);
+      const chip=el('button','chip','bar '+(i+1)+': '+bits.join(' · ')+' ✕');
+      chip.style.fontSize='10px';
+      chip.onclick=()=>{ delete keyChanges[i]; delete sigChanges[i]; syncKeyTimeUI(); relabelNoteButtons(); renderDiatonicChords(); render(); };
+      lst.appendChild(chip);
+    });
+  }
 }
 
 // ── Theme ───────────────────────────────────────────────
@@ -1176,8 +1322,15 @@ function initTheme(){
 const PREFERS_REDUCED_MOTION = !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
 const SCROLL_BEHAVIOR = PREFERS_REDUCED_MOTION ? 'auto' : 'smooth';
 function setTimeSig(sig){
-  currentTimeSig=TIME_SIGS.find(t=>t.sig===sig)||TIME_SIGS[0];
-  document.querySelectorAll('.time-btn').forEach(b=>b.classList.toggle('on',b.dataset.sig===sig));
+  const mi=changeScope?editMeasureIndex():0;
+  if(mi>0){
+    if(timeSigAt(mi-1).sig===sig) delete sigChanges[mi]; else sigChanges[mi]=sig;
+  } else {
+    currentTimeSig=TIME_SIGS.find(t=>t.sig===sig)||TIME_SIGS[0];
+    delete sigChanges[0];
+    if(pickupBeats>=currentTimeSig.beats) pickupBeats=0;
+  }
+  syncKeyTimeUI();
   render();
 }
 
@@ -1562,7 +1715,9 @@ function updatePendingDisplay(){
 }
 
 function renderDiatonicChords(){
-  const kd=KMAP[currentKeyId];
+  // Follows the key in force where you are writing, so after a modulation the
+  // palette offers that key's chords rather than the opening one's.
+  const kd=KMAP[keyAt(editMeasureIndex())];
   if(!kd)return;
   const grid=document.getElementById('diatonic-grid');
   grid.innerHTML='';
@@ -1669,7 +1824,7 @@ function enterPitch(name, acc, oct, vfAcc){
   if(activeInst.staffLines===1){ ({name,acc,oct}=SINGLE_LINE_KEY); vfAcc=null; }
   const semis=writtenSemis(parts[apIdx]);
   const midi=noteToMidi(name,acc,oct)-semis;
-  if(semis){ const sp=spellConcert(midi); name=sp.name; oct=sp.oct; acc=sp.acc; vfAcc=sp.vfAcc; }
+  if(semis){ const sp=spellConcert(midi,editMeasureIndex()); name=sp.name; oct=sp.oct; acc=sp.acc; vfAcc=sp.vfAcc; }
   auditionPreview([midi], parts[apIdx]?.instId);
   if(chordBuildMode){
     pendingChordNotes.push({name,acc,oct,midi,vfAcc});
@@ -1709,7 +1864,7 @@ function nearestOctaveMidi(name,acc,anchorMidi){
 function relabelNoteButtons(){
   // The letters follow the active part's *written* key, so on a B♭ trumpet in
   // written view the button marked D is the D that appears on the staff.
-  const scale=partScale(parts[apIdx]);
+  const scale=partScale(parts[apIdx],editMeasureIndex());
   const glyph={'#':'♯','b':'♭','##':'𝄪','bb':'𝄫'};
   // NOTE: the hidden single-line "Hit" button also carries class `np`, so this
   // selection includes an 8th element with no scale degree. Guarding on
@@ -1725,7 +1880,7 @@ function relabelNoteButtons(){
 }
 function handleScaleBtn(deg){
   const part=parts[apIdx];
-  const scale=partScale(part);
+  const scale=partScale(part,editMeasureIndex());
   const sc=scale[deg]; if(!sc)return;
   const [letter, scaleAcc]=sc;
   let acc, vfAcc;
@@ -1744,7 +1899,7 @@ function handleScaleBtn(deg){
 // path as the on-screen letter buttons so accidental overrides & octave anchor
 // all apply identically.
 function enterLetterKey(letter){
-  let deg=partScale(parts[apIdx]).findIndex(s=>s[0]===letter);
+  let deg=partScale(parts[apIdx],editMeasureIndex()).findIndex(s=>s[0]===letter);
   if(deg<0) deg=0;
   handleScaleBtn(deg);
 }
@@ -2081,9 +2236,12 @@ function durWithFlags(base,src){
 // tapping, hairpins and playback all still speak in terms of real notes
 // rather than pieces.
 function toMeasures(notes){
-  const BMAX=currentTimeSig.beats;
+  // Bar capacity is no longer one number: a pickup bar is short, and a metre
+  // change resizes every bar after it. BMAX is therefore re-read for whichever
+  // bar is currently being filled.
   const ms=[]; let cur=[], beats=0;
-  const closeIfFull=()=>{ if(beats>=BMAX-.001){ ms.push(cur); cur=[]; beats=0; } };
+  let BMAX=beatsAt(0);
+  const closeIfFull=()=>{ if(beats>=BMAX-.001){ ms.push(cur); cur=[]; beats=0; BMAX=beatsAt(ms.length); } };
   notes.forEach((n,srcIdx)=>{
     // Measure repeats and tuplet members are never split: a repeat glyph owns
     // a whole bar by definition, and cutting a tuplet apart would destroy the
@@ -2096,7 +2254,7 @@ function toMeasures(notes){
     }
     while(left>1e-6){
       const space=BMAX-beats;
-      if(space<=1e-6){ ms.push(cur); cur=[]; beats=0; continue; }
+      if(space<=1e-6){ ms.push(cur); cur=[]; beats=0; BMAX=beatsAt(ms.length); continue; }
       if(left<=space+1e-6){
         if(first){
           // Untouched note — keep its own duration string so dots and rests
@@ -2158,9 +2316,8 @@ function toggleRepeatEnd(){
 // have to stamp the symbol once per bar.
 function addMeasureRepeat(n){
   const part=parts[apIdx];
-  const BMAX=currentTimeSig.beats;
-  let beats=0, completedMeasures=0;
-  part.notes.forEach(nn=>{ beats+=noteBeats(nn); if(beats>=BMAX-.001){ beats=0; completedMeasures++; } });
+  let beats=0, completedMeasures=0, BMAX=beatsAt(0);
+  part.notes.forEach(nn=>{ beats+=noteBeats(nn,completedMeasures); if(beats>=BMAX-.001){ beats=0; completedMeasures++; BMAX=beatsAt(completedMeasures); } });
   if(beats>0.001){ alert('You can only add a measure repeat at the start of a new measure.'); return; }
   if(completedMeasures<n){ alert('Need at least '+n+' previous measure'+(n>1?'s':'')+' to repeat.'); return; }
   for(let k=0;k<n;k++){
@@ -2208,7 +2365,16 @@ function calcMW(allM, mi){
     });
     maxW=Math.max(maxW, units*PX_PER_NOTE, floor);
   }
-  return Math.max(BASE_MW, Math.round(maxW)+EDGE_PAD);
+  // A bar that opens with a new key or metre has to fit those glyphs before
+  // its first note, or the change crowds the music it introduces.
+  let extra=0;
+  if(sigChangeAt(mi)) extra+=28;
+  if(keyChangeAt(mi)) extra+=14+11*Math.max(Math.abs(partFifths(parts[0],mi)),Math.abs(partFifths(parts[0],mi-1)));
+  // A short bar gets a proportionally smaller floor, so a one-beat pickup is
+  // drawn as the short bar it is rather than a full-width bar holding one note.
+  const cap=beatsAt(mi), full=timeSigAt(mi).beats;
+  const floorW=BASE_MW*Math.max(0.35,Math.min(1,cap/(full||4)));
+  return Math.max(floorW, Math.round(maxW)+EDGE_PAD+extra);
 }
 
 // ═══════════════════════════════════════════════════════
@@ -2286,7 +2452,7 @@ function drawScore(){
   measureBeats=Array.from({length:numM},(_,mi)=>{
     let mx=0;
     allM.forEach(pm=>{ const arr=pm[mi]||[]; const b=arr.reduce((s,n)=>s+noteBeats(n),0); if(b>mx)mx=b; });
-    return mx||currentTimeSig.beats;
+    return mx||beatsAt(mi);
   });
   measureXs=[];
 
@@ -2335,7 +2501,13 @@ function drawScore(){
       const sy=TP+pi*PG;
       const st=new Stave(x,sy,mw);
       if(inst.staffLines===1)st.setConfigForLines([{visible:false},{visible:false},{visible:true},{visible:false},{visible:false}]);
-      if(first){ st.addClef(cl).addKeySignature(partVfSig(p)).addTimeSignature(currentTimeSig.sig); }
+      // The opening bar carries clef, key and metre; later bars carry only
+      // what actually changes there.
+      if(first){ st.addClef(cl).addKeySignature(partVfSig(p,mi)).addTimeSignature(timeSigAt(mi).sig); }
+      else{
+        if(keyChangeAt(mi)) st.addKeySignature(partVfSig(p,mi),partVfSig(p,mi-1));
+        if(sigChangeAt(mi)) st.addTimeSignature(timeSigAt(mi).sig);
+      }
       if(repeatStartMeasures.includes(mi))st.setBegBarType(Barline.type.REPEAT_BEGIN);
       if(repeatEndMeasures.includes(mi))st.setEndBarType(Barline.type.REPEAT_END);
       st.setContext(ctx).draw();
@@ -2355,7 +2527,7 @@ function drawScore(){
 
     staves.forEach((st,pi)=>{
       const noteData=allM[pi][mi]||[];
-      const vfNotes=drawVoice(ctx,st,noteData,mw,VF,pi,partOff[pi],partClefs[pi],parts[pi]);
+      const vfNotes=drawVoice(ctx,st,noteData,mw,VF,pi,partOff[pi],partClefs[pi],parts[pi],timeSigAt(mi),mi);
       noteData.forEach((it,li)=>{if(vfNotes[li])vfRefs[pi][(it.srcIdx!=null)?it.srcIdx:partOff[pi]+li]={vfNote:vfNotes[li],stave:st};});
       partOff[pi]+=noteData.length;
     });
@@ -2676,7 +2848,7 @@ function scrollToMeasure(mi){
   wrap.scrollTo({left:Math.max(0,tx-30),top:wrap.scrollTop,behavior:SCROLL_BEHAVIOR});
 }
 
-function drawVoice(ctx,stave,noteData,mw,VF,partIdx,partOffset,clef,part){
+function drawVoice(ctx,stave,noteData,mw,VF,partIdx,partOffset,clef,part,ts,mi){
   const{StaveNote,Voice,Formatter,Accidental,Beam,Annotation,Articulation,Dot,Tremolo,Ornament,GraceNote,GraceNoteGroup,RepeatNote,Tuplet}=VF;
   if(!noteData.length)return[];
   let vfNotes;
@@ -2693,7 +2865,7 @@ function drawVoice(ctx,stave,noteData,mw,VF,partIdx,partOffset,clef,part){
       // a non-treble stave even though the stave itself draws the right clef.
       // 't<N>' (our tuplet marker) isn't a VexFlow duration token, so strip it here.
       // Written pitch for a transposing part; the stored spelling otherwise.
-      const disp=part?displayKeys(n,part):{keys:n.keys,vfAccs:n.vfAccs};
+      const disp=part?displayKeys(n,part,mi):{keys:n.keys,vfAccs:n.vfAccs};
       const sn=new StaveNote({keys:disp.keys,duration:stripTuplet(n.dur),clef});
       if(isSelected) sn.setStyle({fillStyle:'#2980b9',strokeStyle:'#2980b9'});
       else if(inCopyRange) sn.setStyle({fillStyle:'#27ae60',strokeStyle:'#27ae60'});
@@ -2720,8 +2892,8 @@ function drawVoice(ctx,stave,noteData,mw,VF,partIdx,partOffset,clef,part){
       if(n.grace&&n.grace.length){
         try{
           const gSemis=part?writtenSemis(part):0;
-          const gScale=part?partScale(part):null;
-          const gFlat=part?partFifths(part)<0:false;
+          const gScale=part?partScale(part,mi):null;
+          const gFlat=part?partFifths(part,mi)<0:false;
           const gns=n.grace.map(g=>{
             let gKeys=g.keys, gAcc=g.vfAcc;
             if(gSemis&&g.midi!=null){
@@ -2764,7 +2936,8 @@ function drawVoice(ctx,stave,noteData,mw,VF,partIdx,partOffset,clef,part){
   }catch(e){console.warn('Tuplet:',e.message);}
 
   try{
-    const voice=new Voice({numBeats:currentTimeSig.vfB,beatValue:currentTimeSig.vfV}).setMode(2);
+    const vts=ts||currentTimeSig;
+    const voice=new Voice({numBeats:vts.vfB,beatValue:vts.vfV}).setMode(2);
     voice.addTickables(vfNotes);
     // Width actually available to notes: the stave's own width less whatever
     // the clef/key/time signatures and any begin-repeat consumed on the left,
@@ -3365,7 +3538,7 @@ async function playScore(){
   let cumScroll=0;
   playOrder.forEach((mi,k)=>{
     if(k>=cursorOcc) Tone.getTransport().schedule(()=>scrollToMeasure(mi),'+'+Math.max(0,cumScroll-cursorTime));
-    cumScroll+=(measureBeats[mi]||currentTimeSig.beats)*secPerBeat;
+    cumScroll+=(measureBeats[mi]||beatsAt(mi))*secPerBeat;
   });
 
   _activeVoices=[];let maxT=0;
@@ -3455,6 +3628,9 @@ function serializeProject(){
     pid, apIdx,
     keyId:currentKeyId,
     timeSig:currentTimeSig.sig,
+    keyChanges:{...keyChanges},
+    sigChanges:{...sigChanges},
+    pickupBeats,
     bpm:parseInt(document.getElementById('bpm-inp').value)||80,
     repeatStartMeasures:repeatStartMeasures.slice(),
     repeatEndMeasures:repeatEndMeasures.slice()
@@ -3529,12 +3705,13 @@ function applyProject(d){
   apIdx=Math.min(d.apIdx||0,parts.length-1);
   currentKeyId=d.keyId||'C';
   currentTimeSig=TIME_SIGS.find(t=>t.sig===d.timeSig)||TIME_SIGS[0];
+  keyChanges=d.keyChanges?{...d.keyChanges}:{};
+  sigChanges=d.sigChanges?{...d.sigChanges}:{};
+  pickupBeats=d.pickupBeats||0;
   document.getElementById('bpm-inp').value=d.bpm||80;
   repeatStartMeasures=d.repeatStartMeasures?d.repeatStartMeasures.slice():[];
   repeatEndMeasures=d.repeatEndMeasures?d.repeatEndMeasures.slice():[];
-  document.querySelectorAll('.key-btn').forEach(b=>b.classList.toggle('on',b.dataset.kid===currentKeyId));
-  document.querySelectorAll('.time-btn').forEach(b=>b.classList.toggle('on',b.dataset.sig===currentTimeSig.sig));
-  document.getElementById('key-pill').textContent=KMAP[currentKeyId]?.label||currentKeyId;
+  syncKeyTimeUI();
   applyKeyHue();   // loading a song in a new key repaints the chord palette
   relabelNoteButtons();
   renderDiatonicChords();
@@ -3737,7 +3914,11 @@ function buildPrintSystems(partsSubset){
         const sy=TP+pi*PG;
         const st=new Stave(x,sy,mw);
         if(inst.staffLines===1)st.setConfigForLines([{visible:false},{visible:false},{visible:true},{visible:false},{visible:false}]);
-        if(first){ st.addClef(cl).addKeySignature(partVfSig(p)).addTimeSignature(currentTimeSig.sig); }
+        if(first){ st.addClef(cl).addKeySignature(partVfSig(p,mi)).addTimeSignature(timeSigAt(mi).sig); }
+        else{
+          if(keyChangeAt(mi)) st.addKeySignature(partVfSig(p,mi),partVfSig(p,mi-1));
+          if(sigChangeAt(mi)) st.addTimeSignature(timeSigAt(mi).sig);
+        }
         if(repeatStartMeasures.includes(mi))st.setBegBarType(Barline.type.REPEAT_BEGIN);
         if(repeatEndMeasures.includes(mi))st.setEndBarType(Barline.type.REPEAT_END);
         st.setContext(ctx).draw();
@@ -3755,7 +3936,7 @@ function buildPrintSystems(partsSubset){
       }
       staves.forEach((st,pi)=>{
         const noteData=allM[pi][mi]||[];
-        const vfNotes=drawVoice(ctx,st,noteData,mw,VF,pi,partOffsets[pi],partClefs[pi],partsSubset[pi]);
+        const vfNotes=drawVoice(ctx,st,noteData,mw,VF,pi,partOffsets[pi],partClefs[pi],partsSubset[pi],timeSigAt(mi),mi);
         noteData.forEach((_,li)=>{ if(vfNotes[li])vfRefs[pi][partOffsets[pi]+li]={vfNote:vfNotes[li],stave:st}; });
         partOffsets[pi]+=noteData.length;
       });
