@@ -3252,6 +3252,158 @@ function quantizeSimpleGrid(events,unit,toBeat){
 }
 
 // ═══════════════════════════════════════════════════════
+// Performance — turning the markings into sound
+// ═══════════════════════════════════════════════════════
+// Checking one line inside a full score is the first thing anyone wants from
+// multi-part playback. Solo wins over mute when both are set.
+let mutedParts=new Set(), soloParts=new Set();
+function partMuted(pi){ return soloParts.size?!soloParts.has(pi):mutedParts.has(pi); }
+
+// Dynamics, hairpins, articulations and tempo words were all drawn and none of
+// them were heard: velocity was hardcoded (1 in the scheduler, 90 in the MIDI
+// writer), so ppp and fff played identically and staccato did not shorten.
+// This layer reads a part's markings once and hands playback and MIDI export
+// the same answer, so what you export matches what you auditioned.
+const DYN_VEL={ppp:.16,pp:.26,p:.38,mp:.5,mf:.62,f:.76,ff:.88,fff:1};
+// Accents that mark one note without changing the standing level. sfp is both:
+// a hard attack, then the line continues piano.
+const DYN_ACCENT={sfz:1.0,fz:.95,sfp:1.0};
+const DYN_AFTER={sfp:'p'};
+const DEFAULT_VEL=DYN_VEL.mf;
+// [velocity multiplier, duration multiplier]
+const ART_EFFECT={
+  'a.':[1,.45],     // staccato — detached
+  'a>':[1.3,.9],    // accent
+  'a^':[1.45,.6],   // marcato — accented and short
+  'a-':[1.05,1],    // tenuto — full value, slight lean
+  'ao':[1,2.2],     // fermata — held
+  'a+':[.9,.5],     // stopped / pizzicato
+  'tr':[1,1],       // trill is drawn, not simulated
+};
+// Tempo words as a multiplier on the BPM box, so the box stays the reference.
+const TEMPO_MULT={
+  Grave:.55,Largo:.62,Adagio:.72,Andante:.88,Moderato:1,Allegretto:1.12,
+  Allegro:1.3,Vivace:1.45,Presto:1.65,Prestissimo:1.85,'a tempo':1,
+};
+// Gradual changes, as the proportion of tempo gained or lost across the ramp,
+// and how many quarter-notes the ramp takes.
+const TEMPO_RAMP={
+  'accel.':[1.3,8],'poco accel.':[1.12,8],
+  'rit.':[.75,8],'ritard.':[.75,8],'rall.':[.7,8],
+};
+
+// The standing dynamic and per-note accent for every note of a part, with
+// hairpins interpolated across the notes they span.
+function velocityMap(part){
+  const notes=part.notes||[];
+  const out=new Array(notes.length).fill(DEFAULT_VEL);
+  let level=DEFAULT_VEL;
+  const levelAt=new Array(notes.length).fill(DEFAULT_VEL);
+  notes.forEach((n,i)=>{
+    if(n.dyn&&DYN_VEL[n.dyn]!=null) level=DYN_VEL[n.dyn];
+    levelAt[i]=level;
+    if(n.dyn&&DYN_AFTER[n.dyn]) level=DYN_VEL[DYN_AFTER[n.dyn]];
+  });
+  // Hairpins ramp from the level where they start to the level the music
+  // reaches after them — or one step either way if nothing says otherwise.
+  (part.hairpins||[]).forEach(hp=>{
+    const a=Math.max(0,hp.start), b=Math.min(notes.length-1,hp.end);
+    if(b<=a) return;
+    const from=levelAt[a];
+    let to=null;
+    // The arriving dynamic is usually written on the note the hairpin ends on,
+    // so start looking there rather than after it — searching only past the end
+    // made every crescendo stop short of the ff it was pointing at.
+    for(let i=b;i<notes.length;i++){ if(notes[i].dyn&&DYN_VEL[notes[i].dyn]!=null&&i>a){ to=DYN_VEL[notes[i].dyn]; break; } }
+    if(to==null) to=hp.type==='cresc'?Math.min(1,from*1.55):Math.max(.14,from*.6);
+    for(let i=a;i<=b;i++) levelAt[i]=from+(to-from)*((i-a)/(b-a));
+  });
+  notes.forEach((n,i)=>{
+    let v=levelAt[i];
+    if(n.dyn&&DYN_ACCENT[n.dyn]) v=Math.max(v,DYN_ACCENT[n.dyn]);
+    (n.arts||[]).forEach(a=>{ const e=ART_EFFECT[a]; if(e) v*=e[0]; });
+    out[i]=Math.max(.05,Math.min(1,v));
+  });
+  return out;
+}
+// How long a note actually sounds, as a fraction of its written value.
+function articulationHold(n){
+  let m=0.94;   // the small gap that has always separated consecutive notes
+  (n.arts||[]).forEach(a=>{ const e=ART_EFFECT[a]; if(e) m*=e[1]; });
+  return Math.max(.05,m);
+}
+// Tempo across the piece, as {beat, bpm} points in playback order. Marks are
+// read from every part, since a tempo word belongs to the music, not a staff.
+// How many beats a measure actually holds, taken from its content across all
+// parts and falling back to the metre. Same rule drawScore uses, but callable
+// without having rendered first — MIDI export runs before any draw.
+function measureBeatsOf(allM,mi){
+  let mx=0;
+  allM.forEach(pm=>{ const arr=pm[mi]||[]; const b=arr.reduce((s,n)=>s+noteBeats(n,mi),0); if(b>mx)mx=b; });
+  return mx||beatsAt(mi);
+}
+function buildTempoMap(playOrder,allM,baseBpm){
+  const pts=[{beat:0,bpm:baseBpm}];
+  const seen=new Set();
+  parts.forEach((part,pi)=>{
+    let beat=0;
+    playOrder.forEach(mi=>{
+      resolveMeasureNotes(allM[pi],mi).forEach(n=>{
+        if(n.tempo&&!n.tieFrom){
+          const key=beat.toFixed(4)+':'+n.tempo;
+          if(!seen.has(key)){
+            seen.add(key);
+            if(TEMPO_MULT[n.tempo]!=null) pts.push({beat,bpm:baseBpm*TEMPO_MULT[n.tempo]});
+            else if(TEMPO_RAMP[n.tempo]){
+              const [factor,span]=TEMPO_RAMP[n.tempo];
+              pts.push({beat,ramp:true,factor,span});
+            }
+          }
+        }
+        beat+=noteBeats(n,mi);
+      });
+    });
+  });
+  pts.sort((a,b)=>a.beat-b.beat);
+  // Resolve ramps against whatever tempo is running when they start.
+  const out=[]; let cur=baseBpm;
+  pts.forEach(p=>{
+    if(p.ramp){
+      out.push({beat:p.beat,bpm:cur});
+      cur=cur*p.factor;
+      out.push({beat:p.beat+p.span,bpm:cur,linearFrom:p.beat});
+    } else {
+      cur=p.bpm;
+      out.push({beat:p.beat,bpm:cur});
+    }
+  });
+  return out.length?out:[{beat:0,bpm:baseBpm}];
+}
+// Seconds from the start of playback to a given beat, integrating the map.
+// Constant segments are beats/bpm*60; a ramp is integrated as a linear change
+// of tempo, which is what accel. and rit. actually do.
+function beatToSec(map,beat){
+  let sec=0;
+  for(let i=0;i<map.length;i++){
+    const seg=map[i], next=map[i+1];
+    const from=seg.beat, to=next?Math.min(next.beat,beat):beat;
+    if(to<=from) { if(next&&next.beat>=beat) break; else continue; }
+    const span=to-from;
+    if(next&&next.linearFrom!=null&&next.beat>seg.beat){
+      // Tempo moves linearly from seg.bpm to next.bpm across the ramp.
+      const full=next.beat-seg.beat;
+      const bEnd=seg.bpm+(next.bpm-seg.bpm)*(span/full);
+      const avg=(seg.bpm+bEnd)/2;
+      sec+=span*60/Math.max(1,avg);
+    } else {
+      sec+=span*60/Math.max(1,seg.bpm);
+    }
+    if(!next||next.beat>=beat) break;
+  }
+  return sec;
+}
+
+// ═══════════════════════════════════════════════════════
 // Playback
 // ═══════════════════════════════════════════════════════
 const BVP={w:4,h:2,q:1,'8':.5,'16':.25,'32':.125};
@@ -3508,37 +3660,41 @@ async function playScore(){
   const allM=parts.map(p=>toMeasures(p.notes));
   const numM=Math.max(...allM.map(m=>m.length),1);
   const playOrder=buildPlayOrder(numM);
-  const secPerBeat=60/bpm;
+  // Positions are worked out in beats and converted to seconds through the
+  // tempo map, so a tempo word or a rit. bends the whole timeline — including
+  // the auto-scroll — instead of only the notes after it.
+  const tempoMap=buildTempoMap(playOrder,allM,bpm);
+  const at=b=>beatToSec(tempoMap,b);
 
   // Default to starting playback from the selected/highlighted note (or the
-  // insertion caret) instead of always from the top — find its time offset
-  // in the playback timeline so every scheduled event can be shifted back by it.
-  let cursorTime=0, cursorOcc=0;
+  // insertion caret) instead of always from the top — find its position in the
+  // playback timeline so every scheduled event can be shifted back by it.
+  let cursorBeat=0, cursorOcc=0;
   const cur=selectedNote?{partIdx:selectedNote.partIdx,noteIdx:selectedNote.noteIdx}
            :caretGap?{partIdx:caretGap.partIdx,noteIdx:caretGap.index}:null;
   if(cur && parts[cur.partIdx]){
     const cNotes=parts[cur.partIdx].notes;
-    const BMAX=currentTimeSig.beats;
-    let mi=0,beats=0,posInMeasure=0;
+    let mi=0,beats=0,posInMeasure=0,BMAX=beatsAt(0);
     for(let i=0;i<cur.noteIdx && i<cNotes.length;i++){
-      beats+=noteBeats(cNotes[i]); posInMeasure++;
-      if(beats>=BMAX-.001){ mi++; beats=0; posInMeasure=0; }
+      beats+=noteBeats(cNotes[i],mi); posInMeasure++;
+      if(beats>=BMAX-.001){ mi++; beats=0; posInMeasure=0; BMAX=beatsAt(mi); }
     }
     const occ=playOrder.indexOf(mi);
     cursorOcc=occ>=0?occ:playOrder.length;
-    for(let k=0;k<cursorOcc;k++) cursorTime+=(measureBeats[playOrder[k]]||BMAX)*secPerBeat;
+    for(let k=0;k<cursorOcc;k++) cursorBeat+=(measureBeats[playOrder[k]]||beatsAt(playOrder[k]));
     if(occ>=0){
       const mNotes=resolveMeasureNotes(allM[cur.partIdx],mi);
-      for(let k=0;k<posInMeasure && k<mNotes.length;k++) cursorTime+=durSecs(mNotes[k].dur,bpm);
+      for(let k=0;k<posInMeasure && k<mNotes.length;k++) cursorBeat+=durBeats(mNotes[k].dur);
     }
   }
+  const cursorTime=at(cursorBeat);
 
   // Follow the currently-playing measure across the staff view as it plays —
   // uses the expanded order, so the view jumps back during a repeat too.
-  let cumScroll=0;
+  let cumBeat=0;
   playOrder.forEach((mi,k)=>{
-    if(k>=cursorOcc) Tone.getTransport().schedule(()=>scrollToMeasure(mi),'+'+Math.max(0,cumScroll-cursorTime));
-    cumScroll+=(measureBeats[mi]||beatsAt(mi))*secPerBeat;
+    if(k>=cursorOcc) Tone.getTransport().schedule(()=>scrollToMeasure(mi),'+'+Math.max(0,at(cumBeat)-cursorTime));
+    cumBeat+=(measureBeats[mi]||beatsAt(mi));
   });
 
   _activeVoices=[];let maxT=0;
@@ -3553,47 +3709,55 @@ async function playScore(){
         else voice.triggerAttackRelease(notesArg,d,time,vel);
       }catch(e){}
     };
-    let t=0;
+    // Dynamics and hairpins are read per part, keyed by the note's own index
+    // in the part, so tied pieces and repeats all report the same velocity.
+    const vels=velocityMap(part);
+    if(partMuted(pi)) return;
+    let bt=0;
     playOrder.forEach(mi=>{
       const measureNotes=resolveMeasureNotes(allM[pi],mi);
       measureNotes.forEach(n=>{
-        const secs=durSecs(n.dur,bpm);
+        const beats=durBeats(n.dur);
         // A note split across a barline is drawn as tied pieces but must
         // still sound once, for its whole value — so only the head of a tie
         // is struck, and it is held for the note's full length rather than
         // the length of the piece that happens to sit in this bar.
-        const soundSecs=(n.soundBeats!=null)?n.soundBeats*(60/bpm):secs;
+        const soundBeats=(n.soundBeats!=null)?n.soundBeats:beats;
         if(!n.rest&&!n.repeatBars&&!n.tieFrom&&(n.midiVals||[]).length){
-          const abs=t;
+          const absT=at(bt);
+          const vel=(n.srcIdx!=null&&vels[n.srcIdx]!=null)?vels[n.srcIdx]:DEFAULT_VEL;
+          const hold=articulationHold(n);
           const toneNotes=n.midiVals.map(m=>Tone.Frequency(m,'midi').toNote());
           const mainNotes=toneNotes.length===1?toneNotes[0]:toneNotes;
           // Drum set fires each note by staff position to its own drum voice,
           // so a chord of kick+snare+hat all sound together and distinctly.
-          const fire=(d,time,vel)=>{ if(inst.drumset){ n.midiVals.forEach(m=>drumsetHit(m,d,time,vel)); } else hit(mainNotes,d,time,vel); };
+          const fire=(d,time,v)=>{ if(inst.drumset){ n.midiVals.forEach(m=>drumsetHit(m,d,time,v)); } else hit(mainNotes,d,time,v); };
           // Grace notes (flam/drag/ruff): quick quiet taps just before the main hit.
           const graceList=n.grace||[];
           const GRACE_GAP=.035;
           graceList.forEach((g,gi)=>{
-            const gt=abs-(graceList.length-gi)*GRACE_GAP;
-            if(gt>=cursorTime) Tone.getTransport().schedule(time=>fire(GRACE_GAP*.85,time,.55),'+'+(gt-cursorTime));
+            const gt=absT-(graceList.length-gi)*GRACE_GAP;
+            if(gt>=cursorTime) Tone.getTransport().schedule(time=>fire(GRACE_GAP*.85,time,Math.min(1,vel*.7)),'+'+(gt-cursorTime));
           });
           // Rolls: subdivide the note into fast repeated hits instead of one sustained note.
           const ROLL_HITS={trem1:2,trem2:4,trem3:8,buzz:16,press:20};
           const hits=ROLL_HITS[n.rud];
           if(hits){
+            const secs=at(bt+beats)-absT;
             const hitDur=secs/hits;
-            for(let k=0;k<hits;k++){ const ht=abs+k*hitDur; if(ht>=cursorTime) Tone.getTransport().schedule(time=>fire(hitDur*.85,time,.8),'+'+(ht-cursorTime)); }
+            for(let k=0;k<hits;k++){ const ht=absT+k*hitDur; if(ht>=cursorTime) Tone.getTransport().schedule(time=>fire(hitDur*.85,time,vel),'+'+(ht-cursorTime)); }
           } else {
             // Plain seconds (not a Tone.js Time-string like '8n') so arbitrary
             // N-tuplet ratios play at the right length — Tone's own 't' shorthand
             // only understands the 2:3 triplet case.
-            if(abs>=cursorTime) Tone.getTransport().schedule(time=>fire(soundSecs*0.94,time,1),'+'+(abs-cursorTime));
+            const soundSecs=at(bt+soundBeats)-absT;
+            if(absT>=cursorTime) Tone.getTransport().schedule(time=>fire(soundSecs*hold,time,vel),'+'+(absT-cursorTime));
           }
         }
-        t+=secs;
+        bt+=beats;
       });
     });
-    maxT=Math.max(maxT,t);
+    maxT=Math.max(maxT,at(bt));
   });
   if(!_activeVoices.length){playing=false;return;}
   Tone.getTransport().schedule(()=>stopScore(),'+' +Math.max(0,maxT-cursorTime+.8));
@@ -3825,33 +3989,96 @@ function exportMIDI(){
   const PPQ=480;
   const bpm=parseInt(document.getElementById('bpm-inp').value)||80;
   const tracks=[];
-  // Tempo / meta track
-  const t0=[];
-  const dden=Math.round(Math.log2(currentTimeSig.vfV));
-  t0.push({d:0,bytes:[0xFF,0x58,0x04,currentTimeSig.vfB,dden,24,8]});
-  const mpq=Math.round(60000000/bpm);
-  t0.push({d:0,bytes:[0xFF,0x51,0x03,(mpq>>16)&255,(mpq>>8)&255,mpq&255]});
+  // The export walked part.notes raw while playback walked the expanded repeat
+  // order, so the file disagreed with what you had just listened to. Both read
+  // the same order and the same velocities now.
+  const allM=parts.map(p=>toMeasures(p.notes));
+  const numM=Math.max(...allM.map(m=>m.length),1);
+  const playOrder=buildPlayOrder(numM);
+
+  // Tempo / meta track, carrying every metre change and tempo word. Collected
+  // at absolute ticks and only then turned into deltas — two separate running
+  // deltas cannot be interleaved into one stream.
+  const meta=[];
+  let mBeat=0, lastSig=null;
+  playOrder.forEach(mi=>{
+    const ts=timeSigAt(mi);
+    if(ts.sig!==lastSig){
+      lastSig=ts.sig;
+      meta.push({tick:Math.round(mBeat*PPQ),bytes:[0xFF,0x58,0x04,ts.vfB,Math.round(Math.log2(ts.vfV)),24,8]});
+    }
+    mBeat+=measureBeatsOf(allM,mi);
+  });
+  const tempoMap=buildTempoMap(playOrder,allM,bpm);
+  let lastBpm=null;
+  tempoMap.forEach(pt=>{
+    const b=Math.round(pt.bpm);
+    if(b===lastBpm) return;
+    lastBpm=b;
+    const mpq=Math.round(60000000/Math.max(1,b));
+    meta.push({tick:Math.round(pt.beat*PPQ),bytes:[0xFF,0x51,0x03,(mpq>>16)&255,(mpq>>8)&255,mpq&255]});
+  });
+  meta.sort((a,b)=>a.tick-b.tick);
+  const t0=[]; let metaLast=0;
+  meta.forEach(m=>{ t0.push({d:Math.max(0,m.tick-metaLast),bytes:m.bytes}); metaLast=m.tick; });
   tracks.push(buildTrack(t0));
+
   // Part tracks
+  let chNext=0;
   parts.forEach((part,pi)=>{
     const inst=IMAP[part.instId]||IMAP['piano'];
+    const vels=velocityMap(part);
     const raw=[];
-    let tick=0;
-    part.notes.forEach(n=>{
-      const dt=Math.round(noteBeats(n)*PPQ);
-      if(!n.rest && (n.midiVals||[]).length){
-        n.midiVals.forEach(m=>{ raw.push({tick,on:1,midi:m}); raw.push({tick:tick+dt,on:0,midi:m}); });
-      }
-      tick+=dt;
+    let bt=0;
+    playOrder.forEach(mi=>{
+      resolveMeasureNotes(allM[pi],mi).forEach(n=>{
+        const beats=durBeats(n.dur);
+        const soundBeats=(n.soundBeats!=null)?n.soundBeats:beats;
+        const tick=Math.round(bt*PPQ);
+        if(!n.rest && !n.repeatBars && !n.tieFrom && (n.midiVals||[]).length){
+          const vel=Math.max(1,Math.min(127,Math.round(((n.srcIdx!=null&&vels[n.srcIdx]!=null)?vels[n.srcIdx]:DEFAULT_VEL)*127)));
+          const hold=articulationHold(n);
+          const dt=Math.max(1,Math.round(soundBeats*PPQ*hold));
+          // Grace notes sound just before the beat, as they do on playback.
+          (n.grace||[]).forEach((g,gi,arr)=>{
+            if(g.midi==null) return;
+            const gt=Math.max(0,tick-(arr.length-gi)*Math.round(PPQ*0.06));
+            raw.push({tick:gt,on:1,midi:g.midi,vel:Math.round(vel*0.7)});
+            raw.push({tick:gt+Math.round(PPQ*0.05),on:0,midi:g.midi,vel:0});
+          });
+          const ROLL_HITS={trem1:2,trem2:4,trem3:8,buzz:16,press:20};
+          const hits=ROLL_HITS[n.rud];
+          if(hits){
+            const step=Math.max(1,Math.round(beats*PPQ/hits));
+            for(let k=0;k<hits;k++){
+              n.midiVals.forEach(m=>{
+                raw.push({tick:tick+k*step,on:1,midi:m,vel});
+                raw.push({tick:tick+k*step+Math.max(1,Math.round(step*0.85)),on:0,midi:m,vel:0});
+              });
+            }
+          } else {
+            n.midiVals.forEach(m=>{
+              raw.push({tick,on:1,midi:m,vel});
+              raw.push({tick:tick+dt,on:0,midi:m,vel:0});
+            });
+          }
+        }
+        bt+=beats;
+      });
     });
     raw.sort((a,b)=> a.tick-b.tick || a.on-b.on);
-    const ch=pi%16;
+    // Percussion belongs on channel 10 (index 9) or a DAW plays the drums back
+    // as piano notes. Everything else takes the next melodic channel.
+    const perc=inst.unpitched||inst.drumset||inst.pitchedDrum;
+    let ch;
+    if(perc) ch=9;
+    else { ch=chNext%16; if(ch===9) ch=(++chNext)%16; chNext++; }
     const evs=[];
-    const nameB=Array.from(new TextEncoder().encode(part.name.slice(0,32)));
+    const nameB=Array.from(new TextEncoder().encode(part.name)).slice(0,64);
     evs.push({d:0,bytes:[0xFF,0x03,nameB.length,...nameB]});
-    evs.push({d:0,bytes:[0xC0|ch,(inst.gm||0)&0x7F]});
+    if(!perc) evs.push({d:0,bytes:[0xC0|ch,(inst.gm||0)&0x7F]});
     let last=0;
-    raw.forEach(e=>{ const d=e.tick-last; last=e.tick; evs.push({d,bytes:[(e.on?0x90:0x80)|ch, e.midi&0x7F, e.on?90:0]}); });
+    raw.forEach(e=>{ const d=e.tick-last; last=e.tick; evs.push({d,bytes:[(e.on?0x90:0x80)|ch, e.midi&0x7F, e.on?(e.vel||90):0]}); });
     tracks.push(buildTrack(evs));
   });
   const ntrk=tracks.length;
