@@ -696,6 +696,36 @@ if(typeof Vex==='undefined'||typeof Tone==='undefined'){
 </script>
 <script>
 // ═══════════════════════════════════════════════════════
+// Storage access
+// ═══════════════════════════════════════════════════════
+// Safari with "Block All Cookies", iOS Lockdown Mode and some embedded
+// webviews make *reading* localStorage throw, not just writing to it — so a
+// bare getItem was enough to kill the boot before a single note was drawn.
+// Every access goes through here and falls back to memory, so the app runs
+// (and says it can't save) instead of showing a blank sheet.
+const memStore=new Map();
+const safeStore={
+  // True once any access has been refused outright, as opposed to the disk
+  // being full — two different problems that need two different messages.
+  blocked:false,
+  get(k){
+    try{ return localStorage.getItem(k); }
+    catch(e){ safeStore.blocked=true; return memStore.has(k)?memStore.get(k):null; }
+  },
+  // Returns null on success, or the error that stopped it.
+  set(k,v){
+    memStore.set(k,String(v));
+    try{ localStorage.setItem(k,String(v)); return null; }
+    catch(e){
+      // A quota error still means storage exists; anything else means it is
+      // switched off for this site.
+      if(!(e&&(e.name==='QuotaExceededError'||e.code===22||e.code===1014))) safeStore.blocked=true;
+      return e||new Error('storage unavailable');
+    }
+  },
+};
+
+// ═══════════════════════════════════════════════════════
 // Instruments
 // ═══════════════════════════════════════════════════════
 const INSTRUMENTS = [
@@ -1000,12 +1030,11 @@ function applyTheme(light){
   document.body.classList.toggle('light',!!light);
   const btn=document.getElementById('theme-btn');
   if(btn) btn.textContent=light?'☾ Dark mode':'☀ Light mode';
-  try{ localStorage.setItem('mn_theme',light?'light':'dark'); }catch(e){}
+  safeStore.set('mn_theme',light?'light':'dark');
 }
 function toggleTheme(){ applyTheme(!document.body.classList.contains('light')); }
 function initTheme(){
-  let saved=null;
-  try{ saved=localStorage.getItem('mn_theme'); }catch(e){}
+  const saved=safeStore.get('mn_theme');
   const prefersLight=window.matchMedia&&window.matchMedia('(prefers-color-scheme: light)').matches;
   applyTheme(saved?saved==='light':prefersLight);
 }
@@ -1059,7 +1088,24 @@ function deletePart(i){
   if(parts.length<=1)return;
   parts.splice(i,1);
   if(apIdx>=parts.length)apIdx=parts.length-1;
-  renderPartsList(); render();
+  // Both hold a part *index*, and every index above the deleted one has just
+  // shifted down — keeping either would aim the next edit at a different
+  // instrument, or at a part that is no longer there.
+  selectedNote=null; caretGap=null;
+  renderPartsList(); render(); updateSelectionUI();
+}
+// Names are the one string in this app that comes from outside it — a song
+// file written by someone else carries its own song and part names — so they
+// are set as text, never interpolated into markup. esc() covers the two
+// places that have to build a string: the print window and MusicXML export.
+function esc(s){
+  return String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+function el(tag,cls,text){
+  const e=document.createElement(tag);
+  if(cls) e.className=cls;
+  if(text!=null) e.textContent=text;
+  return e;
 }
 function renderPartsList(){
   const ul=document.getElementById('parts-list');
@@ -1068,7 +1114,15 @@ function renderPartsList(){
     const inst=IMAP[p.instId]||IMAP['piano'];
     const row=document.createElement('div');
     row.className='prow'+(i===apIdx?' ap':'');
-    row.innerHTML=`<div class="pdot"></div><span class="pname">${p.name}</span><span class="pinst">${inst.label}</span>${parts.length>1?`<button class="pdel" onclick="event.stopPropagation();deletePart(${i})">✕</button>`:''}`;
+    row.appendChild(el('div','pdot'));
+    row.appendChild(el('span','pname',p.name));
+    row.appendChild(el('span','pinst',inst.label));
+    if(parts.length>1){
+      const del=el('button','pdel','✕');
+      del.setAttribute('aria-label','Delete the '+p.name+' part');
+      del.onclick=e=>{e.stopPropagation();deletePart(i);};
+      row.appendChild(del);
+    }
     row.onclick=()=>{apIdx=i;selectedNote=null;caretGap=null;renderPartsList();render();updateSelectionUI();};
     ul.appendChild(row);
   });
@@ -1104,9 +1158,15 @@ function toggleControls(){
 function renderPrintButtons(){
   const row=document.getElementById('print-row');
   if(!row)return;
-  let html=`<button class="chip" onclick="exportPDF('all')" style="font-size:11px">🖨 Full Score</button>`;
-  parts.forEach((p,i)=>{ if(p.notes.length) html+=`<button class="chip" onclick="exportPDF(${i})" style="font-size:11px">🖨 ${p.name}</button>`; });
-  row.innerHTML=html;
+  row.innerHTML='';
+  const mk=(label,arg)=>{
+    const b=el('button','chip','🖨 '+label);
+    b.style.fontSize='11px';
+    b.onclick=()=>exportPDF(arg);
+    return b;
+  };
+  row.appendChild(mk('Full Score','all'));
+  parts.forEach((p,i)=>{ if(p.notes.length) row.appendChild(mk(p.name,i)); });
 }
 
 const SUBTABS=['lyrics','dyn','art','tempo','rud'];
@@ -3192,27 +3252,47 @@ function updateSaveWarn(){
   if(el) el.style.display=saveFailed?'inline-block':'none';
 }
 function saveAll(){
-  try{
-    localStorage.setItem('mn_projects',JSON.stringify(projects));
-    localStorage.setItem('mn_current',currentProjId||'');
+  const e1=safeStore.set('mn_projects',JSON.stringify(projects));
+  const e2=safeStore.set('mn_current',currentProjId||'');
+  if(!e1&&!e2){
     if(saveFailed){ saveFailed=false; updateSaveWarn(); }
-  }catch(e){
-    if(!saveFailed){ saveFailed=true; updateSaveWarn(); }
-    // Once per session — the pill carries the state from then on, and an
-    // alert on every keystroke would be worse than the problem.
-    if(!saveFailAlerted){
-      saveFailAlerted=true;
-      setTimeout(()=>alert("This song can't be auto-saved — your browser's storage for this site is full.\n\nYour work is still here for now, but it won't survive a reload. Use Songs → “⇩ Save to device” to keep a copy."),0);
-    }
+    return;
+  }
+  if(!saveFailed){ saveFailed=true; updateSaveWarn(); }
+  // Once per session — the pill carries the state from then on, and an
+  // alert on every keystroke would be worse than the problem.
+  if(!saveFailAlerted){
+    saveFailAlerted=true;
+    const why=safeStore.blocked
+      ? "This song can't be auto-saved — your browser is blocking storage for this site.\n\nIn Safari that's Settings → Safari → Block All Cookies, or Private Browsing."
+      : "This song can't be auto-saved — your browser's storage for this site is full.";
+    setTimeout(()=>alert(why+"\n\nYour work is still here for now, but it won't survive a reload. Use Songs → “⇩ Save to device” to keep a copy."),0);
   }
 }
-function scheduleAutosave(){
-  clearTimeout(autosaveT);
-  autosaveT=setTimeout(()=>{
-    const p=projects.find(x=>x.id===currentProjId);
-    if(p){ p.data=serializeProject(); p.updated=Date.now(); saveAll(); if(document.getElementById('panel-proj').classList.contains('on'))renderProjectsList(); }
-  },500);
+let autosavePending=false;
+function writeCurrentProject(){
+  autosavePending=false;
+  const p=projects.find(x=>x.id===currentProjId);
+  if(!p) return;
+  p.data=serializeProject(); p.updated=Date.now(); saveAll();
+  if(document.getElementById('panel-proj').classList.contains('on')) renderProjectsList();
 }
+function scheduleAutosave(){
+  autosavePending=true;
+  clearTimeout(autosaveT);
+  autosaveT=setTimeout(writeCurrentProject,500);
+}
+// Swiping a phone app away mid-bar is not an edge case — it is how apps get
+// closed, and iOS discards backgrounded web views without warning. The 500ms
+// debounce that keeps typing cheap is exactly 500ms of work to lose, so the
+// pending write is forced out synchronously the moment the page goes away.
+function flushAutosave(){
+  if(!autosavePending) return;
+  clearTimeout(autosaveT);
+  writeCurrentProject();
+}
+document.addEventListener('visibilitychange',()=>{ if(document.visibilityState==='hidden') flushAutosave(); });
+window.addEventListener('pagehide', flushAutosave);
 function updateProjPill(){ const p=projects.find(x=>x.id===currentProjId); document.getElementById('proj-pill').textContent=p?p.name:'Song'; }
 
 // Migrate notes saved before articulations became multi-select (singular `art` -> `arts` array).
@@ -3304,7 +3384,9 @@ function renderProjectsList(){
     const nNotes=(p.data.parts||[]).reduce((s,pt)=>s+((pt.notes||[]).length),0);
     const kLabel=KMAP[p.data.keyId]?.label||p.data.keyId||'C';
     const info=document.createElement('div'); info.style.cssText='display:flex;align-items:center;gap:5px;flex:1;overflow:hidden;';
-    info.innerHTML=`<div class="pdot"></div><span class="pname">${p.name}</span><span class="pinst">${kLabel} · ${nNotes} notes</span>`;
+    info.appendChild(el('div','pdot'));
+    info.appendChild(el('span','pname',p.name));
+    info.appendChild(el('span','pinst',kLabel+' · '+nNotes+' notes'));
     info.onclick=()=>loadProject(p.id);
     const ren=document.createElement('button'); ren.className='pdel'; ren.style.color='#f0c040'; ren.textContent='✎';
     ren.onclick=(e)=>{e.stopPropagation();renameProject(p.id);};
@@ -3315,8 +3397,9 @@ function renderProjectsList(){
   });
 }
 function initProjects(){
-  try{ const raw=localStorage.getItem('mn_projects'); if(raw) projects=JSON.parse(raw)||[]; }catch(e){ projects=[]; }
-  currentProjId=localStorage.getItem('mn_current')||null;
+  try{ const raw=safeStore.get('mn_projects'); if(raw) projects=JSON.parse(raw)||[]; }catch(e){ projects=[]; }
+  if(!Array.isArray(projects)) projects=[];
+  currentProjId=safeStore.get('mn_current')||null;
   if(!projects.length){
     const id='p'+Date.now();
     projects=[{id,name:'My First Song',data:serializeProject(),updated:Date.now()}];
@@ -3496,7 +3579,7 @@ function exportPDF(scope){
   const w=window.open('','_blank');
   if(!w){ alert('Allow pop-ups to print.'); return; }
   const systemsHTML=svgBlocks.map(s=>`<div class="system">${s}</div>`).join('');
-  w.document.write(`<!DOCTYPE html><html><head><title>${title} — ${subtitle}</title>
+  w.document.write(`<!DOCTYPE html><html><head><title>${esc(title)} — ${esc(subtitle)}</title>
     <style>
       @page{margin:14mm;}
       body{font-family:serif;color:#000;margin:0 auto;padding:12px;max-width:${PRINT_SYS_W}px;}
@@ -3506,8 +3589,8 @@ function exportPDF(scope){
       .system{break-inside:avoid;page-break-inside:avoid;margin-bottom:6px;}
       .system svg{max-width:100%;height:auto;display:block;}
     </style></head><body>
-    <h1>${title}</h1>
-    <h2>${subtitle}</h2>
+    <h1>${esc(title)}</h1>
+    <h2>${esc(subtitle)}</h2>
     <div class="meta">Key: ${KMAP[currentKeyId]?.label||currentKeyId} &nbsp;·&nbsp; ${currentTimeSig.sig} &nbsp;·&nbsp; ♩ = ${parseInt(document.getElementById('bpm-inp').value)||80}</div>
     ${systemsHTML}
     </body></html>`);
@@ -3741,7 +3824,7 @@ function startTour(){
   if(parts[apIdx]&&parts[apIdx].notes.length){ selectedNote={partIdx:apIdx,noteIdx:0}; caretGap=null; render(); updateSelectionUI(); }
   buildTourDom();
   tourStep(0);
-  try{ localStorage.setItem('mn_tutorial_seen','1'); }catch(e){}
+  safeStore.set('mn_tutorial_seen','1');
 }
 function buildTourDom(){
   if(document.getElementById('tour-overlay'))return;
@@ -3808,7 +3891,7 @@ function endTour(){
   const ov=document.getElementById('tour-overlay'); if(ov)ov.remove();
   window.removeEventListener('resize', tourReposition);
   selectedNote=null; caretGap=null; render(); updateSelectionUI();
-  try{ localStorage.setItem('mn_tutorial_seen','1'); }catch(e){}
+  safeStore.set('mn_tutorial_seen','1');
 }
 
 // ═══════════════════════════════════════════════════════
@@ -3873,7 +3956,7 @@ applyAriaLabels();
 render();
 initMidi();
 document.getElementById('bpm-inp').addEventListener('change',scheduleAutosave);
-if(!localStorage.getItem('mn_tutorial_seen')) setTimeout(startTour, 500);
+if(!safeStore.get('mn_tutorial_seen')) setTimeout(startTour, 500);
 </script>
 </body>
 </html>
