@@ -1955,24 +1955,42 @@ function addRest(){
 }
 
 // ═══════════════════════════════════════════════════════
-// Undo / redo — snapshot-based history (up to 100 steps)
+// Undo / redo — snapshot-based history
 // ═══════════════════════════════════════════════════════
 // Rather than instrument every mutating action, we record the serialized
 // document state after each change (render() already runs once per action and
 // calls maybeRecordHistory below). Consecutive identical states are skipped, so
 // selection-only changes — which aren't serialized — never create an entry.
+//
+// A flat cap of 100 entries is the wrong unit: at ~200 KB per snapshot for a
+// long piece that is 20 MB of strings held on a phone. The cap is on total
+// bytes instead, so a short song keeps a deep history and a long one keeps a
+// shallower one, which is the trade anyone would make.
 const HISTORY_MAX=100;
-let history=[], histIndex=-1, historyLocked=false;
-function currentStateStr(){ return JSON.stringify(serializeProject()); }
+const HISTORY_MAX_BYTES=4*1024*1024;
+let history=[], histIndex=-1, historyLocked=false, historyBytes=0;
+// serializeProject() deep-clones and then the caller stringifies the clone,
+// so recording one history entry walked the whole score three times. History
+// only ever needs the text, and the text can be produced from the live objects
+// in one pass.
+function currentStateStr(){ return JSON.stringify(projectShape()); }
 // Start a fresh timeline for a newly loaded/created/imported song.
-function resetHistory(){ history=[currentStateStr()]; histIndex=0; updateUndoRedoButtons(); }
+function resetHistory(){
+  const s=currentStateStr();
+  history=[s]; histIndex=0; historyBytes=s.length;
+  updateUndoRedoButtons();
+}
 function maybeRecordHistory(){
   if(historyLocked) return;
   const s=currentStateStr();
   if(history[histIndex]===s) return;          // nothing actually changed
+  for(let i=histIndex+1;i<history.length;i++) historyBytes-=history[i].length;
   history=history.slice(0,histIndex+1);        // drop any redo tail
-  history.push(s);
-  if(history.length>HISTORY_MAX+1) history.shift();
+  history.push(s); historyBytes+=s.length;
+  while(history.length>1 && (history.length>HISTORY_MAX+1 || historyBytes>HISTORY_MAX_BYTES)){
+    historyBytes-=history[0].length;
+    history.shift();
+  }
   histIndex=history.length-1;
   updateUndoRedoButtons();
 }
@@ -3884,20 +3902,24 @@ function stopScore(s){
 // ═══════════════════════════════════════════════════════
 let projects=[]; let currentProjId=null; let autosaveT=null;
 
-function serializeProject(){
+// The document's shape, referencing the live objects. Cheap to build and safe
+// to stringify; anything that will outlive this moment must take a copy.
+function projectShape(){
   return {
-    parts:JSON.parse(JSON.stringify(parts)),
+    parts,
     pid, apIdx,
     keyId:currentKeyId,
     timeSig:currentTimeSig.sig,
-    keyChanges:{...keyChanges},
-    sigChanges:{...sigChanges},
+    keyChanges,
+    sigChanges,
     pickupBeats,
     bpm:parseInt(document.getElementById('bpm-inp').value)||80,
-    repeatStartMeasures:repeatStartMeasures.slice(),
-    repeatEndMeasures:repeatEndMeasures.slice()
+    repeatStartMeasures,
+    repeatEndMeasures
   };
 }
+// A detached copy, for storing in a project or writing to a file.
+function serializeProject(){ return JSON.parse(JSON.stringify(projectShape())); }
 // Autosave used to swallow every error, including the QuotaExceededError you
 // get once browser storage fills up. The Songs tab promises your work is
 // saved in the browser, so a silent failure there is silent data loss — the
