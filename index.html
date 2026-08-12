@@ -384,6 +384,7 @@ body { font-family:-apple-system,BlinkMacSystemFont,sans-serif; background:var(-
   <span class="pill" id="proj-pill" onclick="switchTab('proj')">Song</span>
   <span class="pill" id="part-pill" onclick="switchTab('parts')" style="color:var(--gold);max-width:110px;overflow:hidden;text-overflow:ellipsis;" title="Instrument you're writing to — tap to switch">Treble · Piano</span>
   <span class="pill" id="key-pill" onclick="switchTab('score')">C</span>
+  <span class="pill" id="pitch-pill" onclick="togglePitchView()" title="Written pitch shows each part as its player reads it; concert pitch shows the score as it sounds">Written</span>
   <span class="pill on" id="audition-pill" onclick="toggleAudition()" title="Hear each note as you enter or edit it">🔊 Audition</span>
   <span class="pill" id="midi-pill">No MIDI</span>
   <span class="pill" id="voice-pill" aria-live="polite" style="display:none"></span>
@@ -741,14 +742,15 @@ const INSTRUMENTS = [
   {id:'violin',  label:'Violin',      cat:'Strings',   clef:'treble',     osc:'sawtooth4', env:{a:.1,d:.05,s:1,r:.5},   vol:-8, gm:40, defaultOct:4},
   {id:'viola',   label:'Viola',       cat:'Strings',   clef:'alto',       osc:'sawtooth4', env:{a:.12,d:.05,s:1,r:.5},  vol:-8, gm:41, defaultOct:4},
   {id:'cello',   label:'Cello',       cat:'Strings',   clef:'bass',       osc:'sawtooth4', env:{a:.14,d:.05,s:1,r:.6},  vol:-8, gm:42, defaultOct:3},
-  {id:'dbass',   label:'Dbl Bass',    cat:'Strings',   clef:'bass',       osc:'sawtooth2', env:{a:.15,d:.1,s:.9,r:.7},  vol:-6, gm:43, defaultOct:2},
+  {id:'dbass',   label:'Dbl Bass',    cat:'Strings',   clef:'bass',       osc:'sawtooth2', env:{a:.15,d:.1,s:.9,r:.7},  vol:-6, gm:43, defaultOct:2, transpose:12},
   {id:'flute',   label:'Flute',       cat:'Woodwinds', clef:'treble',     osc:'sine',      env:{a:.06,d:.05,s:.9,r:.4}, vol:-10, gm:73, defaultOct:5},
   {id:'oboe',    label:'Oboe',        cat:'Woodwinds', clef:'treble',     osc:'sawtooth8', env:{a:.04,d:.1,s:.85,r:.3}, vol:-10, gm:68, defaultOct:4},
-  {id:'clarinet',label:'Clarinet',    cat:'Woodwinds', clef:'treble',     osc:'square',    env:{a:.04,d:.05,s:.85,r:.35},vol:-10, gm:71, defaultOct:4},
+  {id:'clarinet',label:'Clarinet',    cat:'Woodwinds', clef:'treble',     osc:'square',    env:{a:.04,d:.05,s:.85,r:.35},vol:-10, gm:71, defaultOct:4, transpose:2},
   {id:'bassoon', label:'Bassoon',     cat:'Woodwinds', clef:'bass',       osc:'sawtooth',  env:{a:.08,d:.1,s:.85,r:.5}, vol:-8, gm:70, defaultOct:3},
-  {id:'sax',     label:'Saxophone',   cat:'Woodwinds', clef:'treble',     osc:'sawtooth8', env:{a:.05,d:.1,s:.9,r:.4},  vol:-8, gm:65, defaultOct:4},
-  {id:'trumpet', label:'Trumpet',     cat:'Brass',     clef:'treble',     osc:'square',    env:{a:.04,d:.1,s:.85,r:.3}, vol:-8, gm:56, defaultOct:4},
-  {id:'horn',    label:'Fr. Horn',    cat:'Brass',     clef:'treble',     osc:'triangle8', env:{a:.1,d:.1,s:.8,r:.6},   vol:-8, gm:60, defaultOct:3},
+  {id:'sax',     label:'Alto Sax',    cat:'Woodwinds', clef:'treble',     osc:'sawtooth8', env:{a:.05,d:.1,s:.9,r:.4},  vol:-8, gm:65, defaultOct:4, transpose:9},
+  {id:'tsax',    label:'Tenor Sax',   cat:'Woodwinds', clef:'treble',     osc:'sawtooth8', env:{a:.05,d:.1,s:.9,r:.4},  vol:-8, gm:66, defaultOct:3, transpose:14},
+  {id:'trumpet', label:'Trumpet',     cat:'Brass',     clef:'treble',     osc:'square',    env:{a:.04,d:.1,s:.85,r:.3}, vol:-8, gm:56, defaultOct:4, transpose:2},
+  {id:'horn',    label:'Fr. Horn',    cat:'Brass',     clef:'treble',     osc:'triangle8', env:{a:.1,d:.1,s:.8,r:.6},   vol:-8, gm:60, defaultOct:3, transpose:7},
   {id:'trombone',label:'Trombone',    cat:'Brass',     clef:'bass',       osc:'sawtooth',  env:{a:.06,d:.1,s:.85,r:.5}, vol:-8, gm:57, defaultOct:3},
   {id:'tuba',    label:'Tuba',        cat:'Brass',     clef:'bass',       osc:'square',    env:{a:.08,d:.1,s:.85,r:.6}, vol:-6, gm:58, defaultOct:2},
   {id:'soprano', label:'Soprano',     cat:'Vocal',     clef:'treble',     osc:'sine',      env:{a:.1,d:.1,s:.9,r:.8},   vol:-8, gm:52, defaultOct:4},
@@ -758,7 +760,7 @@ const INSTRUMENTS = [
   {id:'baritonev',label:'Baritone',   cat:'Vocal',     clef:'bass',       osc:'triangle',  env:{a:.09,d:.1,s:.85,r:.8}, vol:-8, gm:53, defaultOct:3},
   {id:'bassv',   label:'Bass Voice',  cat:'Vocal',     clef:'bass',       osc:'triangle',  env:{a:.1,d:.1,s:.85,r:.8},  vol:-8, gm:53, defaultOct:2},
   {id:'timpani', label:'Timpani',     cat:'Percussion',clef:'bass',       osc:'membrane',  env:{a:.001,d:.5,s:0,r:.5},  vol:-4, gm:47, defaultOct:3},
-  {id:'xyloph',  label:'Xylophone',   cat:'Percussion',clef:'treble',     osc:'fm',        env:{a:.001,d:.3,s:0,r:.1},  vol:-8, gm:13, defaultOct:5},
+  {id:'xyloph',  label:'Xylophone',   cat:'Percussion',clef:'treble',     osc:'fm',        env:{a:.001,d:.3,s:0,r:.1},  vol:-8, gm:13, defaultOct:5, transpose:-12},
   {id:'marimba', label:'Marimba',     cat:'Percussion',clef:'treble',     osc:'fm',        env:{a:.001,d:.6,s:0,r:.2},  vol:-6, gm:12, defaultOct:4},
   {id:'snare',   label:'Snare',       cat:'Percussion',clef:'percussion', osc:'noise',     env:{a:.001,d:.2,s:0,r:.1},  vol:-6, unpitched:true, gm:0, staffLines:1, defaultOct:4},
   {id:'bassdrum',label:'Bass Drum',   cat:'Percussion',clef:'percussion', osc:'membrane',  env:{a:.001,d:.4,s:0,r:.2},  vol:-4, unpitched:true, gm:0, staffLines:1, defaultOct:4},
@@ -839,6 +841,128 @@ function midiToNote(midi){
 }
 
 // ═══════════════════════════════════════════════════════
+// Transposing instruments
+// ═══════════════════════════════════════════════════════
+// A B♭ trumpet sounds a tone below what its player reads, so a trumpet part
+// printed at concert pitch is a part that player cannot use. midiVals stay
+// concert pitch throughout — playback, audition and MIDI export are the
+// sounding music and never change — and the *written* pitch is derived here
+// for the staff, the printed part and MusicXML.
+//
+// `transpose` is what you add to concert to get written: +2 for B♭, +9 for
+// E♭ alto, +7 for F horn, +12 for double bass (written an octave high).
+const FIFTHS_TO_MAJOR={'-7':'Cb','-6':'Gb','-5':'Db','-4':'Ab','-3':'Eb','-2':'Bb','-1':'F','0':'C','1':'G','2':'D','3':'A','4':'E','5':'B','6':'F#','7':'C#'};
+const MAJOR_TO_FIFTHS=Object.fromEntries(Object.entries(FIFTHS_TO_MAJOR).map(([f,n])=>[n,parseInt(f)]));
+const SHARP_ORDER=['F','C','G','D','A','E','B'], FLAT_ORDER=['B','E','A','D','G','C','F'];
+const LETTERS=['C','D','E','F','G','A','B'];
+
+// The scale of the major key at this point on the circle of fifths, as the
+// same [letter, accidental] pairs KEYS_DATA uses.
+function scaleForFifths(f){
+  const alt={};
+  if(f>0) SHARP_ORDER.slice(0,f).forEach(l=>alt[l]='#');
+  if(f<0) FLAT_ORDER.slice(0,-f).forEach(l=>alt[l]='b');
+  const tonic=FIFTHS_TO_MAJOR[String(f)]||'C';
+  const start=LETTERS.indexOf(tonic[0]);
+  return Array.from({length:7},(_,i)=>{const l=LETTERS[(start+i)%7];return[l,alt[l]||null];});
+}
+// Transposing by N semitones moves the key N*7 places round the circle of
+// fifths (7 is its own inverse mod 12). Wrapped back into the range VexFlow
+// can draw, so a part never asks for a signature with nine sharps.
+function transposeFifths(f,semis){
+  let n=f+7*semis;
+  while(n>7) n-=12;
+  while(n<-7) n+=12;
+  return n;
+}
+// Which octave actually spells this MIDI note as (name, acc) — B#3 and C4 are
+// the same key but not the same octave number.
+function octaveFor(name,acc,midi){
+  const base=Math.floor(midi/12)-1;
+  for(let d=-1;d<=1;d++) if(noteToMidi(name,acc,base+d)===midi) return base+d;
+  return base;
+}
+// Spell a MIDI note inside a given key: notes of the key take the signature's
+// accidental and draw none, notes outside it get an explicit one.
+function spellInScale(midi,scale,preferFlat){
+  const semi=((midi%12)+12)%12;
+  for(const [name,acc] of scale){
+    if(((NOTE_SEMI[name]+accSemi(acc))+120)%12===semi)
+      return {name,acc,oct:octaveFor(name,acc,midi),vfAcc:null};
+  }
+  const [n,a]=(preferFlat?SEMI_TO_FLAT:SEMI_TO_SHARP)[semi];
+  return {name:n,acc:a,oct:octaveFor(n,a,midi),vfAcc:a||'n'};
+}
+
+// 'concert' — the score as it sounds, which is how the app has always behaved.
+// 'written' — each part as its player reads it.
+let pitchView='written';
+function applyPitchView(v){
+  pitchView=(v==='concert')?'concert':'written';
+  const pill=document.getElementById('pitch-pill');
+  if(pill){
+    pill.textContent=pitchView==='written'?'Written':'Concert';
+    pill.classList.toggle('on',pitchView==='written');
+  }
+  safeStore.set('mn_pitchview',pitchView);
+  relabelNoteButtons();
+  if(typeof renderPartsList==='function'&&document.getElementById('parts-list')) renderPartsList();
+  render();
+}
+function togglePitchView(){ applyPitchView(pitchView==='written'?'concert':'written'); }
+// How a transposition reads on the page: "B♭" for +2, "E♭" for +9, and so on.
+// Derived from the interval rather than a lookup table, so a custom value on
+// an odd instrument still describes itself.
+function transposeLabel(semis){
+  if(!semis) return 'C (concert)';
+  const pc=((-semis)%12+12)%12;   // the pitch that sounds when the player reads C
+  const names=['C','B','B♭','A','A♭','G','G♭','F','E','E♭','D','D♭'];
+  const oct=semis>=12?' (8vb)':semis<=-12?' (8va)':'';
+  return names[pc]+oct;
+}
+const TRANSPOSE_CHOICES=[
+  {v:0,  label:'C'},
+  {v:2,  label:'B♭'},
+  {v:9,  label:'E♭ alto'},
+  {v:14, label:'B♭ tenor'},
+  {v:7,  label:'F'},
+  {v:3,  label:'A'},
+  {v:12, label:'8vb'},
+  {v:-12,label:'8va'},
+];
+function isTransposing(p){
+  if(!p) return 0;
+  const inst=IMAP[p.instId]||IMAP.piano;
+  if(inst.unpitched||inst.drumset||inst.pitchedDrum) return 0;   // percussion has no key to move
+  return (p.transpose!=null?p.transpose:(inst.transpose||0))|0;
+}
+// The shift actually applied when drawing this part right now.
+function writtenSemis(p){ return pitchView==='written'?isTransposing(p):0; }
+function concertFifths(){ return MAJOR_TO_FIFTHS[KMAP[currentKeyId]?.vfSig]??0; }
+function partFifths(p){ return transposeFifths(concertFifths(),writtenSemis(p)); }
+function partVfSig(p){ return FIFTHS_TO_MAJOR[String(partFifths(p))]||'C'; }
+function partScale(p){
+  const s=writtenSemis(p);
+  return s?scaleForFifths(partFifths(p)):(KMAP[currentKeyId]?.scale||KEYS_DATA[0].scale);
+}
+// What to draw for one note on one part. With no transposition in play the
+// stored spelling is used untouched, so a deliberate double-sharp or an odd
+// enharmonic the user chose is never quietly rewritten.
+function displayKeys(n,p){
+  const semis=writtenSemis(p);
+  if(!semis||n.rest||n.repeatBars||!(n.midiVals||[]).length) return {keys:n.keys,vfAccs:n.vfAccs};
+  const scale=partScale(p), flat=partFifths(p)<0;
+  const res=n.midiVals.map(m=>spellInScale(m+semis,scale,flat));
+  return {keys:res.map(r=>r.name+'/'+r.oct), vfAccs:res.map(r=>r.vfAcc)};
+}
+// The concert spelling to store for a note, so concert view stays correct for
+// music entered while reading written pitch.
+function spellConcert(midi){
+  const kd=KMAP[currentKeyId]||KEYS_DATA[0];
+  return spellInScale(midi,kd.scale,FLAT_KEYS.includes(kd.vfSig||''));
+}
+
+// ═══════════════════════════════════════════════════════
 // Time signature data
 // ═══════════════════════════════════════════════════════
 const TIME_SIGS = [
@@ -857,7 +981,10 @@ let currentTimeSig = TIME_SIGS[0];
 // State
 // ═══════════════════════════════════════════════════════
 let pid=1;
-function mkPart(name,instId,clef){return{id:pid++,name,instId,clef:clef||null,notes:[],hairpins:[]};}
+function mkPart(name,instId,clef){
+  const inst=IMAP[instId];
+  return{id:pid++,name,instId,clef:clef||null,notes:[],hairpins:[],transpose:(inst&&inst.transpose)||0};
+}
 let parts=[mkPart('Treble','piano','treble'), mkPart('Bass','piano','bass')];
 let apIdx=0;
 
@@ -1129,8 +1256,28 @@ function renderPartsList(){
       del.onclick=e=>{e.stopPropagation();deletePart(i);};
       row.appendChild(del);
     }
-    row.onclick=()=>{apIdx=i;selectedNote=null;caretGap=null;renderPartsList();render();updateSelectionUI();};
+    row.onclick=()=>{apIdx=i;selectedNote=null;caretGap=null;renderPartsList();render();updateSelectionUI();relabelNoteButtons();};
     ul.appendChild(row);
+    // Transposition sits under the active part only — it is a per-part
+    // property, but showing eight buttons against every row would bury the
+    // list it belongs to.
+    if(i===apIdx && !(inst.unpitched||inst.drumset||inst.pitchedDrum)){
+      const tr=document.createElement('div');
+      tr.className='row';
+      tr.style.cssText='margin:2px 0 4px;padding-left:6px;flex-wrap:wrap';
+      tr.appendChild(el('span','lbl','Transposes'));
+      TRANSPOSE_CHOICES.forEach(c=>{
+        const b=el('button','chip'+(isTransposing(p)===c.v?' on':''),c.label);
+        b.style.fontSize='10px';
+        b.onclick=e=>{ e.stopPropagation(); p.transpose=c.v; renderPartsList(); relabelNoteButtons(); render(); };
+        tr.appendChild(b);
+      });
+      const note=el('div','hint','This part sounds in '+transposeLabel(isTransposing(p))
+        +(isTransposing(p)?' — its player reads '+partVfSig(p)+' where the score sounds '+(KMAP[currentKeyId]?.label||currentKeyId):''));
+      note.style.width='100%';
+      tr.appendChild(note);
+      ul.appendChild(tr);
+    }
   });
   refreshNoteGridForActivePart();
 }
@@ -1514,10 +1661,15 @@ function scrollAfterEntry(){
 // every hit renders at the same fixed spot on the one visible line,
 // regardless of entry path (grid button, MIDI keyboard, etc).
 const SINGLE_LINE_KEY={name:'B',acc:null,oct:4};
+// (name, acc, oct) arrive as the pitch the user is *reading* — which on a
+// transposing part in written view is a tone or a sixth away from the pitch
+// that sounds. Everything stored below is concert.
 function enterPitch(name, acc, oct, vfAcc){
   const activeInst=IMAP[parts[apIdx]?.instId]||IMAP.piano;
   if(activeInst.staffLines===1){ ({name,acc,oct}=SINGLE_LINE_KEY); vfAcc=null; }
-  const midi=noteToMidi(name,acc,oct);
+  const semis=writtenSemis(parts[apIdx]);
+  const midi=noteToMidi(name,acc,oct)-semis;
+  if(semis){ const sp=spellConcert(midi); name=sp.name; oct=sp.oct; acc=sp.acc; vfAcc=sp.vfAcc; }
   auditionPreview([midi], parts[apIdx]?.instId);
   if(chordBuildMode){
     pendingChordNotes.push({name,acc,oct,midi,vfAcc});
@@ -1555,7 +1707,9 @@ function nearestOctaveMidi(name,acc,anchorMidi){
   return bestOct;
 }
 function relabelNoteButtons(){
-  const kd=KMAP[currentKeyId];
+  // The letters follow the active part's *written* key, so on a B♭ trumpet in
+  // written view the button marked D is the D that appears on the staff.
+  const scale=partScale(parts[apIdx]);
   const glyph={'#':'♯','b':'♭','##':'𝄪','bb':'𝄫'};
   // NOTE: the hidden single-line "Hit" button also carries class `np`, so this
   // selection includes an 8th element with no scale degree. Guarding on
@@ -1564,19 +1718,24 @@ function relabelNoteButtons(){
   // which is what silently broke autosave persistence AND made imported music
   // never display on screen. Do not remove this guard.
   document.querySelectorAll('#note-grid .np').forEach((b,i)=>{
-    const sc=kd.scale[i]; if(!sc)return;
+    const sc=scale[i]; if(!sc)return;
     const [name,acc]=sc;
     b.textContent=name+(glyph[acc]||'');
   });
 }
 function handleScaleBtn(deg){
-  const kd=KMAP[currentKeyId];
-  const [letter, scaleAcc]=kd.scale[deg];
+  const part=parts[apIdx];
+  const scale=partScale(part);
+  const sc=scale[deg]; if(!sc)return;
+  const [letter, scaleAcc]=sc;
   let acc, vfAcc;
   if(selAcc==='key'){ acc=scaleAcc; vfAcc=null; }        // key sig draws it
   else if(selAcc==='n'){ acc=null; vfAcc='n'; }            // force natural
   else { acc=selAcc; vfAcc=selAcc; }                       // #, b, ##, bb
-  const oct=nearestOctaveMidi(letter,acc,getEntryAnchorMidi(parts[apIdx]))+selOct;
+  // The anchor is a sounding pitch; the octave search happens in the register
+  // the player is reading, so it must be shifted to match.
+  const anchor=getEntryAnchorMidi(part)+writtenSemis(part);
+  const oct=nearestOctaveMidi(letter,acc,anchor)+selOct;
   enterPitch(letter, acc, oct, vfAcc);
 }
 // Computer-keyboard letter entry (Sibelius-style): pressing A–G enters that
@@ -1585,8 +1744,7 @@ function handleScaleBtn(deg){
 // path as the on-screen letter buttons so accidental overrides & octave anchor
 // all apply identically.
 function enterLetterKey(letter){
-  const kd=KMAP[currentKeyId];
-  let deg=kd.scale.findIndex(s=>s[0]===letter);
+  let deg=partScale(parts[apIdx]).findIndex(s=>s[0]===letter);
   if(deg<0) deg=0;
   handleScaleBtn(deg);
 }
@@ -2177,7 +2335,7 @@ function drawScore(){
       const sy=TP+pi*PG;
       const st=new Stave(x,sy,mw);
       if(inst.staffLines===1)st.setConfigForLines([{visible:false},{visible:false},{visible:true},{visible:false},{visible:false}]);
-      if(first){ st.addClef(cl).addKeySignature(kd.vfSig).addTimeSignature(currentTimeSig.sig); }
+      if(first){ st.addClef(cl).addKeySignature(partVfSig(p)).addTimeSignature(currentTimeSig.sig); }
       if(repeatStartMeasures.includes(mi))st.setBegBarType(Barline.type.REPEAT_BEGIN);
       if(repeatEndMeasures.includes(mi))st.setEndBarType(Barline.type.REPEAT_END);
       st.setContext(ctx).draw();
@@ -2197,7 +2355,7 @@ function drawScore(){
 
     staves.forEach((st,pi)=>{
       const noteData=allM[pi][mi]||[];
-      const vfNotes=drawVoice(ctx,st,noteData,mw,VF,pi,partOff[pi],partClefs[pi]);
+      const vfNotes=drawVoice(ctx,st,noteData,mw,VF,pi,partOff[pi],partClefs[pi],parts[pi]);
       noteData.forEach((it,li)=>{if(vfNotes[li])vfRefs[pi][(it.srcIdx!=null)?it.srcIdx:partOff[pi]+li]={vfNote:vfNotes[li],stave:st};});
       partOff[pi]+=noteData.length;
     });
@@ -2314,7 +2472,7 @@ function renderClefGutter(){
       const inst=IMAP[p.instId]||IMAP['piano'];
       const st=new Stave(10,TP+pi*PG,PROBE);
       if(inst.staffLines===1)st.setConfigForLines([{visible:false},{visible:false},{visible:true},{visible:false},{visible:false}]);
-      st.addClef(partClefFor(p)).addKeySignature(kd.vfSig);
+      st.addClef(partClefFor(p)).addKeySignature(partVfSig(p));
       st.setContext(ctx).draw();
       endX=Math.max(endX,st.getNoteStartX());
       return st;
@@ -2518,7 +2676,7 @@ function scrollToMeasure(mi){
   wrap.scrollTo({left:Math.max(0,tx-30),top:wrap.scrollTop,behavior:SCROLL_BEHAVIOR});
 }
 
-function drawVoice(ctx,stave,noteData,mw,VF,partIdx,partOffset,clef){
+function drawVoice(ctx,stave,noteData,mw,VF,partIdx,partOffset,clef,part){
   const{StaveNote,Voice,Formatter,Accidental,Beam,Annotation,Articulation,Dot,Tremolo,Ornament,GraceNote,GraceNoteGroup,RepeatNote,Tuplet}=VF;
   if(!noteData.length)return[];
   let vfNotes;
@@ -2534,10 +2692,12 @@ function drawVoice(ctx,stave,noteData,mw,VF,partIdx,partOffset,clef){
       // to treble-clef line positions otherwise, mispositioning every note on
       // a non-treble stave even though the stave itself draws the right clef.
       // 't<N>' (our tuplet marker) isn't a VexFlow duration token, so strip it here.
-      const sn=new StaveNote({keys:n.keys,duration:stripTuplet(n.dur),clef});
+      // Written pitch for a transposing part; the stored spelling otherwise.
+      const disp=part?displayKeys(n,part):{keys:n.keys,vfAccs:n.vfAccs};
+      const sn=new StaveNote({keys:disp.keys,duration:stripTuplet(n.dur),clef});
       if(isSelected) sn.setStyle({fillStyle:'#2980b9',strokeStyle:'#2980b9'});
       else if(inCopyRange) sn.setStyle({fillStyle:'#27ae60',strokeStyle:'#27ae60'});
-      const accs=n.vfAccs||[];
+      const accs=disp.vfAccs||[];
       accs.forEach((acc,i)=>{if(acc)try{sn.addModifier(new Accidental(acc),i);}catch(e){};});
       if(n.dur.includes('d'))try{Dot.buildAndAttach([sn],{all:true});}catch(e){}
       if(n.lyric)try{const a=new Annotation(n.lyric);a.setVerticalJustification(Annotation.VerticalJustify.BOTTOM);a.setFont({family:'Arial',size:9});sn.addModifier(a,0);}catch(e){}
@@ -2559,9 +2719,17 @@ function drawVoice(ctx,stave,noteData,mw,VF,partIdx,partOffset,clef){
       }
       if(n.grace&&n.grace.length){
         try{
+          const gSemis=part?writtenSemis(part):0;
+          const gScale=part?partScale(part):null;
+          const gFlat=part?partFifths(part)<0:false;
           const gns=n.grace.map(g=>{
-            const gn=new GraceNote({keys:g.keys,duration:g.dur,slash:true,clef});
-            if(g.vfAcc)try{gn.addModifier(new Accidental(g.vfAcc),0);}catch(e){}
+            let gKeys=g.keys, gAcc=g.vfAcc;
+            if(gSemis&&g.midi!=null){
+              const sp=spellInScale(g.midi+gSemis,gScale,gFlat);
+              gKeys=[sp.name+'/'+sp.oct]; gAcc=sp.vfAcc;
+            }
+            const gn=new GraceNote({keys:gKeys,duration:g.dur,slash:true,clef});
+            if(gAcc)try{gn.addModifier(new Accidental(gAcc),0);}catch(e){}
             return gn;
           });
           const grp=new GraceNoteGroup(gns,false);
@@ -2951,7 +3119,7 @@ const INST_SAMPLE={
   piano:'piano', organ:'organ', harpsi:'guitar',
   violin:'violin', viola:'cello', cello:'cello', dbass:'contrabass',
   flute:'flute', oboe:'flute', clarinet:'clarinet', bassoon:'bassoon', sax:'saxophone',
-  trumpet:'trumpet', horn:'frenchhorn', trombone:'trombone', tuba:'tuba',
+  trumpet:'trumpet', horn:'frenchhorn', trombone:'trombone', tuba:'tuba', tsax:'saxophone',
   soprano:'organ', mezzo:'organ', altov:'organ', tenorv:'organ', baritonev:'organ', bassv:'organ',
   timpani:'piano', xyloph:'xylophone', marimba:'xylophone'
 };
@@ -3351,7 +3519,11 @@ function normalizeNote(n){
   return n;
 }
 function applyProject(d){
-  parts=(d.parts||[]).map(p=>({...p,hairpins:p.hairpins||[],notes:(p.notes||[]).map(normalizeNote)}));
+  // Songs written before transposition existed carry no `transpose`, and
+  // everything in them was entered at concert pitch — so a saved trumpet part
+  // must keep sounding where it was written. Only parts created since then
+  // inherit their instrument's default.
+  parts=(d.parts||[]).map(p=>({...p,hairpins:p.hairpins||[],transpose:p.transpose||0,notes:(p.notes||[]).map(normalizeNote)}));
   if(!parts.length) parts=[mkPart('Treble','piano','treble'),mkPart('Bass','piano','bass')];
   pid=d.pid||(Math.max(0,...parts.map(p=>p.id||0))+1);
   apIdx=Math.min(d.apIdx||0,parts.length-1);
@@ -3565,7 +3737,7 @@ function buildPrintSystems(partsSubset){
         const sy=TP+pi*PG;
         const st=new Stave(x,sy,mw);
         if(inst.staffLines===1)st.setConfigForLines([{visible:false},{visible:false},{visible:true},{visible:false},{visible:false}]);
-        if(first){ st.addClef(cl).addKeySignature(kd.vfSig).addTimeSignature(currentTimeSig.sig); }
+        if(first){ st.addClef(cl).addKeySignature(partVfSig(p)).addTimeSignature(currentTimeSig.sig); }
         if(repeatStartMeasures.includes(mi))st.setBegBarType(Barline.type.REPEAT_BEGIN);
         if(repeatEndMeasures.includes(mi))st.setEndBarType(Barline.type.REPEAT_END);
         st.setContext(ctx).draw();
@@ -3583,7 +3755,7 @@ function buildPrintSystems(partsSubset){
       }
       staves.forEach((st,pi)=>{
         const noteData=allM[pi][mi]||[];
-        const vfNotes=drawVoice(ctx,st,noteData,mw,VF,pi,partOffsets[pi],partClefs[pi]);
+        const vfNotes=drawVoice(ctx,st,noteData,mw,VF,pi,partOffsets[pi],partClefs[pi],partsSubset[pi]);
         noteData.forEach((_,li)=>{ if(vfNotes[li])vfRefs[pi][partOffsets[pi]+li]={vfNote:vfNotes[li],stave:st}; });
         partOffsets[pi]+=noteData.length;
       });
@@ -3996,6 +4168,7 @@ function applyAriaLabels(){
 }
 
 initTheme();
+pitchView=safeStore.get('mn_pitchview')==='concert'?'concert':'written';
 setAcc('key');clearArts();setDyn(null);setTempo(null);
 refreshDurIcons();
 relabelNoteButtons();
@@ -4003,6 +4176,7 @@ renderDiatonicChords();
 initProjects();
 applyKeyHue();   // initProjects() may have loaded a song in another key
 applyAriaLabels();
+applyPitchView(pitchView);
 render();
 initMidi();
 document.getElementById('bpm-inp').addEventListener('change',scheduleAutosave);
