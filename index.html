@@ -4313,6 +4313,12 @@ const XML_TYPE={'whole':'w','half':'h','quarter':'q','eighth':'8','16th':'16','3
 function xmlAcc(el){ const a=el.querySelector(':scope > accidental'); if(!a)return null; return {'sharp':'#','flat':'b','natural':'n','double-sharp':'##','sharp-sharp':'##','flat-flat':'bb','double-flat':'bb'}[a.textContent.trim()]||null; }
 function xmlAlter(pitchEl){ const a=pitchEl.querySelector('alter'); const v=a?parseInt(a.textContent):0; return v; }
 function alterToAcc(v){return v===1?'#':v===-1?'b':v===2?'##':v===-2?'bb':null;}
+// MusicXML writes a second voice by rewinding the clock with <backup> and
+// then laying more notes over the same span. Reading notes in document order
+// and ignoring <backup>, <forward> and <voice> — which is what this did —
+// stacked both voices end to end, so any piano or choral score imported as one
+// garbled line at twice its real length. Each (staff, voice) pair is tracked
+// separately now, against a real time cursor.
 function parseMusicXML(text){
   const doc=new DOMParser().parseFromString(text,'application/xml');
   if(doc.querySelector('parsererror'))throw new Error('Invalid MusicXML');
@@ -4324,21 +4330,48 @@ function parseMusicXML(text){
   const te=doc.querySelector('time');
   if(te){const b=te.querySelector('beats'),bt=te.querySelector('beat-type');if(b&&bt)timeSig=b.textContent.trim()+'/'+bt.textContent.trim();}
   const se=doc.querySelector('sound[tempo]');if(se)bpm=Math.max(20,Math.min(320,Math.round(parseFloat(se.getAttribute('tempo')))));
+  // Part names, so an imported score does not come back as "Part 2".
+  const partNames={};
+  [...doc.querySelectorAll('part-list score-part')].forEach(sp=>{
+    const id=sp.getAttribute('id');
+    const nm=sp.querySelector('part-name')?.textContent.trim();
+    if(id&&nm) partNames[id]=nm;
+  });
   const outParts=[];
   partEls.forEach(partEl=>{
-    const staves={};
+    // key = "staff/voice"; each holds {notes, cursor} in divisions.
+    const lines=new Map();
+    const lineFor=k=>{ if(!lines.has(k)) lines.set(k,{notes:[],cursor:0,staff:k.split('/')[0],voice:k.split('/')[1]}); return lines.get(k); };
+    let divisions=1, measureStart=0;
     [...partEl.querySelectorAll('measure')].forEach(m=>{
-      [...m.children].filter(c=>c.tagName==='note').forEach(nEl=>{
+      const dv=m.querySelector('attributes > divisions');
+      if(dv) divisions=parseInt(dv.textContent)||divisions;
+      // Every line starts each measure at the same point, whatever it did last.
+      lines.forEach(l=>{ l.cursor=measureStart; });
+      let cursor=measureStart, lastKey=null, measureEnd=measureStart;
+      [...m.children].forEach(c=>{
+        const tag=c.tagName;
+        if(tag==='backup'){ cursor-=parseInt(c.querySelector('duration')?.textContent||'0')||0; return; }
+        if(tag==='forward'){ cursor+=parseInt(c.querySelector('duration')?.textContent||'0')||0; return; }
+        if(tag!=='note') return;
+        const nEl=c;
         const staff=nEl.querySelector('staff')?.textContent.trim()||'1';
-        staves[staff]=staves[staff]||[];
-        const arr=staves[staff];
+        const voice=nEl.querySelector('voice')?.textContent.trim()||'1';
+        const key=staff+'/'+voice;
+        const line=lineFor(key);
         const isRest=!!nEl.querySelector('rest');
         const isChord=!!nEl.querySelector('chord');
         const typeT=nEl.querySelector('type')?.textContent.trim();
         const dots=nEl.querySelectorAll('dot').length;
-        const dur=(XML_TYPE[typeT]||'q')+(dots>0?'d':'');
+        const xmlDur=parseInt(nEl.querySelector('duration')?.textContent||'0')||0;
+        // Prefer the written type; fall back to the sounding duration for a
+        // note that has none (which MusicXML permits).
+        const dur=typeT?((XML_TYPE[typeT]||'q')+(dots>0?'d':'')):beatsToDur(xmlDur/divisions);
+
         if(isChord){
-          const prev=arr[arr.length-1];
+          // A chord member sits on the same beat as the note before it and
+          // must not advance anything.
+          const prev=lastKey!=null?lineFor(lastKey).notes[lineFor(lastKey).notes.length-1]:null;
           const pit=nEl.querySelector('pitch');
           if(prev&&!prev.rest&&pit){
             const step=pit.querySelector('step').textContent.trim();
@@ -4348,18 +4381,97 @@ function parseMusicXML(text){
           }
           return;
         }
-        if(isRest){ arr.push(restNote(durBeats(dur))); return; }
-        const pit=nEl.querySelector('pitch'); if(!pit)return;
-        const step=pit.querySelector('step').textContent.trim();
-        const oct=parseInt(pit.querySelector('octave').textContent);
-        const acc=alterToAcc(xmlAlter(pit));
-        const lyr=nEl.querySelector('lyric text')?.textContent.trim()||null;
-        arr.push({keys:[step+'/'+oct],dur,vfAccs:[xmlAcc(nEl)],midiVals:[noteToMidi(step,acc,oct)],rest:false,lyric:lyr,dyn:null,arts:[],tempo:null});
+        // Fill any gap this line has skipped (another voice was sounding) so
+        // the notes stay where they belong in the bar.
+        if(cursor>line.cursor+1e-6){
+          const gap=(cursor-line.cursor)/divisions;
+          if(gap>0.01) beatsToDurs(gap).forEach(d=>line.notes.push(restNote(durBeats(d))));
+          line.cursor=cursor;
+        }
+        if(isRest){
+          line.notes.push(restNote(xmlDur?xmlDur/divisions:durBeats(dur)));
+        } else {
+          const pit=nEl.querySelector('pitch');
+          if(!pit) return;
+          const step=pit.querySelector('step').textContent.trim();
+          const oct=parseInt(pit.querySelector('octave').textContent);
+          const acc=alterToAcc(xmlAlter(pit));
+          const lyr=nEl.querySelector('lyric text')?.textContent.trim()||null;
+          line.notes.push({keys:[step+'/'+oct],dur,vfAccs:[xmlAcc(nEl)],midiVals:[noteToMidi(step,acc,oct)],rest:false,lyric:lyr,dyn:null,arts:[],tempo:null,grace:[],rud:null,sticking:null});
+        }
+        lastKey=key;
+        cursor+=xmlDur; line.cursor=cursor;
+        if(cursor>measureEnd) measureEnd=cursor;
       });
+      lines.forEach(l=>{ if(l.cursor>measureEnd) measureEnd=l.cursor; });
+      measureStart=measureEnd;
     });
-    Object.keys(staves).sort().forEach(sk=>outParts.push({notes:staves[sk],staff:sk}));
+    const pname=partNames[partEl.getAttribute('id')]||null;
+    [...lines.keys()].sort().forEach(k=>{
+      const l=lines.get(k);
+      if(!l.notes.length) return;
+      // Only name the extra voices; the first one carries the part's own name.
+      const multi=[...lines.keys()].filter(o=>o.split('/')[0]===l.staff).length>1;
+      outParts.push({notes:l.notes,staff:l.staff,name:pname&&!multi?pname:(pname?pname+' v'+l.voice:null)});
+    });
   });
   return {keyId,timeSig,bpm,parts:outParts};
+}
+
+// A .mxl is a ZIP holding the score XML — and it is what MuseScore saves by
+// default, so the file most people reach for was the one turned away at the
+// door. Unpacked here with DecompressionStream, no library.
+async function unzipMXL(buf){
+  const dv=new DataView(buf), u8=new Uint8Array(buf);
+  // Read the central directory from the end-of-central-directory record,
+  // rather than trusting local headers (whose sizes may live in a data
+  // descriptor after the compressed bytes).
+  let eocd=-1;
+  for(let i=u8.length-22;i>=0&&i>u8.length-66000;i--){
+    if(dv.getUint32(i,true)===0x06054b50){ eocd=i; break; }
+  }
+  if(eocd<0) throw new Error('Not a .mxl archive');
+  const count=dv.getUint16(eocd+10,true);
+  let p=dv.getUint32(eocd+16,true);
+  const entries=[];
+  for(let i=0;i<count;i++){
+    if(dv.getUint32(p,true)!==0x02014b50) break;
+    const method=dv.getUint16(p+10,true);
+    const compSize=dv.getUint32(p+20,true);
+    const nameLen=dv.getUint16(p+28,true);
+    const extraLen=dv.getUint16(p+30,true);
+    const cmtLen=dv.getUint16(p+32,true);
+    const localOff=dv.getUint32(p+42,true);
+    const name=new TextDecoder().decode(u8.subarray(p+46,p+46+nameLen));
+    entries.push({name,method,compSize,localOff});
+    p+=46+nameLen+extraLen+cmtLen;
+  }
+  const read=async e=>{
+    const lNameLen=dv.getUint16(e.localOff+26,true);
+    const lExtraLen=dv.getUint16(e.localOff+28,true);
+    const start=e.localOff+30+lNameLen+lExtraLen;
+    const bytes=u8.subarray(start,start+e.compSize);
+    if(e.method===0) return new TextDecoder().decode(bytes);
+    if(e.method!==8) throw new Error('Unsupported compression in .mxl');
+    if(typeof DecompressionStream==='undefined') throw new Error('This browser cannot open compressed .mxl — export as uncompressed MusicXML');
+    const ds=new DecompressionStream('deflate-raw');
+    const out=new Response(new Blob([bytes]).stream().pipeThrough(ds));
+    return await out.text();
+  };
+  // META-INF/container.xml names the real score; fall back to the first .xml
+  // that is not the container itself.
+  const container=entries.find(e=>/^META-INF\/container\.xml$/i.test(e.name));
+  if(container){
+    try{
+      const cx=new DOMParser().parseFromString(await read(container),'application/xml');
+      const path=cx.querySelector('rootfile')?.getAttribute('full-path');
+      const hit=path&&entries.find(e=>e.name===path);
+      if(hit) return await read(hit);
+    }catch(e){}
+  }
+  const score=entries.find(e=>/\.(xml|musicxml)$/i.test(e.name)&&!/^META-INF\//i.test(e.name));
+  if(!score) throw new Error('No score found inside the .mxl');
+  return await read(score);
 }
 
 function importToProject(name,data){
@@ -4367,7 +4479,10 @@ function importToProject(name,data){
   const newParts=data.parts.filter(p=>p.notes.length).map((pp,i)=>{
     let clef=pp.staff==='2'?'bass':pp.staff==='1'?'treble':null;
     if(!clef){const mids=pp.notes.flatMap(n=>n.midiVals);const avg=mids.length?mids.reduce((a,b)=>a+b,0)/mids.length:64;clef=avg<57?'bass':'treble';}
-    return {id:i+1,name:clef==='bass'?'Bass':(i===0?'Treble':'Part '+(i+1)),instId:'piano',clef,notes:pp.notes,hairpins:[]};
+    // Use the name the file gave the part where there is one, rather than
+    // renaming everybody Treble/Bass/Part 3.
+    const nm=pp.name||(clef==='bass'?'Bass':(i===0?'Treble':'Part '+(i+1)));
+    return {id:i+1,name:nm,instId:'piano',clef,notes:pp.notes,hairpins:[],transpose:0};
   });
   const proj={parts:newParts,pid:newParts.length+1,apIdx:0,keyId:data.keyId||'C',timeSig:data.timeSig||'4/4',bpm:data.bpm||80};
   const id='p'+Date.now();
@@ -4388,9 +4503,8 @@ document.getElementById('import-file').addEventListener('change', async function
       const buf=await f.arrayBuffer();
       importToProject(f.name.replace(/\.midi?$/i,''), midiToData(parseMIDI(buf)));
     } else {
-      if(/\.mxl$/i.test(f.name)){alert('Compressed .mxl not supported — please export as uncompressed MusicXML (.xml / .musicxml).');return;}
-      const text=await f.text();
-      importToProject(f.name.replace(/\.(xml|musicxml)$/i,''), parseMusicXML(text));
+      const text=/\.mxl$/i.test(f.name) ? await unzipMXL(await f.arrayBuffer()) : await f.text();
+      importToProject(f.name.replace(/\.(mxl|xml|musicxml)$/i,''), parseMusicXML(text));
     }
   }catch(e){ alert('Import failed: '+e.message); console.error(e); }
 });
