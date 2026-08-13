@@ -1011,7 +1011,17 @@ function partFifths(p,mi){ return transposeFifths(concertFifths(mi),writtenSemis
 function partVfSig(p,mi){ return FIFTHS_TO_MAJOR[String(partFifths(p,mi))]||'C'; }
 function partScale(p,mi){
   const s=writtenSemis(p);
-  return s?scaleForFifths(partFifths(p,mi)):(KMAP[keyAt(mi||0)]?.scale||KEYS_DATA[0].scale);
+  const kd=KMAP[keyAt(mi||0)]||KEYS_DATA[0];
+  if(!s) return kd.scale;
+  const maj=scaleForFifths(partFifths(p,mi));
+  // scaleForFifths answers with the *major* scale for that signature, which
+  // for a minor key starts on the relative major's tonic — six degrees out.
+  // Rotate it onto this key's own tonic so degree 0 is the tonic the player
+  // reads, and the note buttons keep the order they have in concert.
+  const t=kd.scale[0];
+  const want=((NOTE_SEMI[t[0]]+accSemi(t[1])+s)%12+12)%12;
+  const at=maj.findIndex(([n,a])=>((NOTE_SEMI[n]+accSemi(a))%12+12)%12===want);
+  return at>0?maj.slice(at).concat(maj.slice(0,at)):maj;
 }
 // What to draw for one note on one part. With no transposition in play the
 // stored spelling is used untouched, so a deliberate double-sharp or an odd
@@ -1759,9 +1769,15 @@ function renderDiatonicChords(){
   grid.innerHTML='';
   const romans=kd.mode==='major'?MAJ_ROMANS:MIN_ROMANS;
   const funcs =kd.mode==='major'?MAJ_FUNC :MIN_FUNC;
+  // The chords themselves are built in concert pitch — harmony does not move
+  // when a part transposes, and the roman numerals are the same either way.
+  // The root *letter* is labelled as the player reads it, so the button marked
+  // A on a B♭ trumpet is the A that lands on the staff, matching the note grid.
+  const wScale=partScale(parts[apIdx],editMeasureIndex());
   for(let deg=0;deg<7;deg++){
     const tones3=buildChordTones(deg,kd.scale,3,false);
-    const rootName=tones3[0].name+(tones3[0].acc||'');
+    const w=wScale[deg]||[tones3[0].name,tones3[0].acc];
+    const rootName=(w[0]||'')+(w[1]||'');
     const btn=document.createElement('div');
     btn.className='dchord-btn dc-'+funcs[deg];
     const top=document.createElement('div');
@@ -1770,7 +1786,8 @@ function renderDiatonicChords(){
     top.addEventListener('click', e=>{e.stopPropagation();enterDiatonicChord(deg,kd,true);});
     const bot=document.createElement('div');
     bot.className='dchord-triad';
-    bot.innerHTML=`<div class="dchord-roman">${romans[deg]}</div><div class="dchord-root">${rootName}</div>`;
+    bot.appendChild(el('div','dchord-roman',romans[deg]));
+    bot.appendChild(el('div','dchord-root',rootName));
     btn.appendChild(top); btn.appendChild(bot);
     btn.addEventListener('click', ()=>enterDiatonicChord(deg,kd,chord7Mode));
     grid.appendChild(btn);
