@@ -232,6 +232,20 @@ body { font-family:-apple-system,BlinkMacSystemFont,sans-serif; background:var(-
 .pname{font-size:12px;font-weight:700;color:var(--text3);flex:0 0 auto;}
 .pinst{font-size:10px;color:var(--muted3);flex:1;}
 .pdel{background:none;border:none;color:var(--danger);font-size:13px;cursor:pointer;padding:0 3px;}
+/* Mute / solo, small enough to sit in the part row without crowding the name. */
+/* Visible to a screen reader, not to the eye. Deliberately not display:none,
+   which would remove it from the accessibility tree too. */
+.sr-only{position:absolute;width:1px;height:1px;margin:-1px;padding:0;overflow:hidden;
+  clip:rect(0 0 0 0);clip-path:inset(50%);white-space:nowrap;border:0;}
+.sr-only:focus-within{position:fixed;left:8px;top:8px;width:min(92vw,560px);height:auto;margin:0;
+  clip:auto;clip-path:none;white-space:normal;padding:12px 14px;background:var(--surf4);color:var(--text);
+  border:2px solid var(--accent);border-radius:10px;z-index:60;max-height:70vh;overflow:auto;font-size:13px;}
+.pmix{background:var(--bg);border:1.5px solid var(--border);color:var(--muted4);font-size:10px;font-weight:800;
+  border-radius:5px;min-width:20px;height:20px;line-height:1;cursor:pointer;padding:0 4px;touch-action:manipulation;}
+.pmix.on{background:var(--accent);border-color:var(--accent);color:#fff;}
+/* The playhead sweeps inside #score-div, so it scrolls with the music. */
+#score-playhead{position:absolute;left:0;top:0;width:2px;background:var(--accent);opacity:.75;
+  pointer-events:none;display:none;border-radius:2px;will-change:transform;}
 .cat-grid{display:flex;gap:3px;flex-wrap:wrap;margin-bottom:4px;}
 #inst-grid{display:flex;gap:3px;flex-wrap:wrap;min-height:0;margin-bottom:4px;}
 
@@ -340,6 +354,13 @@ body { font-family:-apple-system,BlinkMacSystemFont,sans-serif; background:var(-
 <body>
 
 <div id="score-wrap" role="region" aria-label="Music score"><div id="score-div" style="position:relative;"></div><div id="clef-gutter"></div></div>
+<!-- The staff is an SVG with no text in it. These two carry the same music in
+     words: the live region announces the note under the cursor as it moves,
+     and the outline is the active part as a readable list of bars. Both are
+     off-screen rather than display:none, which would take them out of the
+     accessibility tree along with everything else. -->
+<div id="score-live" class="sr-only" role="status" aria-live="polite" aria-atomic="true"></div>
+<div id="score-outline" class="sr-only" role="region" aria-label="The active part in words" tabindex="0"></div>
 <div id="zoom-badge" aria-live="polite"></div>
 
 <!-- Quick note edit — shown only when a note is selected on the staff, so
@@ -372,6 +393,7 @@ body { font-family:-apple-system,BlinkMacSystemFont,sans-serif; background:var(-
   <button class="tb play"  onclick="playScore()">▶</button>
   <button class="tb stop"  onclick="stopScore()">■</button>
   <button class="tb rec"   id="rec-btn" onclick="toggleRecord()" title="Record from a MIDI keyboard (2-bar count-in + metronome)">⏺</button>
+  <button class="tb" id="loop-btn" onclick="toggleLoop()" style="background:var(--ctl);color:var(--sky);" title="Loop playback, for drilling a passage" aria-label="Loop playback">⟳</button>
   <button class="tb undo"  id="undo-btn" onclick="undo()" title="Undo (Ctrl/Cmd+Z)">↶</button>
   <button class="tb undo"  id="redo-btn" onclick="redo()" title="Redo (Ctrl/Cmd+Shift+Z)">↷</button>
   <button class="tb clear" onclick="clearAll()" title="Clear all notes">✕</button>
@@ -384,8 +406,10 @@ body { font-family:-apple-system,BlinkMacSystemFont,sans-serif; background:var(-
   <span class="pill" id="proj-pill" onclick="switchTab('proj')">Song</span>
   <span class="pill" id="part-pill" onclick="switchTab('parts')" style="color:var(--gold);max-width:110px;overflow:hidden;text-overflow:ellipsis;" title="Instrument you're writing to — tap to switch">Treble · Piano</span>
   <span class="pill" id="key-pill" onclick="switchTab('score')">C</span>
+  <span class="pill" id="pitch-pill" onclick="togglePitchView()" title="Written pitch shows each part as its player reads it; concert pitch shows the score as it sounds">Written</span>
   <span class="pill on" id="audition-pill" onclick="toggleAudition()" title="Hear each note as you enter or edit it">🔊 Audition</span>
   <span class="pill" id="midi-pill">No MIDI</span>
+  <span class="pill" id="voice-pill" aria-live="polite" style="display:none"></span>
   <span class="pill" id="save-warn" onclick="switchTab('proj')" role="alert" title="Autosave failed — tap to open Songs and save a copy to your device" style="display:none">⚠ Not saved</span>
 </div>
 
@@ -575,6 +599,23 @@ body { font-family:-apple-system,BlinkMacSystemFont,sans-serif; background:var(-
 
 <!-- Score setup panel -->
 <div id="panel-score" class="panel">
+  <div class="row" style="margin-bottom:4px">
+    <button class="chip" id="scope-btn" onclick="toggleChangeScope()" style="font-size:11px">✎ Whole song</button>
+    <button class="chip" onclick="clearChangesHere()" style="font-size:10px">Remove change here</button>
+  </div>
+  <div class="hint">Tap “Whole song” to switch to changing key or metre <em>from the selected bar onwards</em> — that's how you write a modulation or a metre change. Select a note in that bar first.</div>
+  <div id="changes-list" class="row" style="flex-wrap:wrap;gap:4px;margin:3px 0"></div>
+  <div class="sec">Pickup (anacrusis)</div>
+  <div class="row">
+    <button class="chip" onclick="setPickup(0)" style="font-size:10px">none</button>
+    <button class="chip" onclick="setPickup(0.5)" style="font-size:10px">½</button>
+    <button class="chip" onclick="setPickup(1)" style="font-size:10px">1</button>
+    <button class="chip" onclick="setPickup(1.5)" style="font-size:10px">1½</button>
+    <button class="chip" onclick="setPickup(2)" style="font-size:10px">2</button>
+    <button class="chip" onclick="setPickup(3)" style="font-size:10px">3</button>
+    <span class="lbl" id="pickup-val" style="margin-left:4px">none</span>
+  </div>
+  <div class="hint">Shortens the first bar, for a piece that starts before beat 1.</div>
   <div class="sec">Key signature — Major</div>
   <div class="key-major-grid" id="key-major-grid"></div>
   <div class="sec">Key signature — Minor</div>
@@ -608,6 +649,11 @@ body { font-family:-apple-system,BlinkMacSystemFont,sans-serif; background:var(-
     <button class="chip" onclick="openProjectFromFile()" style="font-size:11px">⇧ Open from device</button>
   </div>
   <div class="hint">Your songs also auto-save inside this browser, but saving a file is the safe backup — it survives clearing browser data or switching devices.</div>
+  <div class="sec">Offline</div>
+  <div class="row" style="gap:6px">
+    <button class="chip" id="offline-sounds-btn" onclick="saveSoundsOffline()" style="font-size:11px">⇩ Save sounds for offline</button>
+  </div>
+  <div class="hint">The app itself already works with no signal once you've opened it. The recorded instruments stream in the first time you play them — save them here and playback keeps its real sound offline instead of falling back to the synth.</div>
   <div class="sec">Import</div>
   <div class="row" style="gap:6px">
     <button class="chip" onclick="importFile('midi')" style="font-size:11px">⇧ MIDI (.mid)</button>
@@ -616,7 +662,9 @@ body { font-family:-apple-system,BlinkMacSystemFont,sans-serif; background:var(-
   <div class="sec">Export current song</div>
   <div class="row" style="gap:6px">
     <button class="chip" onclick="exportMIDI()" style="font-size:11px">⇩ MIDI</button>
+    <button class="chip" onclick="exportMusicXML()" style="font-size:11px">⇩ MusicXML</button>
   </div>
+  <div class="hint">MusicXML opens in MuseScore, Sibelius, Dorico and Finale, keeping the notation itself — barlines, ties, lyrics, dynamics and each part's transposition. MIDI keeps only the performance.</div>
   <div class="sec">Print / PDF</div>
   <div class="row" style="gap:6px;flex-wrap:wrap" id="print-row"></div>
   <div class="sec">Your songs — autosaved</div>
@@ -696,6 +744,36 @@ if(typeof Vex==='undefined'||typeof Tone==='undefined'){
 </script>
 <script>
 // ═══════════════════════════════════════════════════════
+// Storage access
+// ═══════════════════════════════════════════════════════
+// Safari with "Block All Cookies", iOS Lockdown Mode and some embedded
+// webviews make *reading* localStorage throw, not just writing to it — so a
+// bare getItem was enough to kill the boot before a single note was drawn.
+// Every access goes through here and falls back to memory, so the app runs
+// (and says it can't save) instead of showing a blank sheet.
+const memStore=new Map();
+const safeStore={
+  // True once any access has been refused outright, as opposed to the disk
+  // being full — two different problems that need two different messages.
+  blocked:false,
+  get(k){
+    try{ return localStorage.getItem(k); }
+    catch(e){ safeStore.blocked=true; return memStore.has(k)?memStore.get(k):null; }
+  },
+  // Returns null on success, or the error that stopped it.
+  set(k,v){
+    memStore.set(k,String(v));
+    try{ localStorage.setItem(k,String(v)); return null; }
+    catch(e){
+      // A quota error still means storage exists; anything else means it is
+      // switched off for this site.
+      if(!(e&&(e.name==='QuotaExceededError'||e.code===22||e.code===1014))) safeStore.blocked=true;
+      return e||new Error('storage unavailable');
+    }
+  },
+};
+
+// ═══════════════════════════════════════════════════════
 // Instruments
 // ═══════════════════════════════════════════════════════
 const INSTRUMENTS = [
@@ -705,14 +783,15 @@ const INSTRUMENTS = [
   {id:'violin',  label:'Violin',      cat:'Strings',   clef:'treble',     osc:'sawtooth4', env:{a:.1,d:.05,s:1,r:.5},   vol:-8, gm:40, defaultOct:4},
   {id:'viola',   label:'Viola',       cat:'Strings',   clef:'alto',       osc:'sawtooth4', env:{a:.12,d:.05,s:1,r:.5},  vol:-8, gm:41, defaultOct:4},
   {id:'cello',   label:'Cello',       cat:'Strings',   clef:'bass',       osc:'sawtooth4', env:{a:.14,d:.05,s:1,r:.6},  vol:-8, gm:42, defaultOct:3},
-  {id:'dbass',   label:'Dbl Bass',    cat:'Strings',   clef:'bass',       osc:'sawtooth2', env:{a:.15,d:.1,s:.9,r:.7},  vol:-6, gm:43, defaultOct:2},
+  {id:'dbass',   label:'Dbl Bass',    cat:'Strings',   clef:'bass',       osc:'sawtooth2', env:{a:.15,d:.1,s:.9,r:.7},  vol:-6, gm:43, defaultOct:2, transpose:12},
   {id:'flute',   label:'Flute',       cat:'Woodwinds', clef:'treble',     osc:'sine',      env:{a:.06,d:.05,s:.9,r:.4}, vol:-10, gm:73, defaultOct:5},
   {id:'oboe',    label:'Oboe',        cat:'Woodwinds', clef:'treble',     osc:'sawtooth8', env:{a:.04,d:.1,s:.85,r:.3}, vol:-10, gm:68, defaultOct:4},
-  {id:'clarinet',label:'Clarinet',    cat:'Woodwinds', clef:'treble',     osc:'square',    env:{a:.04,d:.05,s:.85,r:.35},vol:-10, gm:71, defaultOct:4},
+  {id:'clarinet',label:'Clarinet',    cat:'Woodwinds', clef:'treble',     osc:'square',    env:{a:.04,d:.05,s:.85,r:.35},vol:-10, gm:71, defaultOct:4, transpose:2},
   {id:'bassoon', label:'Bassoon',     cat:'Woodwinds', clef:'bass',       osc:'sawtooth',  env:{a:.08,d:.1,s:.85,r:.5}, vol:-8, gm:70, defaultOct:3},
-  {id:'sax',     label:'Saxophone',   cat:'Woodwinds', clef:'treble',     osc:'sawtooth8', env:{a:.05,d:.1,s:.9,r:.4},  vol:-8, gm:65, defaultOct:4},
-  {id:'trumpet', label:'Trumpet',     cat:'Brass',     clef:'treble',     osc:'square',    env:{a:.04,d:.1,s:.85,r:.3}, vol:-8, gm:56, defaultOct:4},
-  {id:'horn',    label:'Fr. Horn',    cat:'Brass',     clef:'treble',     osc:'triangle8', env:{a:.1,d:.1,s:.8,r:.6},   vol:-8, gm:60, defaultOct:3},
+  {id:'sax',     label:'Alto Sax',    cat:'Woodwinds', clef:'treble',     osc:'sawtooth8', env:{a:.05,d:.1,s:.9,r:.4},  vol:-8, gm:65, defaultOct:4, transpose:9},
+  {id:'tsax',    label:'Tenor Sax',   cat:'Woodwinds', clef:'treble',     osc:'sawtooth8', env:{a:.05,d:.1,s:.9,r:.4},  vol:-8, gm:66, defaultOct:3, transpose:14},
+  {id:'trumpet', label:'Trumpet',     cat:'Brass',     clef:'treble',     osc:'square',    env:{a:.04,d:.1,s:.85,r:.3}, vol:-8, gm:56, defaultOct:4, transpose:2},
+  {id:'horn',    label:'Fr. Horn',    cat:'Brass',     clef:'treble',     osc:'triangle8', env:{a:.1,d:.1,s:.8,r:.6},   vol:-8, gm:60, defaultOct:3, transpose:7},
   {id:'trombone',label:'Trombone',    cat:'Brass',     clef:'bass',       osc:'sawtooth',  env:{a:.06,d:.1,s:.85,r:.5}, vol:-8, gm:57, defaultOct:3},
   {id:'tuba',    label:'Tuba',        cat:'Brass',     clef:'bass',       osc:'square',    env:{a:.08,d:.1,s:.85,r:.6}, vol:-6, gm:58, defaultOct:2},
   {id:'soprano', label:'Soprano',     cat:'Vocal',     clef:'treble',     osc:'sine',      env:{a:.1,d:.1,s:.9,r:.8},   vol:-8, gm:52, defaultOct:4},
@@ -722,7 +801,7 @@ const INSTRUMENTS = [
   {id:'baritonev',label:'Baritone',   cat:'Vocal',     clef:'bass',       osc:'triangle',  env:{a:.09,d:.1,s:.85,r:.8}, vol:-8, gm:53, defaultOct:3},
   {id:'bassv',   label:'Bass Voice',  cat:'Vocal',     clef:'bass',       osc:'triangle',  env:{a:.1,d:.1,s:.85,r:.8},  vol:-8, gm:53, defaultOct:2},
   {id:'timpani', label:'Timpani',     cat:'Percussion',clef:'bass',       osc:'membrane',  env:{a:.001,d:.5,s:0,r:.5},  vol:-4, gm:47, defaultOct:3},
-  {id:'xyloph',  label:'Xylophone',   cat:'Percussion',clef:'treble',     osc:'fm',        env:{a:.001,d:.3,s:0,r:.1},  vol:-8, gm:13, defaultOct:5},
+  {id:'xyloph',  label:'Xylophone',   cat:'Percussion',clef:'treble',     osc:'fm',        env:{a:.001,d:.3,s:0,r:.1},  vol:-8, gm:13, defaultOct:5, transpose:-12},
   {id:'marimba', label:'Marimba',     cat:'Percussion',clef:'treble',     osc:'fm',        env:{a:.001,d:.6,s:0,r:.2},  vol:-6, gm:12, defaultOct:4},
   {id:'snare',   label:'Snare',       cat:'Percussion',clef:'percussion', osc:'noise',     env:{a:.001,d:.2,s:0,r:.1},  vol:-6, unpitched:true, gm:0, staffLines:1, defaultOct:4},
   {id:'bassdrum',label:'Bass Drum',   cat:'Percussion',clef:'percussion', osc:'membrane',  env:{a:.001,d:.4,s:0,r:.2},  vol:-4, unpitched:true, gm:0, staffLines:1, defaultOct:4},
@@ -803,25 +882,223 @@ function midiToNote(midi){
 }
 
 // ═══════════════════════════════════════════════════════
+// Transposing instruments
+// ═══════════════════════════════════════════════════════
+// A B♭ trumpet sounds a tone below what its player reads, so a trumpet part
+// printed at concert pitch is a part that player cannot use. midiVals stay
+// concert pitch throughout — playback, audition and MIDI export are the
+// sounding music and never change — and the *written* pitch is derived here
+// for the staff, the printed part and MusicXML.
+//
+// `transpose` is what you add to concert to get written: +2 for B♭, +9 for
+// E♭ alto, +7 for F horn, +12 for double bass (written an octave high).
+const FIFTHS_TO_MAJOR={'-7':'Cb','-6':'Gb','-5':'Db','-4':'Ab','-3':'Eb','-2':'Bb','-1':'F','0':'C','1':'G','2':'D','3':'A','4':'E','5':'B','6':'F#','7':'C#'};
+const MAJOR_TO_FIFTHS=Object.fromEntries(Object.entries(FIFTHS_TO_MAJOR).map(([f,n])=>[n,parseInt(f)]));
+const SHARP_ORDER=['F','C','G','D','A','E','B'], FLAT_ORDER=['B','E','A','D','G','C','F'];
+const LETTERS=['C','D','E','F','G','A','B'];
+
+// The scale of the major key at this point on the circle of fifths, as the
+// same [letter, accidental] pairs KEYS_DATA uses.
+function scaleForFifths(f){
+  const alt={};
+  if(f>0) SHARP_ORDER.slice(0,f).forEach(l=>alt[l]='#');
+  if(f<0) FLAT_ORDER.slice(0,-f).forEach(l=>alt[l]='b');
+  const tonic=FIFTHS_TO_MAJOR[String(f)]||'C';
+  const start=LETTERS.indexOf(tonic[0]);
+  return Array.from({length:7},(_,i)=>{const l=LETTERS[(start+i)%7];return[l,alt[l]||null];});
+}
+// Transposing by N semitones moves the key N*7 places round the circle of
+// fifths (7 is its own inverse mod 12). Wrapped back into the range VexFlow
+// can draw, so a part never asks for a signature with nine sharps.
+function transposeFifths(f,semis){
+  let n=f+7*semis;
+  while(n>7) n-=12;
+  while(n<-7) n+=12;
+  return n;
+}
+// Which octave actually spells this MIDI note as (name, acc) — B#3 and C4 are
+// the same key but not the same octave number.
+function octaveFor(name,acc,midi){
+  const base=Math.floor(midi/12)-1;
+  for(let d=-1;d<=1;d++) if(noteToMidi(name,acc,base+d)===midi) return base+d;
+  return base;
+}
+// Spell a MIDI note inside a given key: notes of the key take the signature's
+// accidental and draw none, notes outside it get an explicit one.
+function spellInScale(midi,scale,preferFlat){
+  const semi=((midi%12)+12)%12;
+  for(const [name,acc] of scale){
+    if(((NOTE_SEMI[name]+accSemi(acc))+120)%12===semi)
+      return {name,acc,oct:octaveFor(name,acc,midi),vfAcc:null};
+  }
+  const [n,a]=(preferFlat?SEMI_TO_FLAT:SEMI_TO_SHARP)[semi];
+  return {name:n,acc:a,oct:octaveFor(n,a,midi),vfAcc:a||'n'};
+}
+
+// The key list stopped at 12 majors and 10 minors, which left out G♭ and C♭
+// major and four of the sharp minors — reachable keys that a modulation lands
+// in constantly. Now that the scale for any point on the circle can be
+// derived, the gaps fill themselves.
+(function fillOutKeys(){
+  const MAJ=[['Gb',-6],['Cb',-7]];
+  const MIN=[['Ebm',-6],['Abm',-7],['Gsm',5],['Dsm',6],['Asm',7]];
+  const MIN_LABEL={Ebm:'E♭m',Abm:'A♭m',Gsm:'G#m',Dsm:'D#m',Asm:'A#m'};
+  MAJ.forEach(([id,f])=>{
+    if(KMAP[id])return;
+    const k={id,label:FIFTHS_TO_MAJOR[String(f)],vfSig:FIFTHS_TO_MAJOR[String(f)],mode:'major',scale:scaleForFifths(f)};
+    KEYS_DATA.push(k); KMAP[id]=k;
+  });
+  MIN.forEach(([id,f])=>{
+    if(KMAP[id])return;
+    // A minor key shares its relative major's signature; its natural scale is
+    // that major scale started from the sixth degree.
+    const maj=scaleForFifths(f);
+    const scale=Array.from({length:7},(_,i)=>maj[(i+5)%7]);
+    const k={id,label:MIN_LABEL[id]||id,vfSig:FIFTHS_TO_MAJOR[String(f)],mode:'minor',scale};
+    KEYS_DATA.push(k); KMAP[id]=k;
+  });
+})();
+
+// 'concert' — the score as it sounds, which is how the app has always behaved.
+// 'written' — each part as its player reads it.
+let pitchView='written';
+function applyPitchView(v){
+  pitchView=(v==='concert')?'concert':'written';
+  const pill=document.getElementById('pitch-pill');
+  if(pill){
+    pill.textContent=pitchView==='written'?'Written':'Concert';
+    pill.classList.toggle('on',pitchView==='written');
+  }
+  safeStore.set('mn_pitchview',pitchView);
+  relabelNoteButtons();
+  if(typeof renderPartsList==='function'&&document.getElementById('parts-list')) renderPartsList();
+  render();
+}
+function togglePitchView(){ applyPitchView(pitchView==='written'?'concert':'written'); }
+// How a transposition reads on the page: "B♭" for +2, "E♭" for +9, and so on.
+// Derived from the interval rather than a lookup table, so a custom value on
+// an odd instrument still describes itself.
+function transposeLabel(semis){
+  if(!semis) return 'C (concert)';
+  const pc=((-semis)%12+12)%12;   // the pitch that sounds when the player reads C
+  const names=['C','B','B♭','A','A♭','G','G♭','F','E','E♭','D','D♭'];
+  const oct=semis>=12?' (8vb)':semis<=-12?' (8va)':'';
+  return names[pc]+oct;
+}
+const TRANSPOSE_CHOICES=[
+  {v:0,  label:'C'},
+  {v:2,  label:'B♭'},
+  {v:9,  label:'E♭ alto'},
+  {v:14, label:'B♭ tenor'},
+  {v:7,  label:'F'},
+  {v:3,  label:'A'},
+  {v:12, label:'8vb'},
+  {v:-12,label:'8va'},
+];
+function isTransposing(p){
+  if(!p) return 0;
+  const inst=IMAP[p.instId]||IMAP.piano;
+  if(inst.unpitched||inst.drumset||inst.pitchedDrum) return 0;   // percussion has no key to move
+  return (p.transpose!=null?p.transpose:(inst.transpose||0))|0;
+}
+// The shift actually applied when drawing this part right now.
+function writtenSemis(p){ return pitchView==='written'?isTransposing(p):0; }
+// Every one of these takes an optional measure index, because the key can now
+// change part-way through the piece. Left out, they answer for the opening
+// key — which is what the whole song used to be.
+function concertFifths(mi){ return MAJOR_TO_FIFTHS[KMAP[keyAt(mi||0)]?.vfSig]??0; }
+function partFifths(p,mi){ return transposeFifths(concertFifths(mi),writtenSemis(p)); }
+function partVfSig(p,mi){ return FIFTHS_TO_MAJOR[String(partFifths(p,mi))]||'C'; }
+function partScale(p,mi){
+  const s=writtenSemis(p);
+  const kd=KMAP[keyAt(mi||0)]||KEYS_DATA[0];
+  if(!s) return kd.scale;
+  const maj=scaleForFifths(partFifths(p,mi));
+  // scaleForFifths answers with the *major* scale for that signature, which
+  // for a minor key starts on the relative major's tonic — six degrees out.
+  // Rotate it onto this key's own tonic so degree 0 is the tonic the player
+  // reads, and the note buttons keep the order they have in concert.
+  const t=kd.scale[0];
+  const want=((NOTE_SEMI[t[0]]+accSemi(t[1])+s)%12+12)%12;
+  const at=maj.findIndex(([n,a])=>((NOTE_SEMI[n]+accSemi(a))%12+12)%12===want);
+  return at>0?maj.slice(at).concat(maj.slice(0,at)):maj;
+}
+// What to draw for one note on one part. With no transposition in play the
+// stored spelling is used untouched, so a deliberate double-sharp or an odd
+// enharmonic the user chose is never quietly rewritten.
+function displayKeys(n,p,mi){
+  const semis=writtenSemis(p);
+  if(!semis||n.rest||n.repeatBars||!(n.midiVals||[]).length) return {keys:n.keys,vfAccs:n.vfAccs};
+  const scale=partScale(p,mi), flat=partFifths(p,mi)<0;
+  const res=n.midiVals.map(m=>spellInScale(m+semis,scale,flat));
+  return {keys:res.map(r=>r.name+'/'+r.oct), vfAccs:res.map(r=>r.vfAcc)};
+}
+// The concert spelling to store for a note, so concert view stays correct for
+// music entered while reading written pitch.
+function spellConcert(midi,mi){
+  const kd=KMAP[keyAt(mi||0)]||KEYS_DATA[0];
+  return spellInScale(midi,kd.scale,FLAT_KEYS.includes(kd.vfSig||''));
+}
+
+// ═══════════════════════════════════════════════════════
 // Time signature data
 // ═══════════════════════════════════════════════════════
+// `beats` is the bar's length in quarter notes, which is the unit everything
+// downstream counts in — not the number the signature's top figure names.
 const TIME_SIGS = [
   {sig:'4/4', beats:4,   vfB:4,  vfV:4},
   {sig:'3/4', beats:3,   vfB:3,  vfV:4},
   {sig:'2/4', beats:2,   vfB:2,  vfV:4},
+  {sig:'5/4', beats:5,   vfB:5,  vfV:4},
+  {sig:'6/4', beats:6,   vfB:6,  vfV:4},
   {sig:'2/2', beats:4,   vfB:2,  vfV:2},
+  {sig:'3/2', beats:6,   vfB:3,  vfV:2},
   {sig:'6/8', beats:3,   vfB:6,  vfV:8},
   {sig:'9/8', beats:4.5, vfB:9,  vfV:8},
   {sig:'12/8',beats:6,   vfB:12, vfV:8},
   {sig:'3/8', beats:1.5, vfB:3,  vfV:8},
+  {sig:'5/8', beats:2.5, vfB:5,  vfV:8},
+  {sig:'7/8', beats:3.5, vfB:7,  vfV:8},
 ];
 let currentTimeSig = TIME_SIGS[0];
+
+// ── Changes of key and meter part-way through ───────────────────────────
+// Both used to be properties of the whole song, so a piece that changes
+// metre — or starts on beat 4 — could not be written at all. They are sparse
+// maps of measure index -> value; measure 0 falls back to the song's opening
+// key and metre, which is what currentKeyId/currentTimeSig now mean.
+let sigChanges={};    // {measureIndex: '3/4'}
+let keyChanges={};    // {measureIndex: 'G'}
+// A pickup bar holds fewer beats than the metre says. 0 = none.
+let pickupBeats=0;
+// Index of the latest change at or before mi, or -1 for none.
+function bestAt(map,mi){
+  let at=-1;
+  for(const k of Object.keys(map)){ const i=+k; if(i<=mi && i>at) at=i; }
+  return at;
+}
+function timeSigAt(mi){
+  const at=bestAt(sigChanges,mi);
+  return (at>=0 && TIME_SIGS.find(t=>t.sig===sigChanges[at])) || currentTimeSig;
+}
+function beatsAt(mi){ return mi===0&&pickupBeats>0?pickupBeats:timeSigAt(mi).beats; }
+function keyAt(mi){
+  const at=bestAt(keyChanges,mi);
+  return at>=0?(keyChanges[at]||currentKeyId):currentKeyId;
+}
+// True when measure mi opens with a signature the previous bar did not have,
+// i.e. the point where it has to be drawn.
+function sigChangeAt(mi){ return mi>0 && sigChanges[mi] && sigChanges[mi]!==timeSigAt(mi-1).sig; }
+function keyChangeAt(mi){ return mi>0 && keyChanges[mi] && keyChanges[mi]!==keyAt(mi-1); }
 
 // ═══════════════════════════════════════════════════════
 // State
 // ═══════════════════════════════════════════════════════
 let pid=1;
-function mkPart(name,instId,clef){return{id:pid++,name,instId,clef:clef||null,notes:[],hairpins:[]};}
+function mkPart(name,instId,clef){
+  const inst=IMAP[instId];
+  return{id:pid++,name,instId,clef:clef||null,notes:[],hairpins:[],transpose:(inst&&inst.transpose)||0};
+}
 let parts=[mkPart('Treble','piano','treble'), mkPart('Bass','piano','bass')];
 let apIdx=0;
 
@@ -892,7 +1169,9 @@ function durBeats(dur){
 }
 // A measure-repeat marker always fills exactly one measure, regardless of
 // time signature — it has no meaningful `dur` string of its own.
-function noteBeats(n){ return n.repeatBars ? currentTimeSig.beats : durBeats(n.dur); }
+// A measure-repeat glyph fills whatever bar it lands in, which is no longer
+// a single fixed length once the metre can change part-way through.
+function noteBeats(n,mi){ return n.repeatBars ? beatsAt(mi==null?0:mi) : durBeats(n.dur); }
 
 // ═══════════════════════════════════════════════════════
 // Duration / rest SVG icons
@@ -983,14 +1262,78 @@ function applyKeyHue(){
   const fifths=FIFTHS_OF_SIG[sig]??0;
   document.documentElement.style.setProperty('--kh',((210+fifths*30)%360));
 }
+// Which bar an edit applies to: the selected note's, else the cursor's, else
+// the end of the active part. The same rule the repeat markers already use.
+function editMeasureIndex(){
+  try{
+    if(selectedNote) return measureIndexOfNote(selectedNote.partIdx,selectedNote.noteIdx);
+    if(caretGap) return measureIndexOfNote(caretGap.partIdx,Math.max(0,caretGap.index-1));
+    const n=parts[apIdx]?.notes.length||0;
+    return n?measureIndexOfNote(apIdx,n-1):0;
+  }catch(e){ return 0; }
+}
+// With a note selected, changing key or metre changes it *from that bar on* —
+// the score keeps everything before it. With nothing selected the change is
+// the song's opening key or metre, which is how it always behaved.
 function setKey(kid){
-  currentKeyId=kid;
-  document.querySelectorAll('.key-btn').forEach(b=>b.classList.toggle('on',b.dataset.kid===kid));
-  document.getElementById('key-pill').textContent=KMAP[kid]?.label||kid;
+  const mi=changeScope?editMeasureIndex():0;
+  if(mi>0){
+    if(keyAt(mi-1)===kid) delete keyChanges[mi]; else keyChanges[mi]=kid;
+  } else {
+    currentKeyId=kid;
+    delete keyChanges[0];
+  }
+  syncKeyTimeUI();
   applyKeyHue();
   relabelNoteButtons();
   renderDiatonicChords();
   render();
+}
+function setPickup(beats){
+  pickupBeats=Math.max(0,Math.min(currentTimeSig.beats-0.5,beats));
+  syncKeyTimeUI(); render();
+}
+function clearChangesHere(){
+  const mi=editMeasureIndex();
+  if(mi<=0){ alert('Select a note in a later bar — bar 1 carries the song’s opening key and metre.'); return; }
+  delete keyChanges[mi]; delete sigChanges[mi];
+  syncKeyTimeUI(); relabelNoteButtons(); renderDiatonicChords(); render();
+}
+// 'song' = edit the opening key/metre, 'here' = change from the selected bar.
+let changeScope=false;
+function toggleChangeScope(){
+  changeScope=!changeScope;
+  syncKeyTimeUI(); render();
+}
+function syncKeyTimeUI(){
+  const mi=changeScope?editMeasureIndex():0;
+  const kNow=keyAt(mi), tNow=timeSigAt(mi);
+  document.querySelectorAll('.key-btn').forEach(b=>b.classList.toggle('on',b.dataset.kid===kNow));
+  document.querySelectorAll('.time-btn').forEach(b=>b.classList.toggle('on',b.dataset.sig===tNow.sig));
+  const pill=document.getElementById('key-pill');
+  if(pill) pill.textContent=(KMAP[currentKeyId]?.label||currentKeyId)+(Object.keys(keyChanges).length?' →':'');
+  const btn=document.getElementById('scope-btn');
+  if(btn){
+    btn.textContent=changeScope?('✎ Changing from bar '+(mi+1)):'✎ Whole song';
+    btn.classList.toggle('on',changeScope);
+  }
+  const pk=document.getElementById('pickup-val');
+  if(pk) pk.textContent=pickupBeats?pickupBeats+' beat'+(pickupBeats===1?'':'s'):'none';
+  const lst=document.getElementById('changes-list');
+  if(lst){
+    lst.innerHTML='';
+    const all=[...new Set([...Object.keys(keyChanges),...Object.keys(sigChanges)])].map(Number).filter(i=>i>0).sort((a,b)=>a-b);
+    if(!all.length){ lst.appendChild(el('span','hint','No changes yet — the whole song is '+(KMAP[currentKeyId]?.label||currentKeyId)+' in '+currentTimeSig.sig+'.')); return; }
+    all.forEach(i=>{
+      const bits=[];
+      if(keyChanges[i]) bits.push(KMAP[keyChanges[i]]?.label||keyChanges[i]);
+      if(sigChanges[i]) bits.push(sigChanges[i]);
+      const chip=el('button','chip','bar '+(i+1)+': '+bits.join(' · ')+' ✕');
+      chip.style.fontSize='10px';
+      chip.onclick=()=>{ delete keyChanges[i]; delete sigChanges[i]; syncKeyTimeUI(); relabelNoteButtons(); renderDiatonicChords(); render(); };
+      lst.appendChild(chip);
+    });
+  }
 }
 
 // ── Theme ───────────────────────────────────────────────
@@ -1000,12 +1343,11 @@ function applyTheme(light){
   document.body.classList.toggle('light',!!light);
   const btn=document.getElementById('theme-btn');
   if(btn) btn.textContent=light?'☾ Dark mode':'☀ Light mode';
-  try{ localStorage.setItem('mn_theme',light?'light':'dark'); }catch(e){}
+  safeStore.set('mn_theme',light?'light':'dark');
 }
 function toggleTheme(){ applyTheme(!document.body.classList.contains('light')); }
 function initTheme(){
-  let saved=null;
-  try{ saved=localStorage.getItem('mn_theme'); }catch(e){}
+  const saved=safeStore.get('mn_theme');
   const prefersLight=window.matchMedia&&window.matchMedia('(prefers-color-scheme: light)').matches;
   applyTheme(saved?saved==='light':prefersLight);
 }
@@ -1014,8 +1356,15 @@ function initTheme(){
 const PREFERS_REDUCED_MOTION = !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
 const SCROLL_BEHAVIOR = PREFERS_REDUCED_MOTION ? 'auto' : 'smooth';
 function setTimeSig(sig){
-  currentTimeSig=TIME_SIGS.find(t=>t.sig===sig)||TIME_SIGS[0];
-  document.querySelectorAll('.time-btn').forEach(b=>b.classList.toggle('on',b.dataset.sig===sig));
+  const mi=changeScope?editMeasureIndex():0;
+  if(mi>0){
+    if(timeSigAt(mi-1).sig===sig) delete sigChanges[mi]; else sigChanges[mi]=sig;
+  } else {
+    currentTimeSig=TIME_SIGS.find(t=>t.sig===sig)||TIME_SIGS[0];
+    delete sigChanges[0];
+    if(pickupBeats>=currentTimeSig.beats) pickupBeats=0;
+  }
+  syncKeyTimeUI();
   render();
 }
 
@@ -1059,7 +1408,24 @@ function deletePart(i){
   if(parts.length<=1)return;
   parts.splice(i,1);
   if(apIdx>=parts.length)apIdx=parts.length-1;
-  renderPartsList(); render();
+  // Both hold a part *index*, and every index above the deleted one has just
+  // shifted down — keeping either would aim the next edit at a different
+  // instrument, or at a part that is no longer there.
+  selectedNote=null; caretGap=null;
+  renderPartsList(); render(); updateSelectionUI();
+}
+// Names are the one string in this app that comes from outside it — a song
+// file written by someone else carries its own song and part names — so they
+// are set as text, never interpolated into markup. esc() covers the two
+// places that have to build a string: the print window and MusicXML export.
+function esc(s){
+  return String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+function el(tag,cls,text){
+  const e=document.createElement(tag);
+  if(cls) e.className=cls;
+  if(text!=null) e.textContent=text;
+  return e;
 }
 function renderPartsList(){
   const ul=document.getElementById('parts-list');
@@ -1068,9 +1434,49 @@ function renderPartsList(){
     const inst=IMAP[p.instId]||IMAP['piano'];
     const row=document.createElement('div');
     row.className='prow'+(i===apIdx?' ap':'');
-    row.innerHTML=`<div class="pdot"></div><span class="pname">${p.name}</span><span class="pinst">${inst.label}</span>${parts.length>1?`<button class="pdel" onclick="event.stopPropagation();deletePart(${i})">✕</button>`:''}`;
-    row.onclick=()=>{apIdx=i;selectedNote=null;caretGap=null;renderPartsList();render();updateSelectionUI();};
+    row.appendChild(el('div','pdot'));
+    row.appendChild(el('span','pname',p.name));
+    row.appendChild(el('span','pinst',inst.label));
+    // Mute and solo — the first thing anyone reaches for when checking one
+    // line inside a full score. Solo wins over mute when both are set.
+    if(parts.length>1){
+      const mk=(label,on,fn,title)=>{
+        const b=el('button','pmix'+(on?' on':''),label);
+        b.title=title;
+        b.onclick=e=>{ e.stopPropagation(); fn(); };
+        return b;
+      };
+      row.appendChild(mk('M',mutedParts.has(i),()=>toggleMute(i),'Mute this part'));
+      row.appendChild(mk('S',soloParts.has(i),()=>toggleSolo(i),'Play only the soloed parts'));
+    }
+    if(parts.length>1){
+      const del=el('button','pdel','✕');
+      del.setAttribute('aria-label','Delete the '+p.name+' part');
+      del.onclick=e=>{e.stopPropagation();deletePart(i);};
+      row.appendChild(del);
+    }
+    row.onclick=()=>{apIdx=i;selectedNote=null;caretGap=null;renderPartsList();render();updateSelectionUI();relabelNoteButtons();};
     ul.appendChild(row);
+    // Transposition sits under the active part only — it is a per-part
+    // property, but showing eight buttons against every row would bury the
+    // list it belongs to.
+    if(i===apIdx && !(inst.unpitched||inst.drumset||inst.pitchedDrum)){
+      const tr=document.createElement('div');
+      tr.className='row';
+      tr.style.cssText='margin:2px 0 4px;padding-left:6px;flex-wrap:wrap';
+      tr.appendChild(el('span','lbl','Transposes'));
+      TRANSPOSE_CHOICES.forEach(c=>{
+        const b=el('button','chip'+(isTransposing(p)===c.v?' on':''),c.label);
+        b.style.fontSize='10px';
+        b.onclick=e=>{ e.stopPropagation(); p.transpose=c.v; renderPartsList(); relabelNoteButtons(); render(); };
+        tr.appendChild(b);
+      });
+      const note=el('div','hint','This part sounds in '+transposeLabel(isTransposing(p))
+        +(isTransposing(p)?' — its player reads '+partVfSig(p)+' where the score sounds '+(KMAP[currentKeyId]?.label||currentKeyId):''));
+      note.style.width='100%';
+      tr.appendChild(note);
+      ul.appendChild(tr);
+    }
   });
   refreshNoteGridForActivePart();
 }
@@ -1104,9 +1510,15 @@ function toggleControls(){
 function renderPrintButtons(){
   const row=document.getElementById('print-row');
   if(!row)return;
-  let html=`<button class="chip" onclick="exportPDF('all')" style="font-size:11px">🖨 Full Score</button>`;
-  parts.forEach((p,i)=>{ if(p.notes.length) html+=`<button class="chip" onclick="exportPDF(${i})" style="font-size:11px">🖨 ${p.name}</button>`; });
-  row.innerHTML=html;
+  row.innerHTML='';
+  const mk=(label,arg)=>{
+    const b=el('button','chip','🖨 '+label);
+    b.style.fontSize='11px';
+    b.onclick=()=>exportPDF(arg);
+    return b;
+  };
+  row.appendChild(mk('Full Score','all'));
+  parts.forEach((p,i)=>{ if(p.notes.length) row.appendChild(mk(p.name,i)); });
 }
 
 const SUBTABS=['lyrics','dyn','art','tempo','rud'];
@@ -1349,15 +1761,23 @@ function updatePendingDisplay(){
 }
 
 function renderDiatonicChords(){
-  const kd=KMAP[currentKeyId];
+  // Follows the key in force where you are writing, so after a modulation the
+  // palette offers that key's chords rather than the opening one's.
+  const kd=KMAP[keyAt(editMeasureIndex())];
   if(!kd)return;
   const grid=document.getElementById('diatonic-grid');
   grid.innerHTML='';
   const romans=kd.mode==='major'?MAJ_ROMANS:MIN_ROMANS;
   const funcs =kd.mode==='major'?MAJ_FUNC :MIN_FUNC;
+  // The chords themselves are built in concert pitch — harmony does not move
+  // when a part transposes, and the roman numerals are the same either way.
+  // The root *letter* is labelled as the player reads it, so the button marked
+  // A on a B♭ trumpet is the A that lands on the staff, matching the note grid.
+  const wScale=partScale(parts[apIdx],editMeasureIndex());
   for(let deg=0;deg<7;deg++){
     const tones3=buildChordTones(deg,kd.scale,3,false);
-    const rootName=tones3[0].name+(tones3[0].acc||'');
+    const w=wScale[deg]||[tones3[0].name,tones3[0].acc];
+    const rootName=(w[0]||'')+(w[1]||'');
     const btn=document.createElement('div');
     btn.className='dchord-btn dc-'+funcs[deg];
     const top=document.createElement('div');
@@ -1366,7 +1786,8 @@ function renderDiatonicChords(){
     top.addEventListener('click', e=>{e.stopPropagation();enterDiatonicChord(deg,kd,true);});
     const bot=document.createElement('div');
     bot.className='dchord-triad';
-    bot.innerHTML=`<div class="dchord-roman">${romans[deg]}</div><div class="dchord-root">${rootName}</div>`;
+    bot.appendChild(el('div','dchord-roman',romans[deg]));
+    bot.appendChild(el('div','dchord-root',rootName));
     btn.appendChild(top); btn.appendChild(bot);
     btn.addEventListener('click', ()=>enterDiatonicChord(deg,kd,chord7Mode));
     grid.appendChild(btn);
@@ -1448,10 +1869,15 @@ function scrollAfterEntry(){
 // every hit renders at the same fixed spot on the one visible line,
 // regardless of entry path (grid button, MIDI keyboard, etc).
 const SINGLE_LINE_KEY={name:'B',acc:null,oct:4};
+// (name, acc, oct) arrive as the pitch the user is *reading* — which on a
+// transposing part in written view is a tone or a sixth away from the pitch
+// that sounds. Everything stored below is concert.
 function enterPitch(name, acc, oct, vfAcc){
   const activeInst=IMAP[parts[apIdx]?.instId]||IMAP.piano;
   if(activeInst.staffLines===1){ ({name,acc,oct}=SINGLE_LINE_KEY); vfAcc=null; }
-  const midi=noteToMidi(name,acc,oct);
+  const semis=writtenSemis(parts[apIdx]);
+  const midi=noteToMidi(name,acc,oct)-semis;
+  if(semis){ const sp=spellConcert(midi,editMeasureIndex()); name=sp.name; oct=sp.oct; acc=sp.acc; vfAcc=sp.vfAcc; }
   auditionPreview([midi], parts[apIdx]?.instId);
   if(chordBuildMode){
     pendingChordNotes.push({name,acc,oct,midi,vfAcc});
@@ -1489,7 +1915,9 @@ function nearestOctaveMidi(name,acc,anchorMidi){
   return bestOct;
 }
 function relabelNoteButtons(){
-  const kd=KMAP[currentKeyId];
+  // The letters follow the active part's *written* key, so on a B♭ trumpet in
+  // written view the button marked D is the D that appears on the staff.
+  const scale=partScale(parts[apIdx],editMeasureIndex());
   const glyph={'#':'♯','b':'♭','##':'𝄪','bb':'𝄫'};
   // NOTE: the hidden single-line "Hit" button also carries class `np`, so this
   // selection includes an 8th element with no scale degree. Guarding on
@@ -1498,19 +1926,24 @@ function relabelNoteButtons(){
   // which is what silently broke autosave persistence AND made imported music
   // never display on screen. Do not remove this guard.
   document.querySelectorAll('#note-grid .np').forEach((b,i)=>{
-    const sc=kd.scale[i]; if(!sc)return;
+    const sc=scale[i]; if(!sc)return;
     const [name,acc]=sc;
     b.textContent=name+(glyph[acc]||'');
   });
 }
 function handleScaleBtn(deg){
-  const kd=KMAP[currentKeyId];
-  const [letter, scaleAcc]=kd.scale[deg];
+  const part=parts[apIdx];
+  const scale=partScale(part,editMeasureIndex());
+  const sc=scale[deg]; if(!sc)return;
+  const [letter, scaleAcc]=sc;
   let acc, vfAcc;
   if(selAcc==='key'){ acc=scaleAcc; vfAcc=null; }        // key sig draws it
   else if(selAcc==='n'){ acc=null; vfAcc='n'; }            // force natural
   else { acc=selAcc; vfAcc=selAcc; }                       // #, b, ##, bb
-  const oct=nearestOctaveMidi(letter,acc,getEntryAnchorMidi(parts[apIdx]))+selOct;
+  // The anchor is a sounding pitch; the octave search happens in the register
+  // the player is reading, so it must be shifted to match.
+  const anchor=getEntryAnchorMidi(part)+writtenSemis(part);
+  const oct=nearestOctaveMidi(letter,acc,anchor)+selOct;
   enterPitch(letter, acc, oct, vfAcc);
 }
 // Computer-keyboard letter entry (Sibelius-style): pressing A–G enters that
@@ -1519,8 +1952,7 @@ function handleScaleBtn(deg){
 // path as the on-screen letter buttons so accidental overrides & octave anchor
 // all apply identically.
 function enterLetterKey(letter){
-  const kd=KMAP[currentKeyId];
-  let deg=kd.scale.findIndex(s=>s[0]===letter);
+  let deg=partScale(parts[apIdx],editMeasureIndex()).findIndex(s=>s[0]===letter);
   if(deg<0) deg=0;
   handleScaleBtn(deg);
 }
@@ -1554,24 +1986,42 @@ function addRest(){
 }
 
 // ═══════════════════════════════════════════════════════
-// Undo / redo — snapshot-based history (up to 100 steps)
+// Undo / redo — snapshot-based history
 // ═══════════════════════════════════════════════════════
 // Rather than instrument every mutating action, we record the serialized
 // document state after each change (render() already runs once per action and
 // calls maybeRecordHistory below). Consecutive identical states are skipped, so
 // selection-only changes — which aren't serialized — never create an entry.
+//
+// A flat cap of 100 entries is the wrong unit: at ~200 KB per snapshot for a
+// long piece that is 20 MB of strings held on a phone. The cap is on total
+// bytes instead, so a short song keeps a deep history and a long one keeps a
+// shallower one, which is the trade anyone would make.
 const HISTORY_MAX=100;
-let history=[], histIndex=-1, historyLocked=false;
-function currentStateStr(){ return JSON.stringify(serializeProject()); }
+const HISTORY_MAX_BYTES=4*1024*1024;
+let history=[], histIndex=-1, historyLocked=false, historyBytes=0;
+// serializeProject() deep-clones and then the caller stringifies the clone,
+// so recording one history entry walked the whole score three times. History
+// only ever needs the text, and the text can be produced from the live objects
+// in one pass.
+function currentStateStr(){ return JSON.stringify(projectShape()); }
 // Start a fresh timeline for a newly loaded/created/imported song.
-function resetHistory(){ history=[currentStateStr()]; histIndex=0; updateUndoRedoButtons(); }
+function resetHistory(){
+  const s=currentStateStr();
+  history=[s]; histIndex=0; historyBytes=s.length;
+  updateUndoRedoButtons();
+}
 function maybeRecordHistory(){
   if(historyLocked) return;
   const s=currentStateStr();
   if(history[histIndex]===s) return;          // nothing actually changed
+  for(let i=histIndex+1;i<history.length;i++) historyBytes-=history[i].length;
   history=history.slice(0,histIndex+1);        // drop any redo tail
-  history.push(s);
-  if(history.length>HISTORY_MAX+1) history.shift();
+  history.push(s); historyBytes+=s.length;
+  while(history.length>1 && (history.length>HISTORY_MAX+1 || historyBytes>HISTORY_MAX_BYTES)){
+    historyBytes-=history[0].length;
+    history.shift();
+  }
   histIndex=history.length-1;
   updateUndoRedoButtons();
 }
@@ -1610,15 +2060,107 @@ function clearAll(){
 // which meant two places to look and two to keep in sync.
 function updateSelectionUI(){
   const qe=document.getElementById('quick-edit-bar');
-  if(!selectedNote){qe.style.display='none';refreshDurRow();syncEditorsToSelection();return;}
+  if(!selectedNote){qe.style.display='none';refreshDurRow();syncEditorsToSelection();announceSelection();return;}
   const n=parts[selectedNote.partIdx]?.notes[selectedNote.noteIdx];
-  if(!n){qe.style.display='none';refreshDurRow();syncEditorsToSelection();return;}
+  if(!n){qe.style.display='none';refreshDurRow();syncEditorsToSelection();announceSelection();return;}
   const label=n.rest?'Rest':(n.keys||[]).map((k,i)=>{const[name,oct]=k.split('/');const acc=n.vfAccs?.[i];return name+(acc&&acc!=='n'?acc:'')+oct;}).join(' ');
   qe.style.display='flex';
   document.getElementById('qe-label').textContent=label;
   document.querySelectorAll('.qe-pitch-btn').forEach(b=>b.style.display=n.rest?'none':'');
   refreshDurRow();
   syncEditorsToSelection();
+  announceSelection();
+}
+
+// ── Saying the music out loud ───────────────────────────
+// Every control got an accessible name, and the music they operate on stayed a
+// bare SVG — so a blind musician could work every button and never learn what
+// had been written. These turn the score into something that can be read.
+const DUR_WORDS={w:'whole note',h:'half note',q:'quarter note','8':'eighth note','16':'sixteenth note','32':'thirty-second note'};
+const ACC_WORDS={'#':' sharp','b':' flat','n':' natural','##':' double sharp','bb':' double flat'};
+const ART_WORDS={'a.':'staccato','a>':'accent','a-':'tenuto','a^':'marcato','ao':'fermata','a+':'stopped','tr':'trill'};
+// "C sharp 4" rather than "C#/4" — screen readers say the punctuation.
+function speakPitch(key,acc){
+  const [name,oct]=String(key||'').split('/');
+  return name+(acc&&ACC_WORDS[acc]?ACC_WORDS[acc]:'')+' '+oct;
+}
+function describeNote(n,part,mi){
+  if(!n) return '';
+  const d=decomposeDur(n.dur);
+  const bits=[];
+  if(n.repeatBars) return 'repeat of the previous '+(n.repeatBars>1?n.repeatBars+' bars':'bar');
+  const dur=(d.dot?'dotted ':'')+(DUR_WORDS[d.base]||'note')+(d.tupN?', '+d.tupN+' in the time of '+tupletOccupied(d.tupN):'');
+  if(n.rest){ bits.push(dur.replace('note','rest')); }
+  else{
+    const disp=part?displayKeys(n,part,mi):{keys:n.keys,vfAccs:n.vfAccs};
+    const pitches=(disp.keys||[]).map((k,i)=>speakPitch(k,(disp.vfAccs||[])[i]));
+    bits.push((pitches.length>1?'chord, ':'')+pitches.join(', '));
+    bits.push(dur);
+  }
+  if(n.dyn) bits.push(n.dyn);
+  (n.arts||[]).forEach(a=>{ if(ART_WORDS[a]) bits.push(ART_WORDS[a]); });
+  if(n.tempo) bits.push(n.tempo);
+  if(n.lyric) bits.push('lyric '+n.lyric);
+  if(n.sticking) bits.push('stick '+(n.sticking==='R'?'right':'left'));
+  return bits.join(', ');
+}
+// Where a note sits, counted the way a musician would say it.
+function positionOfNote(partIdx,noteIdx){
+  const notes=parts[partIdx]?.notes||[];
+  let mi=0,beats=0,BMAX=beatsAt(0);
+  for(let i=0;i<noteIdx&&i<notes.length;i++){
+    beats+=noteBeats(notes[i],mi);
+    if(beats>=BMAX-.001){ mi++; beats=0; BMAX=beatsAt(mi); }
+  }
+  return {measure:mi+1, beat:Math.round((beats+1)*100)/100};
+}
+function announceSelection(){
+  const live=document.getElementById('score-live');
+  if(!live) return;
+  if(!selectedNote){
+    if(caretGap) live.textContent='Cursor at the start of bar '+(positionOfNote(caretGap.partIdx,caretGap.index).measure);
+    else live.textContent='';
+    return;
+  }
+  const part=parts[selectedNote.partIdx];
+  const n=part?.notes[selectedNote.noteIdx];
+  if(!n){ live.textContent=''; return; }
+  const pos=positionOfNote(selectedNote.partIdx,selectedNote.noteIdx);
+  live.textContent=part.name+', bar '+pos.measure+' beat '+pos.beat+', '+describeNote(n,part,pos.measure-1);
+}
+// A readable outline of the active part, so the music itself is reachable —
+// not only the note the cursor happens to be on.
+//
+// Rebuilt off the critical path. It walks every bar of the piece, which on a
+// long score is more than a keystroke should pay for, and unlike the live
+// region nothing needs it within the frame: it is a reference document, read
+// when someone goes looking for it. The live announcement above stays
+// immediate, because that one is the feedback for the edit you just made.
+let _outlineT=0;
+function scheduleScoreOutline(){
+  clearTimeout(_outlineT);
+  _outlineT=setTimeout(()=>{
+    if(window.requestIdleCallback) requestIdleCallback(updateScoreOutline,{timeout:1000});
+    else updateScoreOutline();
+  },400);
+}
+function updateScoreOutline(){
+  const host=document.getElementById('score-outline');
+  if(!host) return;
+  const part=parts[apIdx];
+  if(!part){ host.textContent=''; return; }
+  host.innerHTML='';
+  const h=el('h2',null,part.name+' — '+(IMAP[part.instId]||IMAP.piano).label
+    +', '+(KMAP[currentKeyId]?.label||currentKeyId)+', '+currentTimeSig.sig
+    +(isTransposing(part)?', sounds in '+transposeLabel(isTransposing(part)):''));
+  host.appendChild(h);
+  const ms=toMeasures(part.notes);
+  const ol=document.createElement('ol');
+  ms.forEach((m,mi)=>{
+    const li=el('li',null,'Bar '+(mi+1)+': '+(m.length?m.map(it=>describeNote(it,part,mi)).join('; '):'empty'));
+    ol.appendChild(li);
+  });
+  host.appendChild(ol);
 }
 
 function moveSelNote(semitones){
@@ -1857,9 +2399,12 @@ function durWithFlags(base,src){
 // tapping, hairpins and playback all still speak in terms of real notes
 // rather than pieces.
 function toMeasures(notes){
-  const BMAX=currentTimeSig.beats;
+  // Bar capacity is no longer one number: a pickup bar is short, and a metre
+  // change resizes every bar after it. BMAX is therefore re-read for whichever
+  // bar is currently being filled.
   const ms=[]; let cur=[], beats=0;
-  const closeIfFull=()=>{ if(beats>=BMAX-.001){ ms.push(cur); cur=[]; beats=0; } };
+  let BMAX=beatsAt(0);
+  const closeIfFull=()=>{ if(beats>=BMAX-.001){ ms.push(cur); cur=[]; beats=0; BMAX=beatsAt(ms.length); } };
   notes.forEach((n,srcIdx)=>{
     // Measure repeats and tuplet members are never split: a repeat glyph owns
     // a whole bar by definition, and cutting a tuplet apart would destroy the
@@ -1872,7 +2417,7 @@ function toMeasures(notes){
     }
     while(left>1e-6){
       const space=BMAX-beats;
-      if(space<=1e-6){ ms.push(cur); cur=[]; beats=0; continue; }
+      if(space<=1e-6){ ms.push(cur); cur=[]; beats=0; BMAX=beatsAt(ms.length); continue; }
       if(left<=space+1e-6){
         if(first){
           // Untouched note — keep its own duration string so dots and rests
@@ -1934,9 +2479,8 @@ function toggleRepeatEnd(){
 // have to stamp the symbol once per bar.
 function addMeasureRepeat(n){
   const part=parts[apIdx];
-  const BMAX=currentTimeSig.beats;
-  let beats=0, completedMeasures=0;
-  part.notes.forEach(nn=>{ beats+=noteBeats(nn); if(beats>=BMAX-.001){ beats=0; completedMeasures++; } });
+  let beats=0, completedMeasures=0, BMAX=beatsAt(0);
+  part.notes.forEach(nn=>{ beats+=noteBeats(nn,completedMeasures); if(beats>=BMAX-.001){ beats=0; completedMeasures++; BMAX=beatsAt(completedMeasures); } });
   if(beats>0.001){ alert('You can only add a measure repeat at the start of a new measure.'); return; }
   if(completedMeasures<n){ alert('Need at least '+n+' previous measure'+(n>1?'s':'')+' to repeat.'); return; }
   for(let k=0;k<n;k++){
@@ -1984,7 +2528,16 @@ function calcMW(allM, mi){
     });
     maxW=Math.max(maxW, units*PX_PER_NOTE, floor);
   }
-  return Math.max(BASE_MW, Math.round(maxW)+EDGE_PAD);
+  // A bar that opens with a new key or metre has to fit those glyphs before
+  // its first note, or the change crowds the music it introduces.
+  let extra=0;
+  if(sigChangeAt(mi)) extra+=28;
+  if(keyChangeAt(mi)) extra+=14+11*Math.max(Math.abs(partFifths(parts[0],mi)),Math.abs(partFifths(parts[0],mi-1)));
+  // A short bar gets a proportionally smaller floor, so a one-beat pickup is
+  // drawn as the short bar it is rather than a full-width bar holding one note.
+  const cap=beatsAt(mi), full=timeSigAt(mi).beats;
+  const floorW=BASE_MW*Math.max(0.35,Math.min(1,cap/(full||4)));
+  return Math.max(floorW, Math.round(maxW)+EDGE_PAD+extra);
 }
 
 // ═══════════════════════════════════════════════════════
@@ -2038,6 +2591,7 @@ function render(){
   renderCaret();
   renderClefGutter();
   updatePartPill();
+  scheduleScoreOutline();
   maybeRecordHistory();
   scheduleAutosave();
 }
@@ -2062,7 +2616,7 @@ function drawScore(){
   measureBeats=Array.from({length:numM},(_,mi)=>{
     let mx=0;
     allM.forEach(pm=>{ const arr=pm[mi]||[]; const b=arr.reduce((s,n)=>s+noteBeats(n),0); if(b>mx)mx=b; });
-    return mx||currentTimeSig.beats;
+    return mx||beatsAt(mi);
   });
   measureXs=[];
 
@@ -2111,7 +2665,13 @@ function drawScore(){
       const sy=TP+pi*PG;
       const st=new Stave(x,sy,mw);
       if(inst.staffLines===1)st.setConfigForLines([{visible:false},{visible:false},{visible:true},{visible:false},{visible:false}]);
-      if(first){ st.addClef(cl).addKeySignature(kd.vfSig).addTimeSignature(currentTimeSig.sig); }
+      // The opening bar carries clef, key and metre; later bars carry only
+      // what actually changes there.
+      if(first){ st.addClef(cl).addKeySignature(partVfSig(p,mi)).addTimeSignature(timeSigAt(mi).sig); }
+      else{
+        if(keyChangeAt(mi)) st.addKeySignature(partVfSig(p,mi),partVfSig(p,mi-1));
+        if(sigChangeAt(mi)) st.addTimeSignature(timeSigAt(mi).sig);
+      }
       if(repeatStartMeasures.includes(mi))st.setBegBarType(Barline.type.REPEAT_BEGIN);
       if(repeatEndMeasures.includes(mi))st.setEndBarType(Barline.type.REPEAT_END);
       st.setContext(ctx).draw();
@@ -2131,7 +2691,7 @@ function drawScore(){
 
     staves.forEach((st,pi)=>{
       const noteData=allM[pi][mi]||[];
-      const vfNotes=drawVoice(ctx,st,noteData,mw,VF,pi,partOff[pi],partClefs[pi]);
+      const vfNotes=drawVoice(ctx,st,noteData,mw,VF,pi,partOff[pi],partClefs[pi],parts[pi],timeSigAt(mi),mi);
       noteData.forEach((it,li)=>{if(vfNotes[li])vfRefs[pi][(it.srcIdx!=null)?it.srcIdx:partOff[pi]+li]={vfNote:vfNotes[li],stave:st};});
       partOff[pi]+=noteData.length;
     });
@@ -2248,7 +2808,7 @@ function renderClefGutter(){
       const inst=IMAP[p.instId]||IMAP['piano'];
       const st=new Stave(10,TP+pi*PG,PROBE);
       if(inst.staffLines===1)st.setConfigForLines([{visible:false},{visible:false},{visible:true},{visible:false},{visible:false}]);
-      st.addClef(partClefFor(p)).addKeySignature(kd.vfSig);
+      st.addClef(partClefFor(p)).addKeySignature(partVfSig(p));
       st.setContext(ctx).draw();
       endX=Math.max(endX,st.getNoteStartX());
       return st;
@@ -2452,7 +3012,51 @@ function scrollToMeasure(mi){
   wrap.scrollTo({left:Math.max(0,tx-30),top:wrap.scrollTop,behavior:SCROLL_BEHAVIOR});
 }
 
-function drawVoice(ctx,stave,noteData,mw,VF,partIdx,partOffset,clef){
+// ── Playhead ────────────────────────────────────────────
+// Playback scrolled the staff and marked nothing, so in a dense bar there was
+// no way to tell where you were. This sweeps a line across the bar being
+// played, driven by rAF against the transport clock rather than by scheduling
+// an event per note.
+let _phRaf=0, _phPlan=null;
+function ensurePlayhead(){
+  const div=document.getElementById('score-div');
+  if(!div) return null;
+  let ph=document.getElementById('score-playhead');
+  if(!ph){ ph=document.createElement('div'); ph.id='score-playhead'; div.appendChild(ph); }
+  return ph;
+}
+// plan: [{mi, startSec, endSec}] in playback order.
+function startPlayhead(plan,offsetSec){
+  _phPlan={plan,offset:offsetSec||0};
+  const ph=ensurePlayhead(); if(!ph)return;
+  ph.style.display='block';
+  const step=()=>{
+    if(!playing||!_phPlan){ stopPlayhead(); return; }
+    const now=Tone.getTransport().seconds+_phPlan.offset;
+    const seg=_phPlan.plan.find(s=>now>=s.startSec&&now<s.endSec);
+    if(seg){
+      const x0=measureXs[seg.mi], w=measureWs[seg.mi]||0;
+      if(x0!=null){
+        const frac=Math.max(0,Math.min(1,(now-seg.startSec)/Math.max(.001,seg.endSec-seg.startSec)));
+        ph.style.transform='translateX('+(x0+w*frac)+'px)';
+        // Same staff band the caret uses: VexFlow starts the 5 lines ~34px
+        // below the stave's y, and each part sits PG below the one above.
+        ph.style.top=((TP+34)*scoreZoom)+'px';
+        ph.style.height=(((parts.length-1)*PG+52)*scoreZoom)+'px';
+      }
+    }
+    _phRaf=requestAnimationFrame(step);
+  };
+  cancelAnimationFrame(_phRaf);
+  _phRaf=requestAnimationFrame(step);
+}
+function stopPlayhead(){
+  cancelAnimationFrame(_phRaf); _phRaf=0; _phPlan=null;
+  const ph=document.getElementById('score-playhead');
+  if(ph) ph.style.display='none';
+}
+
+function drawVoice(ctx,stave,noteData,mw,VF,partIdx,partOffset,clef,part,ts,mi){
   const{StaveNote,Voice,Formatter,Accidental,Beam,Annotation,Articulation,Dot,Tremolo,Ornament,GraceNote,GraceNoteGroup,RepeatNote,Tuplet}=VF;
   if(!noteData.length)return[];
   let vfNotes;
@@ -2468,10 +3072,12 @@ function drawVoice(ctx,stave,noteData,mw,VF,partIdx,partOffset,clef){
       // to treble-clef line positions otherwise, mispositioning every note on
       // a non-treble stave even though the stave itself draws the right clef.
       // 't<N>' (our tuplet marker) isn't a VexFlow duration token, so strip it here.
-      const sn=new StaveNote({keys:n.keys,duration:stripTuplet(n.dur),clef});
+      // Written pitch for a transposing part; the stored spelling otherwise.
+      const disp=part?displayKeys(n,part,mi):{keys:n.keys,vfAccs:n.vfAccs};
+      const sn=new StaveNote({keys:disp.keys,duration:stripTuplet(n.dur),clef});
       if(isSelected) sn.setStyle({fillStyle:'#2980b9',strokeStyle:'#2980b9'});
       else if(inCopyRange) sn.setStyle({fillStyle:'#27ae60',strokeStyle:'#27ae60'});
-      const accs=n.vfAccs||[];
+      const accs=disp.vfAccs||[];
       accs.forEach((acc,i)=>{if(acc)try{sn.addModifier(new Accidental(acc),i);}catch(e){};});
       if(n.dur.includes('d'))try{Dot.buildAndAttach([sn],{all:true});}catch(e){}
       if(n.lyric)try{const a=new Annotation(n.lyric);a.setVerticalJustification(Annotation.VerticalJustify.BOTTOM);a.setFont({family:'Arial',size:9});sn.addModifier(a,0);}catch(e){}
@@ -2493,9 +3099,17 @@ function drawVoice(ctx,stave,noteData,mw,VF,partIdx,partOffset,clef){
       }
       if(n.grace&&n.grace.length){
         try{
+          const gSemis=part?writtenSemis(part):0;
+          const gScale=part?partScale(part,mi):null;
+          const gFlat=part?partFifths(part,mi)<0:false;
           const gns=n.grace.map(g=>{
-            const gn=new GraceNote({keys:g.keys,duration:g.dur,slash:true,clef});
-            if(g.vfAcc)try{gn.addModifier(new Accidental(g.vfAcc),0);}catch(e){}
+            let gKeys=g.keys, gAcc=g.vfAcc;
+            if(gSemis&&g.midi!=null){
+              const sp=spellInScale(g.midi+gSemis,gScale,gFlat);
+              gKeys=[sp.name+'/'+sp.oct]; gAcc=sp.vfAcc;
+            }
+            const gn=new GraceNote({keys:gKeys,duration:g.dur,slash:true,clef});
+            if(gAcc)try{gn.addModifier(new Accidental(gAcc),0);}catch(e){}
             return gn;
           });
           const grp=new GraceNoteGroup(gns,false);
@@ -2530,7 +3144,8 @@ function drawVoice(ctx,stave,noteData,mw,VF,partIdx,partOffset,clef){
   }catch(e){console.warn('Tuplet:',e.message);}
 
   try{
-    const voice=new Voice({numBeats:currentTimeSig.vfB,beatValue:currentTimeSig.vfV}).setMode(2);
+    const vts=ts||currentTimeSig;
+    const voice=new Voice({numBeats:vts.vfB,beatValue:vts.vfV}).setMode(2);
     voice.addTickables(vfNotes);
     // Width actually available to notes: the stave's own width less whatever
     // the clef/key/time signatures and any begin-repeat consumed on the left,
@@ -2845,6 +3460,173 @@ function quantizeSimpleGrid(events,unit,toBeat){
 }
 
 // ═══════════════════════════════════════════════════════
+// Performance — turning the markings into sound
+// ═══════════════════════════════════════════════════════
+// Checking one line inside a full score is the first thing anyone wants from
+// multi-part playback. Solo wins over mute when both are set.
+let mutedParts=new Set(), soloParts=new Set();
+let loopPlayback=false;
+function partMuted(pi){ return soloParts.size?!soloParts.has(pi):mutedParts.has(pi); }
+function toggleMute(pi){
+  if(mutedParts.has(pi)) mutedParts.delete(pi); else mutedParts.add(pi);
+  renderPartsList();
+}
+function toggleSolo(pi){
+  if(soloParts.has(pi)) soloParts.delete(pi); else soloParts.add(pi);
+  renderPartsList();
+}
+function toggleLoop(){
+  loopPlayback=!loopPlayback;
+  const b=document.getElementById('loop-btn');
+  if(b) b.classList.toggle('on',loopPlayback);
+  if(playing){ stopScore(); playScore(); }
+}
+
+// Dynamics, hairpins, articulations and tempo words were all drawn and none of
+// them were heard: velocity was hardcoded (1 in the scheduler, 90 in the MIDI
+// writer), so ppp and fff played identically and staccato did not shorten.
+// This layer reads a part's markings once and hands playback and MIDI export
+// the same answer, so what you export matches what you auditioned.
+const DYN_VEL={ppp:.16,pp:.26,p:.38,mp:.5,mf:.62,f:.76,ff:.88,fff:1};
+// Accents that mark one note without changing the standing level. sfp is both:
+// a hard attack, then the line continues piano.
+const DYN_ACCENT={sfz:1.0,fz:.95,sfp:1.0};
+const DYN_AFTER={sfp:'p'};
+const DEFAULT_VEL=DYN_VEL.mf;
+// [velocity multiplier, duration multiplier]
+const ART_EFFECT={
+  'a.':[1,.45],     // staccato — detached
+  'a>':[1.3,.9],    // accent
+  'a^':[1.45,.6],   // marcato — accented and short
+  'a-':[1.05,1],    // tenuto — full value, slight lean
+  'ao':[1,2.2],     // fermata — held
+  'a+':[.9,.5],     // stopped / pizzicato
+  'tr':[1,1],       // trill is drawn, not simulated
+};
+// Tempo words as a multiplier on the BPM box, so the box stays the reference.
+const TEMPO_MULT={
+  Grave:.55,Largo:.62,Adagio:.72,Andante:.88,Moderato:1,Allegretto:1.12,
+  Allegro:1.3,Vivace:1.45,Presto:1.65,Prestissimo:1.85,'a tempo':1,
+};
+// Gradual changes, as the proportion of tempo gained or lost across the ramp,
+// and how many quarter-notes the ramp takes.
+const TEMPO_RAMP={
+  'accel.':[1.3,8],'poco accel.':[1.12,8],
+  'rit.':[.75,8],'ritard.':[.75,8],'rall.':[.7,8],
+};
+
+// The standing dynamic and per-note accent for every note of a part, with
+// hairpins interpolated across the notes they span.
+function velocityMap(part){
+  const notes=part.notes||[];
+  const out=new Array(notes.length).fill(DEFAULT_VEL);
+  let level=DEFAULT_VEL;
+  const levelAt=new Array(notes.length).fill(DEFAULT_VEL);
+  notes.forEach((n,i)=>{
+    if(n.dyn&&DYN_VEL[n.dyn]!=null) level=DYN_VEL[n.dyn];
+    levelAt[i]=level;
+    if(n.dyn&&DYN_AFTER[n.dyn]) level=DYN_VEL[DYN_AFTER[n.dyn]];
+  });
+  // Hairpins ramp from the level where they start to the level the music
+  // reaches after them — or one step either way if nothing says otherwise.
+  (part.hairpins||[]).forEach(hp=>{
+    const a=Math.max(0,hp.start), b=Math.min(notes.length-1,hp.end);
+    if(b<=a) return;
+    const from=levelAt[a];
+    let to=null;
+    // The arriving dynamic is usually written on the note the hairpin ends on,
+    // so start looking there rather than after it — searching only past the end
+    // made every crescendo stop short of the ff it was pointing at.
+    for(let i=b;i<notes.length;i++){ if(notes[i].dyn&&DYN_VEL[notes[i].dyn]!=null&&i>a){ to=DYN_VEL[notes[i].dyn]; break; } }
+    if(to==null) to=hp.type==='cresc'?Math.min(1,from*1.55):Math.max(.14,from*.6);
+    for(let i=a;i<=b;i++) levelAt[i]=from+(to-from)*((i-a)/(b-a));
+  });
+  notes.forEach((n,i)=>{
+    let v=levelAt[i];
+    if(n.dyn&&DYN_ACCENT[n.dyn]) v=Math.max(v,DYN_ACCENT[n.dyn]);
+    (n.arts||[]).forEach(a=>{ const e=ART_EFFECT[a]; if(e) v*=e[0]; });
+    out[i]=Math.max(.05,Math.min(1,v));
+  });
+  return out;
+}
+// How long a note actually sounds, as a fraction of its written value.
+function articulationHold(n){
+  let m=0.94;   // the small gap that has always separated consecutive notes
+  (n.arts||[]).forEach(a=>{ const e=ART_EFFECT[a]; if(e) m*=e[1]; });
+  return Math.max(.05,m);
+}
+// Tempo across the piece, as {beat, bpm} points in playback order. Marks are
+// read from every part, since a tempo word belongs to the music, not a staff.
+// How many beats a measure actually holds, taken from its content across all
+// parts and falling back to the metre. Same rule drawScore uses, but callable
+// without having rendered first — MIDI export runs before any draw.
+function measureBeatsOf(allM,mi){
+  let mx=0;
+  allM.forEach(pm=>{ const arr=pm[mi]||[]; const b=arr.reduce((s,n)=>s+noteBeats(n,mi),0); if(b>mx)mx=b; });
+  return mx||beatsAt(mi);
+}
+function buildTempoMap(playOrder,allM,baseBpm){
+  const pts=[{beat:0,bpm:baseBpm}];
+  const seen=new Set();
+  parts.forEach((part,pi)=>{
+    let beat=0;
+    playOrder.forEach(mi=>{
+      resolveMeasureNotes(allM[pi],mi).forEach(n=>{
+        if(n.tempo&&!n.tieFrom){
+          const key=beat.toFixed(4)+':'+n.tempo;
+          if(!seen.has(key)){
+            seen.add(key);
+            if(TEMPO_MULT[n.tempo]!=null) pts.push({beat,bpm:baseBpm*TEMPO_MULT[n.tempo]});
+            else if(TEMPO_RAMP[n.tempo]){
+              const [factor,span]=TEMPO_RAMP[n.tempo];
+              pts.push({beat,ramp:true,factor,span});
+            }
+          }
+        }
+        beat+=noteBeats(n,mi);
+      });
+    });
+  });
+  pts.sort((a,b)=>a.beat-b.beat);
+  // Resolve ramps against whatever tempo is running when they start.
+  const out=[]; let cur=baseBpm;
+  pts.forEach(p=>{
+    if(p.ramp){
+      out.push({beat:p.beat,bpm:cur});
+      cur=cur*p.factor;
+      out.push({beat:p.beat+p.span,bpm:cur,linearFrom:p.beat});
+    } else {
+      cur=p.bpm;
+      out.push({beat:p.beat,bpm:cur});
+    }
+  });
+  return out.length?out:[{beat:0,bpm:baseBpm}];
+}
+// Seconds from the start of playback to a given beat, integrating the map.
+// Constant segments are beats/bpm*60; a ramp is integrated as a linear change
+// of tempo, which is what accel. and rit. actually do.
+function beatToSec(map,beat){
+  let sec=0;
+  for(let i=0;i<map.length;i++){
+    const seg=map[i], next=map[i+1];
+    const from=seg.beat, to=next?Math.min(next.beat,beat):beat;
+    if(to<=from) { if(next&&next.beat>=beat) break; else continue; }
+    const span=to-from;
+    if(next&&next.linearFrom!=null&&next.beat>seg.beat){
+      // Tempo moves linearly from seg.bpm to next.bpm across the ramp.
+      const full=next.beat-seg.beat;
+      const bEnd=seg.bpm+(next.bpm-seg.bpm)*(span/full);
+      const avg=(seg.bpm+bEnd)/2;
+      sec+=span*60/Math.max(1,avg);
+    } else {
+      sec+=span*60/Math.max(1,seg.bpm);
+    }
+    if(!next||next.beat>=beat) break;
+  }
+  return sec;
+}
+
+// ═══════════════════════════════════════════════════════
 // Playback
 // ═══════════════════════════════════════════════════════
 const BVP={w:4,h:2,q:1,'8':.5,'16':.25,'32':.125};
@@ -2885,7 +3667,7 @@ const INST_SAMPLE={
   piano:'piano', organ:'organ', harpsi:'guitar',
   violin:'violin', viola:'cello', cello:'cello', dbass:'contrabass',
   flute:'flute', oboe:'flute', clarinet:'clarinet', bassoon:'bassoon', sax:'saxophone',
-  trumpet:'trumpet', horn:'frenchhorn', trombone:'trombone', tuba:'tuba',
+  trumpet:'trumpet', horn:'frenchhorn', trombone:'trombone', tuba:'tuba', tsax:'saxophone',
   soprano:'organ', mezzo:'organ', altov:'organ', tenorv:'organ', baritonev:'organ', bassv:'organ',
   timpani:'piano', xyloph:'xylophone', marimba:'xylophone'
 };
@@ -2917,6 +3699,26 @@ function buildSynthVoice(instId){
     volume:inst.vol,
   }).connect(getMasterBus());
 }
+// Which sample sets have actually arrived, so the app can say what you are
+// hearing instead of quietly swapping a piano for an oscillator.
+const sampleState={};   // key -> 'loading' | 'ready' | 'synth'
+function setSampleState(key,st){ if(sampleState[key]!==st){ sampleState[key]=st; updateVoicePill(); } }
+function updateVoicePill(){
+  const pill=document.getElementById('voice-pill'); if(!pill)return;
+  const states=Object.values(sampleState);
+  const synth=states.filter(s=>s==='synth').length;
+  if(!states.length || (!synth && !states.includes('loading'))){ pill.style.display='none'; return; }
+  pill.style.display='inline-block';
+  if(synth){
+    pill.textContent='〜 Synth voices';
+    pill.title='The recorded instruments could not be downloaded, so playback is using the built-in synth. Reconnect and play again, or use Songs → “Save sounds for offline”.';
+    pill.style.color='var(--warn)';
+  } else {
+    pill.textContent='… Loading sounds';
+    pill.title='Downloading the recorded instruments.';
+    pill.style.color='var(--muted4)';
+  }
+}
 function getSampler(instId){
   const key=INST_SAMPLE[instId]||'piano';
   if(_samplerCache[key])return _samplerCache[key];
@@ -2925,8 +3727,10 @@ function getSampler(instId){
   if(def.map)Object.assign(urls,def.map);
   else def.pitches.forEach(p=>{urls[p]=p.replace('#','s')+'.mp3';});
   let fallback=null;
+  setSampleState(key,'loading');
   const s=new Tone.Sampler({urls,baseUrl:def.base,release:1,volume:-4,
-    onerror:()=>{ if(!fallback){ try{ fallback=buildSynthVoice(instId); }catch(e){} } },
+    onload:()=>setSampleState(key,'ready'),
+    onerror:()=>{ if(!fallback){ try{ fallback=buildSynthVoice(instId); }catch(e){} } setSampleState(key,'synth'); },
   }).connect(getMasterBus());
   // Route each note to whichever voice can actually sound it right now, so a
   // sample set that fails mid-session degrades instead of going silent.
@@ -2936,8 +3740,30 @@ function getSampler(instId){
       try{ target.triggerAttackRelease(n,d,t,v); }catch(e){}
     },
     releaseAll:()=>{ try{s.releaseAll?.();}catch(e){} try{fallback?.releaseAll?.();}catch(e){} },
+    sampleKey:key,
   };
   _samplerCache[key]=voice;return voice;
+}
+// Warm the worker's sample cache on demand, so "offline" means the real
+// instruments rather than the fallback synth. Only the sets this song
+// actually uses, plus piano — the full library is tens of megabytes.
+async function saveSoundsOffline(){
+  const btn=document.getElementById('offline-sounds-btn');
+  const keys=[...new Set(['piano',...parts.filter(p=>p.notes.length).map(p=>INST_SAMPLE[p.instId]).filter(Boolean)])];
+  const urls=[];
+  keys.forEach(k=>{
+    const def=SAMP[k]||SALAMANDER;
+    if(def.map) Object.entries(def.map).forEach(([,f])=>urls.push(def.base+f));
+    else def.pitches.forEach(p=>urls.push(def.base+p.replace('#','s')+'.mp3'));
+  });
+  if(btn){ btn.disabled=true; btn.textContent='⇩ Saving sounds…'; }
+  let done=0,failed=0;
+  await Promise.all(urls.map(u=>fetch(u,{mode:'no-cors'}).then(()=>done++).catch(()=>failed++)));
+  if(btn){
+    btn.disabled=false;
+    btn.textContent=failed?`⇩ Saved ${done} of ${urls.length}`:`✓ ${done} sounds saved`;
+    setTimeout(()=>{ btn.textContent='⇩ Save sounds for offline'; },4000);
+  }
 }
 function getDrum(instId){
   if(_drumCache[instId])return _drumCache[instId];
@@ -3057,37 +3883,44 @@ async function playScore(){
   const allM=parts.map(p=>toMeasures(p.notes));
   const numM=Math.max(...allM.map(m=>m.length),1);
   const playOrder=buildPlayOrder(numM);
-  const secPerBeat=60/bpm;
+  // Positions are worked out in beats and converted to seconds through the
+  // tempo map, so a tempo word or a rit. bends the whole timeline — including
+  // the auto-scroll — instead of only the notes after it.
+  const tempoMap=buildTempoMap(playOrder,allM,bpm);
+  const at=b=>beatToSec(tempoMap,b);
 
   // Default to starting playback from the selected/highlighted note (or the
-  // insertion caret) instead of always from the top — find its time offset
-  // in the playback timeline so every scheduled event can be shifted back by it.
-  let cursorTime=0, cursorOcc=0;
+  // insertion caret) instead of always from the top — find its position in the
+  // playback timeline so every scheduled event can be shifted back by it.
+  let cursorBeat=0, cursorOcc=0;
   const cur=selectedNote?{partIdx:selectedNote.partIdx,noteIdx:selectedNote.noteIdx}
            :caretGap?{partIdx:caretGap.partIdx,noteIdx:caretGap.index}:null;
   if(cur && parts[cur.partIdx]){
     const cNotes=parts[cur.partIdx].notes;
-    const BMAX=currentTimeSig.beats;
-    let mi=0,beats=0,posInMeasure=0;
+    let mi=0,beats=0,posInMeasure=0,BMAX=beatsAt(0);
     for(let i=0;i<cur.noteIdx && i<cNotes.length;i++){
-      beats+=noteBeats(cNotes[i]); posInMeasure++;
-      if(beats>=BMAX-.001){ mi++; beats=0; posInMeasure=0; }
+      beats+=noteBeats(cNotes[i],mi); posInMeasure++;
+      if(beats>=BMAX-.001){ mi++; beats=0; posInMeasure=0; BMAX=beatsAt(mi); }
     }
     const occ=playOrder.indexOf(mi);
     cursorOcc=occ>=0?occ:playOrder.length;
-    for(let k=0;k<cursorOcc;k++) cursorTime+=(measureBeats[playOrder[k]]||BMAX)*secPerBeat;
+    for(let k=0;k<cursorOcc;k++) cursorBeat+=(measureBeats[playOrder[k]]||beatsAt(playOrder[k]));
     if(occ>=0){
       const mNotes=resolveMeasureNotes(allM[cur.partIdx],mi);
-      for(let k=0;k<posInMeasure && k<mNotes.length;k++) cursorTime+=durSecs(mNotes[k].dur,bpm);
+      for(let k=0;k<posInMeasure && k<mNotes.length;k++) cursorBeat+=durBeats(mNotes[k].dur);
     }
   }
+  const cursorTime=at(cursorBeat);
 
   // Follow the currently-playing measure across the staff view as it plays —
   // uses the expanded order, so the view jumps back during a repeat too.
-  let cumScroll=0;
+  let cumBeat=0;
+  const phPlan=[];
   playOrder.forEach((mi,k)=>{
-    if(k>=cursorOcc) Tone.getTransport().schedule(()=>scrollToMeasure(mi),'+'+Math.max(0,cumScroll-cursorTime));
-    cumScroll+=(measureBeats[mi]||currentTimeSig.beats)*secPerBeat;
+    const s=at(cumBeat);
+    if(k>=cursorOcc) Tone.getTransport().schedule(()=>scrollToMeasure(mi),'+'+Math.max(0,s-cursorTime));
+    cumBeat+=(measureBeats[mi]||beatsAt(mi));
+    phPlan.push({mi,startSec:s,endSec:at(cumBeat)});
   });
 
   _activeVoices=[];let maxT=0;
@@ -3102,50 +3935,70 @@ async function playScore(){
         else voice.triggerAttackRelease(notesArg,d,time,vel);
       }catch(e){}
     };
-    let t=0;
+    // Dynamics and hairpins are read per part, keyed by the note's own index
+    // in the part, so tied pieces and repeats all report the same velocity.
+    const vels=velocityMap(part);
+    if(partMuted(pi)) return;
+    let bt=0;
     playOrder.forEach(mi=>{
       const measureNotes=resolveMeasureNotes(allM[pi],mi);
       measureNotes.forEach(n=>{
-        const secs=durSecs(n.dur,bpm);
+        const beats=durBeats(n.dur);
         // A note split across a barline is drawn as tied pieces but must
         // still sound once, for its whole value — so only the head of a tie
         // is struck, and it is held for the note's full length rather than
         // the length of the piece that happens to sit in this bar.
-        const soundSecs=(n.soundBeats!=null)?n.soundBeats*(60/bpm):secs;
+        const soundBeats=(n.soundBeats!=null)?n.soundBeats:beats;
         if(!n.rest&&!n.repeatBars&&!n.tieFrom&&(n.midiVals||[]).length){
-          const abs=t;
+          const absT=at(bt);
+          const vel=(n.srcIdx!=null&&vels[n.srcIdx]!=null)?vels[n.srcIdx]:DEFAULT_VEL;
+          const hold=articulationHold(n);
           const toneNotes=n.midiVals.map(m=>Tone.Frequency(m,'midi').toNote());
           const mainNotes=toneNotes.length===1?toneNotes[0]:toneNotes;
           // Drum set fires each note by staff position to its own drum voice,
           // so a chord of kick+snare+hat all sound together and distinctly.
-          const fire=(d,time,vel)=>{ if(inst.drumset){ n.midiVals.forEach(m=>drumsetHit(m,d,time,vel)); } else hit(mainNotes,d,time,vel); };
+          const fire=(d,time,v)=>{ if(inst.drumset){ n.midiVals.forEach(m=>drumsetHit(m,d,time,v)); } else hit(mainNotes,d,time,v); };
           // Grace notes (flam/drag/ruff): quick quiet taps just before the main hit.
           const graceList=n.grace||[];
           const GRACE_GAP=.035;
           graceList.forEach((g,gi)=>{
-            const gt=abs-(graceList.length-gi)*GRACE_GAP;
-            if(gt>=cursorTime) Tone.getTransport().schedule(time=>fire(GRACE_GAP*.85,time,.55),'+'+(gt-cursorTime));
+            const gt=absT-(graceList.length-gi)*GRACE_GAP;
+            if(gt>=cursorTime) Tone.getTransport().schedule(time=>fire(GRACE_GAP*.85,time,Math.min(1,vel*.7)),'+'+(gt-cursorTime));
           });
           // Rolls: subdivide the note into fast repeated hits instead of one sustained note.
           const ROLL_HITS={trem1:2,trem2:4,trem3:8,buzz:16,press:20};
           const hits=ROLL_HITS[n.rud];
           if(hits){
+            const secs=at(bt+beats)-absT;
             const hitDur=secs/hits;
-            for(let k=0;k<hits;k++){ const ht=abs+k*hitDur; if(ht>=cursorTime) Tone.getTransport().schedule(time=>fire(hitDur*.85,time,.8),'+'+(ht-cursorTime)); }
+            for(let k=0;k<hits;k++){ const ht=absT+k*hitDur; if(ht>=cursorTime) Tone.getTransport().schedule(time=>fire(hitDur*.85,time,vel),'+'+(ht-cursorTime)); }
           } else {
             // Plain seconds (not a Tone.js Time-string like '8n') so arbitrary
             // N-tuplet ratios play at the right length — Tone's own 't' shorthand
             // only understands the 2:3 triplet case.
-            if(abs>=cursorTime) Tone.getTransport().schedule(time=>fire(soundSecs*0.94,time,1),'+'+(abs-cursorTime));
+            const soundSecs=at(bt+soundBeats)-absT;
+            if(absT>=cursorTime) Tone.getTransport().schedule(time=>fire(soundSecs*hold,time,vel),'+'+(absT-cursorTime));
           }
         }
-        t+=secs;
+        bt+=beats;
       });
     });
-    maxT=Math.max(maxT,t);
+    maxT=Math.max(maxT,at(bt));
   });
   if(!_activeVoices.length){playing=false;return;}
-  Tone.getTransport().schedule(()=>stopScore(),'+' +Math.max(0,maxT-cursorTime+.8));
+  // Looping repeats the whole expanded order rather than stopping at the end,
+  // which is what practising a passage needs.
+  if(loopPlayback){
+    const span=Math.max(.25,maxT-cursorTime);
+    Tone.getTransport().scheduleRepeat(()=>{ startPlayhead(phPlan,cursorTime); }, span, 0);
+    Tone.getTransport().loop=true;
+    Tone.getTransport().loopStart=0;
+    Tone.getTransport().loopEnd=span;
+  } else {
+    Tone.getTransport().loop=false;
+    Tone.getTransport().schedule(()=>stopScore(),'+' +Math.max(0,maxT-cursorTime+.8));
+  }
+  startPlayhead(phPlan,cursorTime);
   Tone.getTransport().start();
 }
 function rewindToStart(){
@@ -3161,27 +4014,98 @@ function stopScore(s){
   // call playScore() makes to clear the decks before starting.
   if(!s && !playing){ rewindToStart(); return; }
   Tone.getTransport().stop();Tone.getTransport().cancel();
+  Tone.getTransport().loop=false;
   _activeVoices.forEach(x=>{try{x.releaseAll?.();}catch(e){}});
   _activeVoices=[];playing=false;
+  stopPlayhead();
   const playBtn=document.querySelector('.tb.play');if(playBtn)playBtn.textContent='▶';
 }
 
 // ═══════════════════════════════════════════════════════
-// Projects + autosave (localStorage)
+// Song store (IndexedDB, with localStorage as the fallback)
+// ═══════════════════════════════════════════════════════
+// Every song lived in one localStorage string against a ~5MB origin quota. At
+// ~190 KB for a 1200-note piece that is roughly twenty songs before the (well
+// handled) "storage full" path starts firing, and every save rewrote every
+// song. IndexedDB holds one record per song, so the ceiling goes away and a
+// save costs the song you edited.
+//
+// localStorage stays as the fallback for browsers where IndexedDB is blocked —
+// which is the same set of privacy settings safeStore already handles — so
+// there is always somewhere to write.
+const IDB_NAME='modscore', IDB_STORE='songs', IDB_VERSION=1;
+let _idb=null, _idbReady=null;
+function idbOpen(){
+  if(_idbReady) return _idbReady;
+  _idbReady=new Promise(resolve=>{
+    let req;
+    try{ req=indexedDB.open(IDB_NAME,IDB_VERSION); }
+    catch(e){ resolve(null); return; }
+    if(!req){ resolve(null); return; }
+    req.onupgradeneeded=()=>{
+      const db=req.result;
+      if(!db.objectStoreNames.contains(IDB_STORE)) db.createObjectStore(IDB_STORE,{keyPath:'id'});
+    };
+    req.onsuccess=()=>{ _idb=req.result; resolve(_idb); };
+    req.onerror=()=>resolve(null);
+    req.onblocked=()=>resolve(null);
+    // Private-mode Firefox can leave the request hanging rather than failing.
+    setTimeout(()=>resolve(_idb),3000);
+  });
+  return _idbReady;
+}
+function idbTx(mode){
+  if(!_idb) return null;
+  try{ return _idb.transaction(IDB_STORE,mode).objectStore(IDB_STORE); }catch(e){ return null; }
+}
+function idbPut(rec){
+  return new Promise(resolve=>{
+    const st=idbTx('readwrite'); if(!st) return resolve(false);
+    const r=st.put(rec);
+    r.onsuccess=()=>resolve(true);
+    r.onerror=()=>resolve(false);
+  });
+}
+function idbDelete(id){
+  return new Promise(resolve=>{
+    const st=idbTx('readwrite'); if(!st) return resolve(false);
+    const r=st.delete(id);
+    r.onsuccess=()=>resolve(true);
+    r.onerror=()=>resolve(false);
+  });
+}
+function idbGetAll(){
+  return new Promise(resolve=>{
+    const st=idbTx('readonly'); if(!st) return resolve(null);
+    const r=st.getAll();
+    r.onsuccess=()=>resolve(r.result||[]);
+    r.onerror=()=>resolve(null);
+  });
+}
+
+// ═══════════════════════════════════════════════════════
+// Projects + autosave
 // ═══════════════════════════════════════════════════════
 let projects=[]; let currentProjId=null; let autosaveT=null;
 
-function serializeProject(){
+// The document's shape, referencing the live objects. Cheap to build and safe
+// to stringify; anything that will outlive this moment must take a copy.
+function projectShape(){
   return {
-    parts:JSON.parse(JSON.stringify(parts)),
+    parts,
     pid, apIdx,
     keyId:currentKeyId,
     timeSig:currentTimeSig.sig,
+    keyChanges,
+    sigChanges,
+    pickupBeats,
     bpm:parseInt(document.getElementById('bpm-inp').value)||80,
-    repeatStartMeasures:repeatStartMeasures.slice(),
-    repeatEndMeasures:repeatEndMeasures.slice()
+    repeatStartMeasures,
+    repeatEndMeasures
   };
 }
+// A detached copy, for storing in a project or writing to a file.
+function serializeProject(){ return JSON.parse(JSON.stringify(projectShape())); }
 // Autosave used to swallow every error, including the QuotaExceededError you
 // get once browser storage fills up. The Songs tab promises your work is
 // saved in the browser, so a silent failure there is silent data loss — the
@@ -3191,28 +4115,78 @@ function updateSaveWarn(){
   const el=document.getElementById('save-warn');
   if(el) el.style.display=saveFailed?'inline-block':'none';
 }
-function saveAll(){
-  try{
-    localStorage.setItem('mn_projects',JSON.stringify(projects));
-    localStorage.setItem('mn_current',currentProjId||'');
+// Which songs still need writing. Saving one song should not rewrite the
+// others, so the dirty set is drained rather than the whole list dumped.
+const dirtySongs=new Set();
+let idbUsable=false;
+function saveAll(ids){
+  safeStore.set('mn_current',currentProjId||'');
+  if(ids) ids.forEach(i=>dirtySongs.add(i)); else projects.forEach(p=>dirtySongs.add(p.id));
+  if(idbUsable){
+    const pending=[...dirtySongs]; dirtySongs.clear();
+    Promise.all(pending.map(id=>{
+      const p=projects.find(x=>x.id===id);
+      return p?idbPut({id:p.id,name:p.name,data:p.data,updated:p.updated}):idbDelete(id);
+    })).then(results=>{
+      const failed=results.some(r=>r===false);
+      if(failed!==saveFailed){ saveFailed=failed; updateSaveWarn(); }
+      if(failed) warnSaveFailure();
+    });
+    return;
+  }
+  // No IndexedDB — fall back to the single localStorage blob.
+  dirtySongs.clear();
+  const e1=safeStore.set('mn_projects',JSON.stringify(projects));
+  if(!e1){
     if(saveFailed){ saveFailed=false; updateSaveWarn(); }
-  }catch(e){
-    if(!saveFailed){ saveFailed=true; updateSaveWarn(); }
-    // Once per session — the pill carries the state from then on, and an
-    // alert on every keystroke would be worse than the problem.
-    if(!saveFailAlerted){
-      saveFailAlerted=true;
-      setTimeout(()=>alert("This song can't be auto-saved — your browser's storage for this site is full.\n\nYour work is still here for now, but it won't survive a reload. Use Songs → “⇩ Save to device” to keep a copy."),0);
-    }
+    return;
+  }
+  if(!saveFailed){ saveFailed=true; updateSaveWarn(); }
+  warnSaveFailure();
+}
+function warnSaveFailure(){
+  // Once per session — the pill carries the state from then on, and an
+  // alert on every keystroke would be worse than the problem.
+  if(!saveFailAlerted){
+    saveFailAlerted=true;
+    const why=safeStore.blocked
+      ? "This song can't be auto-saved — your browser is blocking storage for this site.\n\nIn Safari that's Settings → Safari → Block All Cookies, or Private Browsing."
+      : "This song can't be auto-saved — your browser's storage for this site is full.";
+    setTimeout(()=>alert(why+"\n\nYour work is still here for now, but it won't survive a reload. Use Songs → “⇩ Save to device” to keep a copy."),0);
   }
 }
-function scheduleAutosave(){
-  clearTimeout(autosaveT);
-  autosaveT=setTimeout(()=>{
-    const p=projects.find(x=>x.id===currentProjId);
-    if(p){ p.data=serializeProject(); p.updated=Date.now(); saveAll(); if(document.getElementById('panel-proj').classList.contains('on'))renderProjectsList(); }
-  },500);
+let autosavePending=false;
+function writeCurrentProject(){
+  autosavePending=false;
+  const p=projects.find(x=>x.id===currentProjId);
+  if(!p) return;
+  p.data=serializeProject(); p.updated=Date.now(); saveAll([p.id]);
+  if(document.getElementById('panel-proj').classList.contains('on')) renderProjectsList();
 }
+function scheduleAutosave(){
+  autosavePending=true;
+  clearTimeout(autosaveT);
+  autosaveT=setTimeout(writeCurrentProject,500);
+}
+// Swiping a phone app away mid-bar is not an edge case — it is how apps get
+// closed, and iOS discards backgrounded web views without warning. The 500ms
+// debounce that keeps typing cheap is exactly 500ms of work to lose, so the
+// pending write is forced out synchronously the moment the page goes away.
+function flushAutosave(){
+  if(!autosavePending) return;
+  clearTimeout(autosaveT);
+  writeCurrentProject();
+  // An IndexedDB write is asynchronous, and a page being torn down may not
+  // live long enough to commit one — which would undo the whole point of
+  // flushing here. localStorage is synchronous, so the song in progress also
+  // goes there as a recovery record, and the next boot folds it back in.
+  if(idbUsable){
+    const p=projects.find(x=>x.id===currentProjId);
+    if(p) safeStore.set('mn_pending',JSON.stringify({id:p.id,name:p.name,data:p.data,updated:p.updated}));
+  }
+}
+document.addEventListener('visibilitychange',()=>{ if(document.visibilityState==='hidden') flushAutosave(); });
+window.addEventListener('pagehide', flushAutosave);
 function updateProjPill(){ const p=projects.find(x=>x.id===currentProjId); document.getElementById('proj-pill').textContent=p?p.name:'Song'; }
 
 // Migrate notes saved before articulations became multi-select (singular `art` -> `arts` array).
@@ -3221,18 +4195,23 @@ function normalizeNote(n){
   return n;
 }
 function applyProject(d){
-  parts=(d.parts||[]).map(p=>({...p,hairpins:p.hairpins||[],notes:(p.notes||[]).map(normalizeNote)}));
+  // Songs written before transposition existed carry no `transpose`, and
+  // everything in them was entered at concert pitch — so a saved trumpet part
+  // must keep sounding where it was written. Only parts created since then
+  // inherit their instrument's default.
+  parts=(d.parts||[]).map(p=>({...p,hairpins:p.hairpins||[],transpose:p.transpose||0,notes:(p.notes||[]).map(normalizeNote)}));
   if(!parts.length) parts=[mkPart('Treble','piano','treble'),mkPart('Bass','piano','bass')];
   pid=d.pid||(Math.max(0,...parts.map(p=>p.id||0))+1);
   apIdx=Math.min(d.apIdx||0,parts.length-1);
   currentKeyId=d.keyId||'C';
   currentTimeSig=TIME_SIGS.find(t=>t.sig===d.timeSig)||TIME_SIGS[0];
+  keyChanges=d.keyChanges?{...d.keyChanges}:{};
+  sigChanges=d.sigChanges?{...d.sigChanges}:{};
+  pickupBeats=d.pickupBeats||0;
   document.getElementById('bpm-inp').value=d.bpm||80;
   repeatStartMeasures=d.repeatStartMeasures?d.repeatStartMeasures.slice():[];
   repeatEndMeasures=d.repeatEndMeasures?d.repeatEndMeasures.slice():[];
-  document.querySelectorAll('.key-btn').forEach(b=>b.classList.toggle('on',b.dataset.kid===currentKeyId));
-  document.querySelectorAll('.time-btn').forEach(b=>b.classList.toggle('on',b.dataset.sig===currentTimeSig.sig));
-  document.getElementById('key-pill').textContent=KMAP[currentKeyId]?.label||currentKeyId;
+  syncKeyTimeUI();
   applyKeyHue();   // loading a song in a new key repaints the chord palette
   relabelNoteButtons();
   renderDiatonicChords();
@@ -3287,14 +4266,15 @@ function loadProject(id){
 function renameProject(id){
   const p=projects.find(x=>x.id===id); if(!p)return;
   const nm=prompt('Rename song:',p.name);
-  if(nm!==null&&nm.trim()){ p.name=nm.trim(); saveAll(); renderProjectsList(); updateProjPill(); }
+  if(nm!==null&&nm.trim()){ p.name=nm.trim(); saveAll([p.id]); renderProjectsList(); updateProjPill(); }
 }
 function deleteProject(id){
   if(projects.length<=1){alert('Keep at least one song.');return;}
   if(!confirm('Delete this song? This cannot be undone.'))return;
   projects=projects.filter(x=>x.id!==id);
   if(currentProjId===id){ currentProjId=projects[0].id; applyProject(projects[0].data); resetHistory(); }
-  saveAll(); renderProjectsList();
+  if(idbUsable) idbDelete(id); else safeStore.set('mn_projects',JSON.stringify(projects));
+  saveAll([currentProjId]); renderProjectsList();
 }
 function renderProjectsList(){
   const ul=document.getElementById('proj-list'); if(!ul)return; ul.innerHTML='';
@@ -3304,7 +4284,9 @@ function renderProjectsList(){
     const nNotes=(p.data.parts||[]).reduce((s,pt)=>s+((pt.notes||[]).length),0);
     const kLabel=KMAP[p.data.keyId]?.label||p.data.keyId||'C';
     const info=document.createElement('div'); info.style.cssText='display:flex;align-items:center;gap:5px;flex:1;overflow:hidden;';
-    info.innerHTML=`<div class="pdot"></div><span class="pname">${p.name}</span><span class="pinst">${kLabel} · ${nNotes} notes</span>`;
+    info.appendChild(el('div','pdot'));
+    info.appendChild(el('span','pname',p.name));
+    info.appendChild(el('span','pinst',kLabel+' · '+nNotes+' notes'));
     info.onclick=()=>loadProject(p.id);
     const ren=document.createElement('button'); ren.className='pdel'; ren.style.color='#f0c040'; ren.textContent='✎';
     ren.onclick=(e)=>{e.stopPropagation();renameProject(p.id);};
@@ -3314,18 +4296,97 @@ function renderProjectsList(){
     ul.appendChild(row);
   });
 }
+// Boot without waiting on a database. Before the upgrade there is a
+// localStorage blob to read; after it, that blob is deliberately left frozen
+// (so rolling this build back does not lose anything) and is therefore stale —
+// mn_store records which of the two is authoritative so a stale song is never
+// shown. Whichever it is, the first paint happens immediately and IndexedDB
+// fills in a moment later.
+let _wantedProjId=null, bootAppliedId=null;
+function makeFirstSong(){
+  const id='p'+Date.now();
+  projects=[{id,name:'My First Song',data:serializeProject(),updated:Date.now()}];
+  currentProjId=id; bootAppliedId=id; saveAll(); updateProjPill();
+}
 function initProjects(){
-  try{ const raw=localStorage.getItem('mn_projects'); if(raw) projects=JSON.parse(raw)||[]; }catch(e){ projects=[]; }
-  currentProjId=localStorage.getItem('mn_current')||null;
-  if(!projects.length){
-    const id='p'+Date.now();
-    projects=[{id,name:'My First Song',data:serializeProject(),updated:Date.now()}];
-    currentProjId=id; saveAll(); updateProjPill();
+  const idbMode=safeStore.get('mn_store')==='idb';
+  _wantedProjId=safeStore.get('mn_current')||null;
+  if(!idbMode){
+    try{ const raw=safeStore.get('mn_projects'); if(raw) projects=JSON.parse(raw)||[]; }catch(e){ projects=[]; }
+    if(!Array.isArray(projects)) projects=[];
   } else {
+    projects=[];   // the database owns the songs; it is opening now
+  }
+  currentProjId=_wantedProjId;
+  if(projects.length){
     const p=projects.find(x=>x.id===currentProjId)||projects[0];
-    currentProjId=p.id; applyProject(p.data);
+    currentProjId=p.id; bootAppliedId=p.id; applyProject(p.data);
+  } else if(!idbMode){
+    makeFirstSong();
   }
   resetHistory();
+  upgradeToIDB();
+}
+async function upgradeToIDB(){
+  const db=await idbOpen();
+  if(!db){                              // blocked or unsupported
+    if(!projects.length) makeFirstSong();
+    return;
+  }
+  const stored=await idbGetAll();
+  if(stored===null){
+    if(!projects.length) makeFirstSong();
+    return;
+  }
+  idbUsable=true;
+  // Fold in anything the last teardown managed to write synchronously but not
+  // commit to the database.
+  const pendingRaw=safeStore.get('mn_pending');
+  if(pendingRaw){
+    try{
+      const rec=JSON.parse(pendingRaw);
+      if(rec&&rec.id){
+        const at=stored.findIndex(r=>r.id===rec.id);
+        if(at<0) stored.push(rec);
+        else if((rec.updated||0)>(stored[at].updated||0)) stored[at]=rec;
+        await idbPut(rec);
+      }
+    }catch(e){}
+    safeStore.set('mn_pending','');
+  }
+  const byId=new Map(stored.map(r=>[r.id,r]));
+  // Anything held in memory the database has not seen — the first run after
+  // the upgrade, or a song written while the database was unavailable.
+  const toMigrate=projects.filter(p=>!byId.has(p.id));
+  if(toMigrate.length) await Promise.all(toMigrate.map(p=>idbPut({id:p.id,name:p.name,data:p.data,updated:p.updated})));
+  // Keep whichever copy of a song is newer, except the one being edited: that
+  // one is live and may already have changes the database has not caught.
+  const merged=[]; const seen=new Set();
+  projects.forEach(p=>{
+    const rec=byId.get(p.id);
+    merged.push(rec&&(rec.updated||0)>(p.updated||0)&&p.id!==currentProjId?rec:p);
+    seen.add(p.id);
+  });
+  stored.forEach(r=>{ if(!seen.has(r.id)) merged.push(r); });
+  merged.sort((a,b)=>(b.updated||0)-(a.updated||0));
+  projects=merged;
+  if(!projects.length){ makeFirstSong(); safeStore.set('mn_store','idb'); return; }
+
+  // Show the song that was actually open last time. Only when nothing has been
+  // typed yet — an edit made in the moment before the database opened must
+  // never be thrown away by the handover.
+  const want=projects.find(p=>p.id===_wantedProjId)||projects[0];
+  if(want && want.id!==bootAppliedId && history.length<=1){
+    currentProjId=want.id;
+    applyProject(want.data);
+    resetHistory();
+    bootAppliedId=want.id;
+  } else if(!projects.find(p=>p.id===currentProjId)){
+    currentProjId=projects[0].id;
+  }
+  safeStore.set('mn_store','idb');
+  renderProjectsList();
+  updateProjPill();
 }
 
 // ═══════════════════════════════════════════════════════
@@ -3343,33 +4404,96 @@ function exportMIDI(){
   const PPQ=480;
   const bpm=parseInt(document.getElementById('bpm-inp').value)||80;
   const tracks=[];
-  // Tempo / meta track
-  const t0=[];
-  const dden=Math.round(Math.log2(currentTimeSig.vfV));
-  t0.push({d:0,bytes:[0xFF,0x58,0x04,currentTimeSig.vfB,dden,24,8]});
-  const mpq=Math.round(60000000/bpm);
-  t0.push({d:0,bytes:[0xFF,0x51,0x03,(mpq>>16)&255,(mpq>>8)&255,mpq&255]});
+  // The export walked part.notes raw while playback walked the expanded repeat
+  // order, so the file disagreed with what you had just listened to. Both read
+  // the same order and the same velocities now.
+  const allM=parts.map(p=>toMeasures(p.notes));
+  const numM=Math.max(...allM.map(m=>m.length),1);
+  const playOrder=buildPlayOrder(numM);
+
+  // Tempo / meta track, carrying every metre change and tempo word. Collected
+  // at absolute ticks and only then turned into deltas — two separate running
+  // deltas cannot be interleaved into one stream.
+  const meta=[];
+  let mBeat=0, lastSig=null;
+  playOrder.forEach(mi=>{
+    const ts=timeSigAt(mi);
+    if(ts.sig!==lastSig){
+      lastSig=ts.sig;
+      meta.push({tick:Math.round(mBeat*PPQ),bytes:[0xFF,0x58,0x04,ts.vfB,Math.round(Math.log2(ts.vfV)),24,8]});
+    }
+    mBeat+=measureBeatsOf(allM,mi);
+  });
+  const tempoMap=buildTempoMap(playOrder,allM,bpm);
+  let lastBpm=null;
+  tempoMap.forEach(pt=>{
+    const b=Math.round(pt.bpm);
+    if(b===lastBpm) return;
+    lastBpm=b;
+    const mpq=Math.round(60000000/Math.max(1,b));
+    meta.push({tick:Math.round(pt.beat*PPQ),bytes:[0xFF,0x51,0x03,(mpq>>16)&255,(mpq>>8)&255,mpq&255]});
+  });
+  meta.sort((a,b)=>a.tick-b.tick);
+  const t0=[]; let metaLast=0;
+  meta.forEach(m=>{ t0.push({d:Math.max(0,m.tick-metaLast),bytes:m.bytes}); metaLast=m.tick; });
   tracks.push(buildTrack(t0));
+
   // Part tracks
+  let chNext=0;
   parts.forEach((part,pi)=>{
     const inst=IMAP[part.instId]||IMAP['piano'];
+    const vels=velocityMap(part);
     const raw=[];
-    let tick=0;
-    part.notes.forEach(n=>{
-      const dt=Math.round(noteBeats(n)*PPQ);
-      if(!n.rest && (n.midiVals||[]).length){
-        n.midiVals.forEach(m=>{ raw.push({tick,on:1,midi:m}); raw.push({tick:tick+dt,on:0,midi:m}); });
-      }
-      tick+=dt;
+    let bt=0;
+    playOrder.forEach(mi=>{
+      resolveMeasureNotes(allM[pi],mi).forEach(n=>{
+        const beats=durBeats(n.dur);
+        const soundBeats=(n.soundBeats!=null)?n.soundBeats:beats;
+        const tick=Math.round(bt*PPQ);
+        if(!n.rest && !n.repeatBars && !n.tieFrom && (n.midiVals||[]).length){
+          const vel=Math.max(1,Math.min(127,Math.round(((n.srcIdx!=null&&vels[n.srcIdx]!=null)?vels[n.srcIdx]:DEFAULT_VEL)*127)));
+          const hold=articulationHold(n);
+          const dt=Math.max(1,Math.round(soundBeats*PPQ*hold));
+          // Grace notes sound just before the beat, as they do on playback.
+          (n.grace||[]).forEach((g,gi,arr)=>{
+            if(g.midi==null) return;
+            const gt=Math.max(0,tick-(arr.length-gi)*Math.round(PPQ*0.06));
+            raw.push({tick:gt,on:1,midi:g.midi,vel:Math.round(vel*0.7)});
+            raw.push({tick:gt+Math.round(PPQ*0.05),on:0,midi:g.midi,vel:0});
+          });
+          const ROLL_HITS={trem1:2,trem2:4,trem3:8,buzz:16,press:20};
+          const hits=ROLL_HITS[n.rud];
+          if(hits){
+            const step=Math.max(1,Math.round(beats*PPQ/hits));
+            for(let k=0;k<hits;k++){
+              n.midiVals.forEach(m=>{
+                raw.push({tick:tick+k*step,on:1,midi:m,vel});
+                raw.push({tick:tick+k*step+Math.max(1,Math.round(step*0.85)),on:0,midi:m,vel:0});
+              });
+            }
+          } else {
+            n.midiVals.forEach(m=>{
+              raw.push({tick,on:1,midi:m,vel});
+              raw.push({tick:tick+dt,on:0,midi:m,vel:0});
+            });
+          }
+        }
+        bt+=beats;
+      });
     });
     raw.sort((a,b)=> a.tick-b.tick || a.on-b.on);
-    const ch=pi%16;
+    // Percussion belongs on channel 10 (index 9) or a DAW plays the drums back
+    // as piano notes. Everything else takes the next melodic channel.
+    const perc=inst.unpitched||inst.drumset||inst.pitchedDrum;
+    let ch;
+    if(perc) ch=9;
+    else { ch=chNext%16; if(ch===9) ch=(++chNext)%16; chNext++; }
     const evs=[];
-    const nameB=Array.from(new TextEncoder().encode(part.name.slice(0,32)));
+    const nameB=Array.from(new TextEncoder().encode(part.name)).slice(0,64);
     evs.push({d:0,bytes:[0xFF,0x03,nameB.length,...nameB]});
-    evs.push({d:0,bytes:[0xC0|ch,(inst.gm||0)&0x7F]});
+    if(!perc) evs.push({d:0,bytes:[0xC0|ch,(inst.gm||0)&0x7F]});
     let last=0;
-    raw.forEach(e=>{ const d=e.tick-last; last=e.tick; evs.push({d,bytes:[(e.on?0x90:0x80)|ch, e.midi&0x7F, e.on?90:0]}); });
+    raw.forEach(e=>{ const d=e.tick-last; last=e.tick; evs.push({d,bytes:[(e.on?0x90:0x80)|ch, e.midi&0x7F, e.on?(e.vel||90):0]}); });
     tracks.push(buildTrack(evs));
   });
   const ntrk=tracks.length;
@@ -3378,6 +4502,153 @@ function exportMIDI(){
   const blob=new Blob([u8],{type:'audio/midi'});
   const name=(projects.find(p=>p.id===currentProjId)?.name||'song').replace(/[^a-z0-9]+/gi,'_');
   const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=name+'.mid';
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(()=>URL.revokeObjectURL(a.href),2000);
+}
+
+// ═══════════════════════════════════════════════════════
+// MusicXML export
+// ═══════════════════════════════════════════════════════
+// Import handled MusicXML and export did not, which made this app a place
+// sketches went to stay — you could not carry one into MuseScore, Sibelius,
+// Dorico or Finale to finish it. Written from the same toMeasures() output the
+// renderer draws, so what is exported is what is on screen: barlines where the
+// score puts them, ties where notes cross them.
+const XML_TYPE_OUT={w:'whole',h:'half',q:'quarter','8':'eighth','16':'16th','32':'32nd'};
+const ART_TO_XML={'a.':'staccato','a>':'accent','a-':'tenuto','a^':'strong-accent'};
+const XML_DIVISIONS=48;   // divisions per quarter note; 48 covers triplets and 32nds
+function keyFifthsOf(keyId){ return MAJOR_TO_FIFTHS[KMAP[keyId]?.vfSig]??0; }
+function buildMusicXML(){
+  const bpm=parseInt(document.getElementById('bpm-inp').value)||80;
+  const title=projects.find(p=>p.id===currentProjId)?.name||'Score';
+  const allM=parts.map(p=>toMeasures(p.notes));
+  const numM=Math.max(...allM.map(m=>m.length),1);
+  const out=[];
+  out.push('<?xml version="1.0" encoding="UTF-8"?>');
+  out.push('<!DOCTYPE score-partwise PUBLIC "-//Recordare//DTD MusicXML 3.1 Partwise//EN" "http://www.musicxml.org/dtds/partwise.dtd">');
+  out.push('<score-partwise version="3.1">');
+  out.push('<work><work-title>'+esc(title)+'</work-title></work>');
+  out.push('<identification><encoding><software>MōdScore</software></encoding></identification>');
+  out.push('<part-list>');
+  parts.forEach((p,pi)=>{
+    const inst=IMAP[p.instId]||IMAP.piano;
+    out.push('<score-part id="P'+(pi+1)+'">');
+    out.push('<part-name>'+esc(p.name)+'</part-name>');
+    out.push('<score-instrument id="P'+(pi+1)+'-I1"><instrument-name>'+esc(inst.label)+'</instrument-name></score-instrument>');
+    out.push('<midi-instrument id="P'+(pi+1)+'-I1"><midi-channel>'+((inst.unpitched||inst.drumset||inst.pitchedDrum)?10:((pi%15)+1))+'</midi-channel><midi-program>'+((inst.gm||0)+1)+'</midi-program></midi-instrument>');
+    out.push('</score-part>');
+  });
+  out.push('</part-list>');
+
+  parts.forEach((part,pi)=>{
+    out.push('<part id="P'+(pi+1)+'">');
+    const semis=isTransposing(part);
+    let prevKey=null, prevSig=null;
+    for(let mi=0;mi<numM;mi++){
+      const ts=timeSigAt(mi), kid=keyAt(mi);
+      out.push('<measure number="'+(mi+1)+'">');
+      const attrs=[];
+      if(mi===0||kid!==prevKey){
+        // MusicXML keys are written as the part reads them, and <transpose>
+        // says how to get back to concert — the same split the app draws.
+        attrs.push('<key><fifths>'+transposeFifths(keyFifthsOf(kid),semis)+'</fifths><mode>'+((KMAP[kid]?.mode)||'major')+'</mode></key>');
+      }
+      if(mi===0||ts.sig!==prevSig){
+        attrs.push('<time><beats>'+ts.vfB+'</beats><beat-type>'+ts.vfV+'</beat-type></time>');
+      }
+      if(mi===0){
+        attrs.unshift('<divisions>'+XML_DIVISIONS+'</divisions>');
+        const cl=partClefFor(part);
+        const clef=cl==='bass'?['F',4]:cl==='alto'?['C',3]:cl==='percussion'?['percussion',2]:['G',2];
+        attrs.push('<clef>'+(clef[0]==='percussion'?'<sign>percussion</sign><line>2</line>':'<sign>'+clef[0]+'</sign><line>'+clef[1]+'</line>')+'</clef>');
+        if(semis){
+          // MusicXML's chromatic is what you add to the *written* pitch to get
+          // the sounding one, so it is the opposite sign to our `transpose`.
+          // Anything past an octave goes in octave-change, with chromatic
+          // holding only the remainder — that is the convention readers expect.
+          const chrom=-semis;
+          const octCh=Math.trunc(chrom/12), rem=chrom-octCh*12;
+          const DIA={0:0,1:0,2:1,3:2,4:2,5:3,6:3,7:4,8:4,9:5,10:6,11:6};
+          const dia=(rem<0?-DIA[-rem]:DIA[rem])+octCh*7;
+          attrs.push('<transpose><diatonic>'+dia+'</diatonic><chromatic>'+rem+'</chromatic>'
+            +(octCh?'<octave-change>'+octCh+'</octave-change>':'')+'</transpose>');
+        }
+      }
+      if(attrs.length) out.push('<attributes>'+attrs.join('')+'</attributes>');
+      if(mi===0&&pi===0) out.push('<direction placement="above"><direction-type><metronome><beat-unit>quarter</beat-unit><per-minute>'+bpm+'</per-minute></metronome></direction-type><sound tempo="'+bpm+'"/></direction>');
+      prevKey=kid; prevSig=ts.sig;
+
+      (allM[pi][mi]||[]).forEach(n=>{
+        if(n.repeatBars){
+          // No stored notes to write; emit a whole-measure rest so the bar
+          // still holds its time in another program.
+          out.push('<note><rest measure="yes"/><duration>'+Math.round(beatsAt(mi)*XML_DIVISIONS)+'</duration><voice>1</voice></note>');
+          return;
+        }
+        const d=decomposeDur(n.dur);
+        const beats=durBeats(n.dur);
+        const dur=Math.max(1,Math.round(beats*XML_DIVISIONS));
+        const type=XML_TYPE_OUT[d.base]||'quarter';
+        if(n.rest){
+          out.push('<note><rest/><duration>'+dur+'</duration><voice>1</voice><type>'+type+'</type>'+(d.dot?'<dot/>':'')+'</note>');
+          return;
+        }
+        // Directions attach at the point they appear in the stream, so a
+        // dynamic or tempo word has to be written before the note it marks.
+        if(n.dyn&&!n.tieFrom) out.push('<direction placement="below"><direction-type><dynamics><'+n.dyn+'/></dynamics></direction-type></direction>');
+        if(n.tempo&&!n.tieFrom) out.push('<direction placement="above"><direction-type><words font-style="italic">'+esc(n.tempo)+'</words></direction-type></direction>');
+        // Spelled exactly as it is drawn — including whatever enharmonic the
+        // user chose — with alter derived from the pitch rather than re-guessed.
+        const disp=displayKeys(n,part,mi);
+        n.midiVals.forEach((m,ci)=>{
+          const written=m+semis;
+          const kk=String((disp.keys||[])[ci]||'C/4').split('/');
+          const step=(kk[0]||'C').toUpperCase();
+          const oct=parseInt(kk[1]);
+          const alter=(NOTE_SEMI[step]!=null&&!isNaN(oct))?written-noteToMidi(step,null,oct):0;
+          const bits=[];
+          if(ci>0) bits.push('<chord/>');
+          bits.push('<pitch><step>'+step+'</step>'+(alter?'<alter>'+alter+'</alter>':'')+'<octave>'+oct+'</octave></pitch>');
+          bits.push('<duration>'+dur+'</duration>');
+          if(n.tieFrom) bits.push('<tie type="stop"/>');
+          if(n.tieTo)   bits.push('<tie type="start"/>');
+          bits.push('<voice>1</voice><type>'+type+'</type>');
+          if(d.dot) bits.push('<dot/>');
+          const dispAcc=(disp.vfAccs||[])[ci];
+          if(dispAcc&&dispAcc!=='n') bits.push('<accidental>'+(dispAcc==='#'?'sharp':dispAcc==='b'?'flat':dispAcc==='##'?'double-sharp':'flat-flat')+'</accidental>');
+          else if(dispAcc==='n') bits.push('<accidental>natural</accidental>');
+          if(d.tupN){
+            const occ=tupletOccupied(d.tupN);
+            bits.push('<time-modification><actual-notes>'+d.tupN+'</actual-notes><normal-notes>'+occ+'</normal-notes></time-modification>');
+          }
+          const notations=[];
+          if(n.tieFrom) notations.push('<tied type="stop"/>');
+          if(n.tieTo)   notations.push('<tied type="start"/>');
+          const arts=(n.arts||[]).map(a=>ART_TO_XML[a]).filter(Boolean);
+          if(arts.length) notations.push('<articulations>'+arts.map(a=>'<'+a+'/>').join('')+'</articulations>');
+          if((n.arts||[]).includes('ao')) notations.push('<fermata/>');
+          if((n.arts||[]).includes('tr')) notations.push('<ornaments><trill-mark/></ornaments>');
+          if(notations.length) bits.push('<notations>'+notations.join('')+'</notations>');
+          if(ci===0&&n.lyric) bits.push('<lyric number="1"><syllabic>single</syllabic><text>'+esc(n.lyric)+'</text></lyric>');
+          out.push('<note>'+bits.join('')+'</note>');
+        });
+      });
+      // Repeat barlines
+      if(repeatStartMeasures.includes(mi)) out.push('<barline location="left"><bar-style>heavy-light</bar-style><repeat direction="forward"/></barline>');
+      if(repeatEndMeasures.includes(mi))   out.push('<barline location="right"><bar-style>light-heavy</bar-style><repeat direction="backward"/></barline>');
+      out.push('</measure>');
+    }
+    out.push('</part>');
+  });
+  out.push('</score-partwise>');
+  return out.join('\n');
+}
+function exportMusicXML(){
+  if(!parts.some(p=>p.notes.length)){ alert('Nothing to export yet.'); return; }
+  const xml=buildMusicXML();
+  const blob=new Blob([xml],{type:'application/vnd.recordare.musicxml+xml'});
+  const name=(projects.find(p=>p.id===currentProjId)?.name||'song').replace(/[^a-z0-9]+/gi,'_');
+  const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=name+'.musicxml';
   document.body.appendChild(a); a.click(); a.remove();
   setTimeout(()=>URL.revokeObjectURL(a.href),2000);
 }
@@ -3432,7 +4703,11 @@ function buildPrintSystems(partsSubset){
         const sy=TP+pi*PG;
         const st=new Stave(x,sy,mw);
         if(inst.staffLines===1)st.setConfigForLines([{visible:false},{visible:false},{visible:true},{visible:false},{visible:false}]);
-        if(first){ st.addClef(cl).addKeySignature(kd.vfSig).addTimeSignature(currentTimeSig.sig); }
+        if(first){ st.addClef(cl).addKeySignature(partVfSig(p,mi)).addTimeSignature(timeSigAt(mi).sig); }
+        else{
+          if(keyChangeAt(mi)) st.addKeySignature(partVfSig(p,mi),partVfSig(p,mi-1));
+          if(sigChangeAt(mi)) st.addTimeSignature(timeSigAt(mi).sig);
+        }
         if(repeatStartMeasures.includes(mi))st.setBegBarType(Barline.type.REPEAT_BEGIN);
         if(repeatEndMeasures.includes(mi))st.setEndBarType(Barline.type.REPEAT_END);
         st.setContext(ctx).draw();
@@ -3450,7 +4725,7 @@ function buildPrintSystems(partsSubset){
       }
       staves.forEach((st,pi)=>{
         const noteData=allM[pi][mi]||[];
-        const vfNotes=drawVoice(ctx,st,noteData,mw,VF,pi,partOffsets[pi],partClefs[pi]);
+        const vfNotes=drawVoice(ctx,st,noteData,mw,VF,pi,partOffsets[pi],partClefs[pi],partsSubset[pi],timeSigAt(mi),mi);
         noteData.forEach((_,li)=>{ if(vfNotes[li])vfRefs[pi][partOffsets[pi]+li]={vfNote:vfNotes[li],stave:st}; });
         partOffsets[pi]+=noteData.length;
       });
@@ -3496,7 +4771,7 @@ function exportPDF(scope){
   const w=window.open('','_blank');
   if(!w){ alert('Allow pop-ups to print.'); return; }
   const systemsHTML=svgBlocks.map(s=>`<div class="system">${s}</div>`).join('');
-  w.document.write(`<!DOCTYPE html><html><head><title>${title} — ${subtitle}</title>
+  w.document.write(`<!DOCTYPE html><html><head><title>${esc(title)} — ${esc(subtitle)}</title>
     <style>
       @page{margin:14mm;}
       body{font-family:serif;color:#000;margin:0 auto;padding:12px;max-width:${PRINT_SYS_W}px;}
@@ -3506,8 +4781,8 @@ function exportPDF(scope){
       .system{break-inside:avoid;page-break-inside:avoid;margin-bottom:6px;}
       .system svg{max-width:100%;height:auto;display:block;}
     </style></head><body>
-    <h1>${title}</h1>
-    <h2>${subtitle}</h2>
+    <h1>${esc(title)}</h1>
+    <h2>${esc(subtitle)}</h2>
     <div class="meta">Key: ${KMAP[currentKeyId]?.label||currentKeyId} &nbsp;·&nbsp; ${currentTimeSig.sig} &nbsp;·&nbsp; ♩ = ${parseInt(document.getElementById('bpm-inp').value)||80}</div>
     ${systemsHTML}
     </body></html>`);
@@ -3600,6 +4875,12 @@ const XML_TYPE={'whole':'w','half':'h','quarter':'q','eighth':'8','16th':'16','3
 function xmlAcc(el){ const a=el.querySelector(':scope > accidental'); if(!a)return null; return {'sharp':'#','flat':'b','natural':'n','double-sharp':'##','sharp-sharp':'##','flat-flat':'bb','double-flat':'bb'}[a.textContent.trim()]||null; }
 function xmlAlter(pitchEl){ const a=pitchEl.querySelector('alter'); const v=a?parseInt(a.textContent):0; return v; }
 function alterToAcc(v){return v===1?'#':v===-1?'b':v===2?'##':v===-2?'bb':null;}
+// MusicXML writes a second voice by rewinding the clock with <backup> and
+// then laying more notes over the same span. Reading notes in document order
+// and ignoring <backup>, <forward> and <voice> — which is what this did —
+// stacked both voices end to end, so any piano or choral score imported as one
+// garbled line at twice its real length. Each (staff, voice) pair is tracked
+// separately now, against a real time cursor.
 function parseMusicXML(text){
   const doc=new DOMParser().parseFromString(text,'application/xml');
   if(doc.querySelector('parsererror'))throw new Error('Invalid MusicXML');
@@ -3611,21 +4892,48 @@ function parseMusicXML(text){
   const te=doc.querySelector('time');
   if(te){const b=te.querySelector('beats'),bt=te.querySelector('beat-type');if(b&&bt)timeSig=b.textContent.trim()+'/'+bt.textContent.trim();}
   const se=doc.querySelector('sound[tempo]');if(se)bpm=Math.max(20,Math.min(320,Math.round(parseFloat(se.getAttribute('tempo')))));
+  // Part names, so an imported score does not come back as "Part 2".
+  const partNames={};
+  [...doc.querySelectorAll('part-list score-part')].forEach(sp=>{
+    const id=sp.getAttribute('id');
+    const nm=sp.querySelector('part-name')?.textContent.trim();
+    if(id&&nm) partNames[id]=nm;
+  });
   const outParts=[];
   partEls.forEach(partEl=>{
-    const staves={};
+    // key = "staff/voice"; each holds {notes, cursor} in divisions.
+    const lines=new Map();
+    const lineFor=k=>{ if(!lines.has(k)) lines.set(k,{notes:[],cursor:0,staff:k.split('/')[0],voice:k.split('/')[1]}); return lines.get(k); };
+    let divisions=1, measureStart=0;
     [...partEl.querySelectorAll('measure')].forEach(m=>{
-      [...m.children].filter(c=>c.tagName==='note').forEach(nEl=>{
+      const dv=m.querySelector('attributes > divisions');
+      if(dv) divisions=parseInt(dv.textContent)||divisions;
+      // Every line starts each measure at the same point, whatever it did last.
+      lines.forEach(l=>{ l.cursor=measureStart; });
+      let cursor=measureStart, lastKey=null, measureEnd=measureStart;
+      [...m.children].forEach(c=>{
+        const tag=c.tagName;
+        if(tag==='backup'){ cursor-=parseInt(c.querySelector('duration')?.textContent||'0')||0; return; }
+        if(tag==='forward'){ cursor+=parseInt(c.querySelector('duration')?.textContent||'0')||0; return; }
+        if(tag!=='note') return;
+        const nEl=c;
         const staff=nEl.querySelector('staff')?.textContent.trim()||'1';
-        staves[staff]=staves[staff]||[];
-        const arr=staves[staff];
+        const voice=nEl.querySelector('voice')?.textContent.trim()||'1';
+        const key=staff+'/'+voice;
+        const line=lineFor(key);
         const isRest=!!nEl.querySelector('rest');
         const isChord=!!nEl.querySelector('chord');
         const typeT=nEl.querySelector('type')?.textContent.trim();
         const dots=nEl.querySelectorAll('dot').length;
-        const dur=(XML_TYPE[typeT]||'q')+(dots>0?'d':'');
+        const xmlDur=parseInt(nEl.querySelector('duration')?.textContent||'0')||0;
+        // Prefer the written type; fall back to the sounding duration for a
+        // note that has none (which MusicXML permits).
+        const dur=typeT?((XML_TYPE[typeT]||'q')+(dots>0?'d':'')):beatsToDur(xmlDur/divisions);
+
         if(isChord){
-          const prev=arr[arr.length-1];
+          // A chord member sits on the same beat as the note before it and
+          // must not advance anything.
+          const prev=lastKey!=null?lineFor(lastKey).notes[lineFor(lastKey).notes.length-1]:null;
           const pit=nEl.querySelector('pitch');
           if(prev&&!prev.rest&&pit){
             const step=pit.querySelector('step').textContent.trim();
@@ -3635,18 +4943,97 @@ function parseMusicXML(text){
           }
           return;
         }
-        if(isRest){ arr.push(restNote(durBeats(dur))); return; }
-        const pit=nEl.querySelector('pitch'); if(!pit)return;
-        const step=pit.querySelector('step').textContent.trim();
-        const oct=parseInt(pit.querySelector('octave').textContent);
-        const acc=alterToAcc(xmlAlter(pit));
-        const lyr=nEl.querySelector('lyric text')?.textContent.trim()||null;
-        arr.push({keys:[step+'/'+oct],dur,vfAccs:[xmlAcc(nEl)],midiVals:[noteToMidi(step,acc,oct)],rest:false,lyric:lyr,dyn:null,arts:[],tempo:null});
+        // Fill any gap this line has skipped (another voice was sounding) so
+        // the notes stay where they belong in the bar.
+        if(cursor>line.cursor+1e-6){
+          const gap=(cursor-line.cursor)/divisions;
+          if(gap>0.01) beatsToDurs(gap).forEach(d=>line.notes.push(restNote(durBeats(d))));
+          line.cursor=cursor;
+        }
+        if(isRest){
+          line.notes.push(restNote(xmlDur?xmlDur/divisions:durBeats(dur)));
+        } else {
+          const pit=nEl.querySelector('pitch');
+          if(!pit) return;
+          const step=pit.querySelector('step').textContent.trim();
+          const oct=parseInt(pit.querySelector('octave').textContent);
+          const acc=alterToAcc(xmlAlter(pit));
+          const lyr=nEl.querySelector('lyric text')?.textContent.trim()||null;
+          line.notes.push({keys:[step+'/'+oct],dur,vfAccs:[xmlAcc(nEl)],midiVals:[noteToMidi(step,acc,oct)],rest:false,lyric:lyr,dyn:null,arts:[],tempo:null,grace:[],rud:null,sticking:null});
+        }
+        lastKey=key;
+        cursor+=xmlDur; line.cursor=cursor;
+        if(cursor>measureEnd) measureEnd=cursor;
       });
+      lines.forEach(l=>{ if(l.cursor>measureEnd) measureEnd=l.cursor; });
+      measureStart=measureEnd;
     });
-    Object.keys(staves).sort().forEach(sk=>outParts.push({notes:staves[sk],staff:sk}));
+    const pname=partNames[partEl.getAttribute('id')]||null;
+    [...lines.keys()].sort().forEach(k=>{
+      const l=lines.get(k);
+      if(!l.notes.length) return;
+      // Only name the extra voices; the first one carries the part's own name.
+      const multi=[...lines.keys()].filter(o=>o.split('/')[0]===l.staff).length>1;
+      outParts.push({notes:l.notes,staff:l.staff,name:pname&&!multi?pname:(pname?pname+' v'+l.voice:null)});
+    });
   });
   return {keyId,timeSig,bpm,parts:outParts};
+}
+
+// A .mxl is a ZIP holding the score XML — and it is what MuseScore saves by
+// default, so the file most people reach for was the one turned away at the
+// door. Unpacked here with DecompressionStream, no library.
+async function unzipMXL(buf){
+  const dv=new DataView(buf), u8=new Uint8Array(buf);
+  // Read the central directory from the end-of-central-directory record,
+  // rather than trusting local headers (whose sizes may live in a data
+  // descriptor after the compressed bytes).
+  let eocd=-1;
+  for(let i=u8.length-22;i>=0&&i>u8.length-66000;i--){
+    if(dv.getUint32(i,true)===0x06054b50){ eocd=i; break; }
+  }
+  if(eocd<0) throw new Error('Not a .mxl archive');
+  const count=dv.getUint16(eocd+10,true);
+  let p=dv.getUint32(eocd+16,true);
+  const entries=[];
+  for(let i=0;i<count;i++){
+    if(dv.getUint32(p,true)!==0x02014b50) break;
+    const method=dv.getUint16(p+10,true);
+    const compSize=dv.getUint32(p+20,true);
+    const nameLen=dv.getUint16(p+28,true);
+    const extraLen=dv.getUint16(p+30,true);
+    const cmtLen=dv.getUint16(p+32,true);
+    const localOff=dv.getUint32(p+42,true);
+    const name=new TextDecoder().decode(u8.subarray(p+46,p+46+nameLen));
+    entries.push({name,method,compSize,localOff});
+    p+=46+nameLen+extraLen+cmtLen;
+  }
+  const read=async e=>{
+    const lNameLen=dv.getUint16(e.localOff+26,true);
+    const lExtraLen=dv.getUint16(e.localOff+28,true);
+    const start=e.localOff+30+lNameLen+lExtraLen;
+    const bytes=u8.subarray(start,start+e.compSize);
+    if(e.method===0) return new TextDecoder().decode(bytes);
+    if(e.method!==8) throw new Error('Unsupported compression in .mxl');
+    if(typeof DecompressionStream==='undefined') throw new Error('This browser cannot open compressed .mxl — export as uncompressed MusicXML');
+    const ds=new DecompressionStream('deflate-raw');
+    const out=new Response(new Blob([bytes]).stream().pipeThrough(ds));
+    return await out.text();
+  };
+  // META-INF/container.xml names the real score; fall back to the first .xml
+  // that is not the container itself.
+  const container=entries.find(e=>/^META-INF\/container\.xml$/i.test(e.name));
+  if(container){
+    try{
+      const cx=new DOMParser().parseFromString(await read(container),'application/xml');
+      const path=cx.querySelector('rootfile')?.getAttribute('full-path');
+      const hit=path&&entries.find(e=>e.name===path);
+      if(hit) return await read(hit);
+    }catch(e){}
+  }
+  const score=entries.find(e=>/\.(xml|musicxml)$/i.test(e.name)&&!/^META-INF\//i.test(e.name));
+  if(!score) throw new Error('No score found inside the .mxl');
+  return await read(score);
 }
 
 function importToProject(name,data){
@@ -3654,7 +5041,10 @@ function importToProject(name,data){
   const newParts=data.parts.filter(p=>p.notes.length).map((pp,i)=>{
     let clef=pp.staff==='2'?'bass':pp.staff==='1'?'treble':null;
     if(!clef){const mids=pp.notes.flatMap(n=>n.midiVals);const avg=mids.length?mids.reduce((a,b)=>a+b,0)/mids.length:64;clef=avg<57?'bass':'treble';}
-    return {id:i+1,name:clef==='bass'?'Bass':(i===0?'Treble':'Part '+(i+1)),instId:'piano',clef,notes:pp.notes,hairpins:[]};
+    // Use the name the file gave the part where there is one, rather than
+    // renaming everybody Treble/Bass/Part 3.
+    const nm=pp.name||(clef==='bass'?'Bass':(i===0?'Treble':'Part '+(i+1)));
+    return {id:i+1,name:nm,instId:'piano',clef,notes:pp.notes,hairpins:[],transpose:0};
   });
   const proj={parts:newParts,pid:newParts.length+1,apIdx:0,keyId:data.keyId||'C',timeSig:data.timeSig||'4/4',bpm:data.bpm||80};
   const id='p'+Date.now();
@@ -3675,9 +5065,8 @@ document.getElementById('import-file').addEventListener('change', async function
       const buf=await f.arrayBuffer();
       importToProject(f.name.replace(/\.midi?$/i,''), midiToData(parseMIDI(buf)));
     } else {
-      if(/\.mxl$/i.test(f.name)){alert('Compressed .mxl not supported — please export as uncompressed MusicXML (.xml / .musicxml).');return;}
-      const text=await f.text();
-      importToProject(f.name.replace(/\.(xml|musicxml)$/i,''), parseMusicXML(text));
+      const text=/\.mxl$/i.test(f.name) ? await unzipMXL(await f.arrayBuffer()) : await f.text();
+      importToProject(f.name.replace(/\.(mxl|xml|musicxml)$/i,''), parseMusicXML(text));
     }
   }catch(e){ alert('Import failed: '+e.message); console.error(e); }
 });
@@ -3741,7 +5130,7 @@ function startTour(){
   if(parts[apIdx]&&parts[apIdx].notes.length){ selectedNote={partIdx:apIdx,noteIdx:0}; caretGap=null; render(); updateSelectionUI(); }
   buildTourDom();
   tourStep(0);
-  try{ localStorage.setItem('mn_tutorial_seen','1'); }catch(e){}
+  safeStore.set('mn_tutorial_seen','1');
 }
 function buildTourDom(){
   if(document.getElementById('tour-overlay'))return;
@@ -3808,7 +5197,7 @@ function endTour(){
   const ov=document.getElementById('tour-overlay'); if(ov)ov.remove();
   window.removeEventListener('resize', tourReposition);
   selectedNote=null; caretGap=null; render(); updateSelectionUI();
-  try{ localStorage.setItem('mn_tutorial_seen','1'); }catch(e){}
+  safeStore.set('mn_tutorial_seen','1');
 }
 
 // ═══════════════════════════════════════════════════════
@@ -3863,6 +5252,7 @@ function applyAriaLabels(){
 }
 
 initTheme();
+pitchView=safeStore.get('mn_pitchview')==='concert'?'concert':'written';
 setAcc('key');clearArts();setDyn(null);setTempo(null);
 refreshDurIcons();
 relabelNoteButtons();
@@ -3870,10 +5260,20 @@ renderDiatonicChords();
 initProjects();
 applyKeyHue();   // initProjects() may have loaded a song in another key
 applyAriaLabels();
+applyPitchView(pitchView);
 render();
 initMidi();
 document.getElementById('bpm-inp').addEventListener('change',scheduleAutosave);
-if(!localStorage.getItem('mn_tutorial_seen')) setTimeout(startTour, 500);
+if(!safeStore.get('mn_tutorial_seen')) setTimeout(startTour, 500);
+
+// Register the worker last, so a failure here can never hold up the app.
+// Opened straight off disk there is no worker (and no origin to scope one
+// to) — the app still runs, it just isn't installable.
+if('serviceWorker' in navigator && location.protocol.startsWith('http')){
+  window.addEventListener('load',()=>{
+    navigator.serviceWorker.register('sw.js').catch(()=>{});
+  });
+}
 </script>
 </body>
 </html>
