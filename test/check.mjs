@@ -720,6 +720,40 @@ await run('zoom', async () => {
   await p.context().close();
 });
 
+// ── 20. The split files still add up to one working app (item 18) ────────
+await run('split', async () => {
+  const fs = await import('node:fs/promises');
+  const html = await fs.readFile(path.join(HERE, '..', 'index.html'), 'utf8');
+  // Every function named by an on*="..." attribute in the markup. These resolve
+  // from global scope at click time, so a name lost or reordered in the split
+  // fails silently on a button nobody presses until it matters.
+  const names = new Set();
+  for (const m of html.matchAll(/\bon(?:click|change|input|submit)="([^"]+)"/g)) {
+    for (const f of m[1].matchAll(/\b([A-Za-z_$][\w$]*)\s*\(/g)) names.add(f[1]);
+  }
+  const known = new Set(['location', 'event', 'alert', 'confirm', 'prompt', 'reload']);
+  const wanted = [...names].filter(n => !known.has(n));
+
+  const p = await boot(await page());
+  const r = await p.evaluate(list => {
+    const missing = list.filter(n => {
+      try { return typeof eval(n) !== 'function'; } catch (e) { return true; }
+    });
+    return { missing, checked: list.length };
+  }, wanted);
+  ok(`all ${r.checked} inline handlers resolve to a function`, r.missing.length === 0,
+     r.missing.length ? 'missing: ' + r.missing.join(', ') : '');
+
+  // The service worker has to precache every script the page loads, or the app
+  // opens offline with half of itself.
+  const sw = await fs.readFile(path.join(HERE, '..', 'sw.js'), 'utf8');
+  const srcs = [...html.matchAll(/<script src="([^"]+)"><\/script>/g)].map(m => m[1]);
+  const unprecached = srcs.filter(s => !sw.includes(s));
+  ok(`all ${srcs.length} scripts are precached for offline`, unprecached.length === 0,
+     unprecached.length ? 'missing from sw.js: ' + unprecached.join(', ') : '');
+  await p.context().close();
+});
+
 console.log(`\n${pass} passed, ${fail} failed`);
 await browser.close();
 process.exit(fail ? 1 : 0);

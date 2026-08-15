@@ -15,9 +15,11 @@
  *           time you play a piano part offline it still sounds like a piano
  *           instead of falling back to the oscillator voice.
  */
-const VERSION = 'v1';
-const SHELL = 'modscore-shell-' + VERSION;
-const SAMPLES = 'modscore-samples-' + VERSION;
+// Versioned separately on purpose. Bumping the shell must not throw away tens
+// of megabytes of downloaded instruments that have not changed — and on a
+// phone on rehearsal-room wifi, re-fetching them is the expensive part.
+const SHELL = 'modscore-shell-v2';
+const SAMPLES = 'modscore-samples-v1';
 
 const SHELL_FILES = [
   './',
@@ -25,6 +27,13 @@ const SHELL_FILES = [
   './manifest.webmanifest',
   './lib/vexflow.js',
   './lib/Tone.js',
+  './js/core.js',
+  './js/panels.js',
+  './js/editing.js',
+  './js/render.js',
+  './js/audio.js',
+  './js/io.js',
+  './js/boot.js',
   './icon-180.png',
   './icon-192.png',
   './icon-512.png',

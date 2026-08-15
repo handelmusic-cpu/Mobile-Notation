@@ -1,0 +1,41 @@
+name: Checks
+
+# Runs the headless-browser checks on every push and pull request. Eleven
+# feature branches had landed in this repo with nothing but hand-verification
+# behind them; this is the net under the next one.
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      # No package.json to install from — the checks need exactly one library.
+      - name: Install Playwright
+        run: npm install --no-save playwright@1.56.1
+
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Serve the app
+        run: |
+          python3 -m http.server 4821 &
+          for i in $(seq 1 30); do
+            curl -fsS -o /dev/null http://localhost:4821/index.html && break
+            sleep 1
+          done
+
+      - name: Run checks
+        run: node test/check.mjs
