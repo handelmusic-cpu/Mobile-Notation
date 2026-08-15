@@ -337,6 +337,34 @@ body { font-family:-apple-system,BlinkMacSystemFont,sans-serif; background:var(-
 #rec-start-btn{flex:1;background:var(--rec);border-color:var(--rec);color:#fff;font-weight:700;}
 #rec-start-btn:disabled{opacity:.4;}
 
+/* App dialogs and toasts.
+   Native alert/confirm/prompt render as browser chrome inside an installed app
+   that otherwise has none, and iOS can suppress prompt() outright. These follow
+   the record sheet's shape so every modal in the app looks like the same app. */
+#app-sheet{display:none;position:fixed;inset:0;z-index:950;background:rgba(5,6,12,.82);align-items:center;justify-content:center;padding:14px;}
+#app-sheet.on{display:flex;}
+#app-sheet-card{background:var(--surf4);border:2px solid var(--border);border-radius:14px;padding:15px 17px;width:100%;max-width:400px;max-height:100%;overflow-y:auto;box-shadow:0 10px 34px rgba(0,0,0,.55);}
+#app-sheet-card.danger{border-color:var(--danger);}
+#app-sheet-title{font-size:16px;font-weight:800;color:var(--text);margin-bottom:7px;}
+#app-sheet-msg{font-size:13px;line-height:1.5;color:var(--text3);white-space:pre-wrap;margin-bottom:10px;}
+#app-sheet-input{width:100%;padding:9px 10px;background:var(--bg);border:1.5px solid var(--border);border-radius:8px;
+  color:var(--text2);font-size:16px;margin-bottom:10px;}
+#app-sheet-btns{display:flex;gap:7px;justify-content:flex-end;}
+#app-sheet-btns .chip{min-height:38px;padding:8px 14px;font-size:13px;}
+#app-sheet-btns .chip.primary{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:700;}
+#app-sheet-btns .chip.danger{background:var(--danger);border-color:var(--danger);color:#fff;font-weight:700;}
+
+/* Transient notices — "select a note first" is a nudge, not something worth
+   a modal and a tap to dismiss. */
+#toast-host{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(12px + env(safe-area-inset-bottom));
+  z-index:940;display:flex;flex-direction:column;gap:6px;align-items:center;pointer-events:none;width:min(92vw,420px);}
+.toast{background:var(--surf4);border:1.5px solid var(--border);border-radius:10px;padding:9px 13px;
+  font-size:13px;line-height:1.4;color:var(--text);box-shadow:0 6px 22px rgba(0,0,0,.45);
+  animation:toast-in .18s ease-out;max-width:100%;}
+.toast.warn{border-color:var(--warn);}
+.toast.err{border-color:var(--danger);}
+@keyframes toast-in{from{opacity:0;transform:translateY(8px);}to{opacity:1;transform:none;}}
+
 /* Guided tour overlay */
 #tour-overlay{position:fixed;inset:0;z-index:99999;}
 #tour-hole{position:absolute;border-radius:9px;box-shadow:0 0 0 9999px rgba(0,0,0,.74);transition:left .25s,top .25s,width .25s,height .25s;pointer-events:none;}
@@ -703,6 +731,17 @@ body { font-family:-apple-system,BlinkMacSystemFont,sans-serif; background:var(-
   <button class="nbtn nr" id="rest-btn" onclick="addRest()"></button>
 </div>
 
+<!-- Ask/tell, in the app's own clothes rather than the browser's. -->
+<div id="app-sheet" role="dialog" aria-modal="true" aria-labelledby="app-sheet-title">
+  <div id="app-sheet-card">
+    <div id="app-sheet-title"></div>
+    <div id="app-sheet-msg"></div>
+    <input type="text" id="app-sheet-input" style="display:none">
+    <div id="app-sheet-btns"></div>
+  </div>
+</div>
+<div id="toast-host" role="status" aria-live="polite"></div>
+
 <!-- MIDI record settings — opened by the ⏺ toolbar button. -->
 <div id="rec-sheet">
   <div id="rec-sheet-card">
@@ -772,6 +811,84 @@ const safeStore={
     }
   },
 };
+
+// ═══════════════════════════════════════════════════════
+// Telling and asking
+// ═══════════════════════════════════════════════════════
+// alert/confirm/prompt draw browser chrome inside an app that has none of its
+// own, and iOS can refuse prompt() outright — which would have made naming a
+// song impossible there. These replace them, and split the job in two: a
+// passing notice is a toast, and anything needing an answer is a sheet.
+function toast(msg,kind){
+  const host=document.getElementById('toast-host'); if(!host){ return; }
+  const t=document.createElement('div');
+  t.className='toast'+(kind?' '+kind:'');
+  t.textContent=msg;
+  host.appendChild(t);
+  // Long enough to read the longest of these without being in the way.
+  setTimeout(()=>{ t.style.opacity='0'; t.style.transition='opacity .25s'; setTimeout(()=>t.remove(),260); },
+             Math.min(6000,2200+msg.length*35));
+}
+let _sheetClose=null;
+function closeAppSheet(value){
+  const el=document.getElementById('app-sheet');
+  if(el) el.classList.remove('on');
+  const cb=_sheetClose; _sheetClose=null;
+  if(cb) cb(value);
+}
+// Resolves to the chosen action's value, or to null if dismissed.
+function appSheet({title,message,input,inputValue,placeholder,actions,danger}){
+  return new Promise(resolve=>{
+    const el=document.getElementById('app-sheet');
+    if(!el){ resolve(null); return; }                 // never leave a caller hanging
+    if(_sheetClose) closeAppSheet(null);              // one at a time
+    const card=document.getElementById('app-sheet-card');
+    card.classList.toggle('danger',!!danger);
+    document.getElementById('app-sheet-title').textContent=title||'';
+    const msg=document.getElementById('app-sheet-msg');
+    msg.textContent=message||''; msg.style.display=message?'':'none';
+    const inp=document.getElementById('app-sheet-input');
+    inp.style.display=input?'':'none';
+    if(input){ inp.value=inputValue||''; inp.placeholder=placeholder||''; }
+    const btns=document.getElementById('app-sheet-btns');
+    btns.innerHTML='';
+    let settled=false;
+    _sheetClose=v=>{ if(settled)return; settled=true; document.removeEventListener('keydown',onKey); resolve(v); };
+    const pick=a=>closeAppSheet(a.value===undefined?(input?inp.value:true):a.value);
+    (actions||[{label:'OK',primary:true}]).forEach(a=>{
+      const b=document.createElement('button');
+      b.className='chip'+(a.danger?' danger':a.primary?' primary':'');
+      b.textContent=a.label;
+      b.onclick=()=>pick(a);
+      btns.appendChild(b);
+    });
+    const onKey=e=>{
+      if(e.key==='Escape'){ e.preventDefault(); closeAppSheet(null); }
+      else if(e.key==='Enter'&&input){ e.preventDefault(); closeAppSheet(inp.value); }
+    };
+    document.addEventListener('keydown',onKey);
+    el.onclick=e=>{ if(e.target===el) closeAppSheet(null); };   // tapping outside dismisses
+    el.classList.add('on');
+    setTimeout(()=>{ if(input) inp.focus(); else btns.querySelector('.primary,.danger,button')?.focus(); },30);
+  });
+}
+function sheetTell(title,message){
+  return appSheet({title,message,actions:[{label:'OK',primary:true,value:true}]});
+}
+function sheetConfirm(title,message,okLabel,danger){
+  return appSheet({title,message,danger,actions:[
+    {label:'Cancel',value:null},
+    {label:okLabel||'OK',primary:!danger,danger:!!danger,value:true},
+  ]});
+}
+// Resolves to the trimmed text, or null if cancelled or left empty.
+async function sheetAsk(title,message,value,placeholder){
+  const v=await appSheet({title,message,input:true,inputValue:value,placeholder,actions:[
+    {label:'Cancel',value:null},
+    {label:'Save',primary:true},
+  ]});
+  return (typeof v==='string'&&v.trim())?v.trim():null;
+}
 
 // ═══════════════════════════════════════════════════════
 // Instruments
@@ -1295,7 +1412,7 @@ function setPickup(beats){
 }
 function clearChangesHere(){
   const mi=editMeasureIndex();
-  if(mi<=0){ alert('Select a note in a later bar — bar 1 carries the song’s opening key and metre.'); return; }
+  if(mi<=0){ toast('Select a note in a later bar — bar 1 carries the song’s opening key and metre.','warn'); return; }
   delete keyChanges[mi]; delete sigChanges[mi];
   syncKeyTimeUI(); relabelNoteButtons(); renderDiatonicChords(); render();
 }
@@ -2045,8 +2162,9 @@ function updateUndoRedoButtons(){
   if(u) u.disabled = histIndex<=0;
   if(r) r.disabled = histIndex>=history.length-1;
 }
-function clearAll(){
-  if(!parts.some(p=>p.notes.length)||!confirm('Clear all notes in this song?'))return;
+async function clearAll(){
+  if(!parts.some(p=>p.notes.length))return;
+  if(!await sheetConfirm('Clear this song?','Every note in every part is removed. Undo will still bring it back.','Clear all',true))return;
   parts.forEach(p=>{p.notes=[];p.hairpins=[];});
   selectedNote=null; caretGap=null;
   render();
@@ -2459,14 +2577,14 @@ function measureIndexOfNote(partIdx, noteIdx){
   return Math.max(0,ms.length-1);
 }
 function toggleRepeatStart(){
-  if(!selectedNote){ alert('Select a note first to mark its measure.'); return; }
+  if(!selectedNote){ toast('Select a note first — the repeat marks that note’s bar.','warn'); return; }
   const mi=measureIndexOfNote(selectedNote.partIdx, selectedNote.noteIdx);
   const idx=repeatStartMeasures.indexOf(mi);
   if(idx>=0) repeatStartMeasures.splice(idx,1); else repeatStartMeasures.push(mi);
   render();
 }
 function toggleRepeatEnd(){
-  if(!selectedNote){ alert('Select a note first to mark its measure.'); return; }
+  if(!selectedNote){ toast('Select a note first — the repeat marks that note’s bar.','warn'); return; }
   const mi=measureIndexOfNote(selectedNote.partIdx, selectedNote.noteIdx);
   const idx=repeatEndMeasures.indexOf(mi);
   if(idx>=0) repeatEndMeasures.splice(idx,1); else repeatEndMeasures.push(mi);
@@ -2481,8 +2599,8 @@ function addMeasureRepeat(n){
   const part=parts[apIdx];
   let beats=0, completedMeasures=0, BMAX=beatsAt(0);
   part.notes.forEach(nn=>{ beats+=noteBeats(nn,completedMeasures); if(beats>=BMAX-.001){ beats=0; completedMeasures++; BMAX=beatsAt(completedMeasures); } });
-  if(beats>0.001){ alert('You can only add a measure repeat at the start of a new measure.'); return; }
-  if(completedMeasures<n){ alert('Need at least '+n+' previous measure'+(n>1?'s':'')+' to repeat.'); return; }
+  if(beats>0.001){ toast('A measure repeat only goes at the start of a new bar.','warn'); return; }
+  if(completedMeasures<n){ toast('Need at least '+n+' previous bar'+(n>1?'s':'')+' to repeat.','warn'); return; }
   for(let k=0;k<n;k++){
     part.notes.push({repeatBars:n, rest:false, keys:['b/4'], midiVals:[], dur:'w', vfAccs:[null], lyric:null, dyn:null, arts:[], tempo:null, rud:null, grace:[], sticking:null});
   }
@@ -2893,6 +3011,9 @@ function setScoreZoom(z,anchor){
   }
   syncClefGutter();
   showZoomBadge();
+  // Someone who needs 150% to read the staff should not have to set it again
+  // every session — and they are the least likely to enjoy doing so.
+  safeStore.set('mn_zoom',String(scoreZoom));
 }
 function resetScoreZoom(){ setScoreZoom(1,null); }
 // Deliberately coarse: pinching to half size means bringing your fingers all
@@ -3325,7 +3446,7 @@ function startRecordingFromSheet(){
 }
 async function toggleRecord(){
   if(recState!=='idle'){ stopRecording(); return; }
-  if(playing){ alert('Stop playback before recording.'); return; }
+  if(playing){ toast('Stop playback before recording.','warn'); return; }
   openRecSheet();
 }
 async function startRecording(){
@@ -4152,7 +4273,7 @@ function warnSaveFailure(){
     const why=safeStore.blocked
       ? "This song can't be auto-saved — your browser is blocking storage for this site.\n\nIn Safari that's Settings → Safari → Block All Cookies, or Private Browsing."
       : "This song can't be auto-saved — your browser's storage for this site is full.";
-    setTimeout(()=>alert(why+"\n\nYour work is still here for now, but it won't survive a reload. Use Songs → “⇩ Save to device” to keep a copy."),0);
+    setTimeout(()=>sheetTell("Can't save this song",why+"\n\nYour work is still here for now, but it won't survive a reload. Use Songs → “⇩ Save to device” to keep a copy."),0);
   }
 }
 let autosavePending=false;
@@ -4222,14 +4343,39 @@ function applyProject(d){
 // Offline backup: write the current song to a downloadable JSON file, and read
 // one back in as a new song. Independent of localStorage, so work survives
 // clearing browser data or moving between devices.
-function saveProjectToFile(){
+// Getting a file off the device.
+//
+// A download lands in the downloads folder, which on a phone is close to the
+// least useful place for it — the actual job is "send this part to my section
+// leader". Where the system share sheet can take files it is offered first,
+// since that is the one flow that reaches Messages, Mail, AirDrop and Files;
+// where it cannot, this falls back to the download that was always here.
+async function deliverFile(blob,filename,shareTitle){
+  const file=(typeof File!=='undefined')?new File([blob],filename,{type:blob.type}):null;
+  if(file&&navigator.canShare&&navigator.canShare({files:[file]})&&navigator.share){
+    try{
+      await navigator.share({files:[file],title:shareTitle||filename});
+      return 'shared';
+    }catch(e){
+      // A cancelled share is a decision, not a failure — do not then shove a
+      // download at someone who just backed out.
+      if(e&&(e.name==='AbortError'||e.name==='NotAllowedError')) return 'cancelled';
+    }
+  }
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement('a'); a.href=url; a.download=filename;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(()=>URL.revokeObjectURL(url),2000);
+  return 'downloaded';
+}
+function songFileName(){ return ((projects.find(p=>p.id===currentProjId)?.name)||'song').replace(/[^a-z0-9]+/gi,'_'); }
+async function saveProjectToFile(){
   const proj=projects.find(p=>p.id===currentProjId);
   const payload={ app:'modscore', version:1, name:(proj?proj.name:'Song'), data:serializeProject() };
   const blob=new Blob([JSON.stringify(payload)],{type:'application/json'});
   const nm=((proj?proj.name:'song')||'song').replace(/[^a-z0-9]+/gi,'_');
-  const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=nm+'.mnote.json';
-  document.body.appendChild(a); a.click(); a.remove();
-  setTimeout(()=>URL.revokeObjectURL(a.href),2000);
+  const how=await deliverFile(blob,nm+'.mnote.json',(proj?proj.name:'Song'));
+  if(how==='downloaded') toast('Saved '+nm+'.mnote.json to your device.');
 }
 function openProjectFromFile(){ const inp=document.getElementById('project-file'); inp.value=''; inp.click(); }
 document.getElementById('project-file').addEventListener('change', async function(){
@@ -4242,7 +4388,7 @@ document.getElementById('project-file').addEventListener('change', async functio
     const name=(payload.name||f.name.replace(/\.(mnote\.)?json$/i,'')||'Imported song');
     projects.push({id,name,data,updated:Date.now()});
     currentProjId=id; saveAll(); applyProject(data); resetHistory(); renderProjectsList(); switchTab('notes');
-  }catch(e){ alert('Could not open file: '+e.message); }
+  }catch(e){ toast('Could not open that file: '+e.message,'err'); }
 });
 
 function newProject(name){
@@ -4254,8 +4400,8 @@ function newProject(name){
   projects.push({id,name:name||('Song '+(projects.length+1)),data:blank,updated:Date.now()});
   currentProjId=id; saveAll(); applyProject(blank); resetHistory(); renderProjectsList();
 }
-function newProjectPrompt(){
-  const nm=prompt('Name your new song:', 'Song '+(projects.length+1));
+async function newProjectPrompt(){
+  const nm=await sheetAsk('New song','What should it be called?','Song '+(projects.length+1),'Song name');
   if(nm!==null){ newProject(nm.trim()||undefined); switchTab('notes'); }
 }
 function loadProject(id){
@@ -4263,14 +4409,14 @@ function loadProject(id){
   const cur=projects.find(x=>x.id===currentProjId); if(cur) cur.data=serializeProject();
   currentProjId=id; saveAll(); applyProject(p.data); resetHistory(); renderProjectsList(); switchTab('notes');
 }
-function renameProject(id){
+async function renameProject(id){
   const p=projects.find(x=>x.id===id); if(!p)return;
-  const nm=prompt('Rename song:',p.name);
+  const nm=await sheetAsk('Rename song',null,p.name,'Song name');
   if(nm!==null&&nm.trim()){ p.name=nm.trim(); saveAll([p.id]); renderProjectsList(); updateProjPill(); }
 }
-function deleteProject(id){
-  if(projects.length<=1){alert('Keep at least one song.');return;}
-  if(!confirm('Delete this song? This cannot be undone.'))return;
+async function deleteProject(id){
+  if(projects.length<=1){toast('Keep at least one song.','warn');return;}
+  if(!await sheetConfirm('Delete this song?','“'+(projects.find(x=>x.id===id)?.name||'This song')+'” is removed from this device. This cannot be undone.','Delete',true))return;
   projects=projects.filter(x=>x.id!==id);
   if(currentProjId===id){ currentProjId=projects[0].id; applyProject(projects[0].data); resetHistory(); }
   if(idbUsable) idbDelete(id); else safeStore.set('mn_projects',JSON.stringify(projects));
@@ -4500,10 +4646,8 @@ function exportMIDI(){
   const header=[0x4D,0x54,0x68,0x64,0,0,0,6,0,1,(ntrk>>8)&255,ntrk&255,(PPQ>>8)&255,PPQ&255];
   const u8=new Uint8Array([...header,...tracks.flat()]);
   const blob=new Blob([u8],{type:'audio/midi'});
-  const name=(projects.find(p=>p.id===currentProjId)?.name||'song').replace(/[^a-z0-9]+/gi,'_');
-  const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=name+'.mid';
-  document.body.appendChild(a); a.click(); a.remove();
-  setTimeout(()=>URL.revokeObjectURL(a.href),2000);
+  const name=songFileName();
+  deliverFile(blob,name+'.mid',name+' (MIDI)').then(how=>{ if(how==='downloaded') toast('Saved '+name+'.mid to your device.'); });
 }
 
 // ═══════════════════════════════════════════════════════
@@ -4644,13 +4788,11 @@ function buildMusicXML(){
   return out.join('\n');
 }
 function exportMusicXML(){
-  if(!parts.some(p=>p.notes.length)){ alert('Nothing to export yet.'); return; }
+  if(!parts.some(p=>p.notes.length)){ toast('Nothing to export yet — write some notes first.','warn'); return; }
   const xml=buildMusicXML();
   const blob=new Blob([xml],{type:'application/vnd.recordare.musicxml+xml'});
-  const name=(projects.find(p=>p.id===currentProjId)?.name||'song').replace(/[^a-z0-9]+/gi,'_');
-  const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=name+'.musicxml';
-  document.body.appendChild(a); a.click(); a.remove();
-  setTimeout(()=>URL.revokeObjectURL(a.href),2000);
+  const name=songFileName();
+  deliverFile(blob,name+'.musicxml',name+' (MusicXML)').then(how=>{ if(how==='downloaded') toast('Saved '+name+'.musicxml to your device.'); });
 }
 
 // ═══════════════════════════════════════════════════════
@@ -4756,9 +4898,9 @@ function buildPrintSystems(partsSubset){
 }
 
 function exportPDF(scope){
-  if(!parts.some(p=>p.notes.length)){ alert('Nothing to print yet.'); return; }
+  if(!parts.some(p=>p.notes.length)){ toast('Nothing to print yet — write some notes first.','warn'); return; }
   const partsSubset=scope==='all'?parts:[parts[scope]];
-  if(!partsSubset[0]||!partsSubset.some(p=>p.notes.length)){ alert('Nothing to print yet.'); return; }
+  if(!partsSubset[0]||!partsSubset.some(p=>p.notes.length)){ toast('That part has no notes yet.','warn'); return; }
   const title=projects.find(p=>p.id===currentProjId)?.name||'Score';
   const subtitle=scope==='all'?'Full Score':partsSubset[0].name;
 
@@ -4766,12 +4908,10 @@ function exportPDF(scope){
   let svgBlocks;
   try{ svgBlocks=buildPrintSystems(partsSubset); }
   finally{ selectedNote=savedSel; }
-  if(!svgBlocks.length){ alert('Nothing to print yet.'); return; }
+  if(!svgBlocks.length){ toast('Nothing to print yet — write some notes first.','warn'); return; }
 
-  const w=window.open('','_blank');
-  if(!w){ alert('Allow pop-ups to print.'); return; }
   const systemsHTML=svgBlocks.map(s=>`<div class="system">${s}</div>`).join('');
-  w.document.write(`<!DOCTYPE html><html><head><title>${esc(title)} — ${esc(subtitle)}</title>
+  const doc=`<!DOCTYPE html><html><head><title>${esc(title)} — ${esc(subtitle)}</title>
     <style>
       @page{margin:14mm;}
       body{font-family:serif;color:#000;margin:0 auto;padding:12px;max-width:${PRINT_SYS_W}px;}
@@ -4785,9 +4925,33 @@ function exportPDF(scope){
     <h2>${esc(subtitle)}</h2>
     <div class="meta">Key: ${KMAP[currentKeyId]?.label||currentKeyId} &nbsp;·&nbsp; ${currentTimeSig.sig} &nbsp;·&nbsp; ♩ = ${parseInt(document.getElementById('bpm-inp').value)||80}</div>
     ${systemsHTML}
-    </body></html>`);
-  w.document.close();
-  setTimeout(()=>{ w.focus(); w.print(); },350);
+    </body></html>`;
+  printDocument(doc);
+}
+// window.open() sends an installed app out to a Safari window to print, which
+// is a jarring way to leave a full-screen score — and it is blocked outright
+// whenever the browser decides the gesture has gone stale. A hidden iframe
+// prints from inside the app instead, with no pop-up to permit.
+function printDocument(html){
+  const old=document.getElementById('print-frame');
+  if(old) old.remove();
+  const f=document.createElement('iframe');
+  f.id='print-frame';
+  f.setAttribute('aria-hidden','true');
+  f.style.cssText='position:fixed;right:0;bottom:0;width:1px;height:1px;opacity:0;border:0;pointer-events:none;';
+  document.body.appendChild(f);
+  const d=f.contentDocument||f.contentWindow.document;
+  d.open(); d.write(html); d.close();
+  const go=()=>{
+    try{ f.contentWindow.focus(); f.contentWindow.print(); }
+    catch(e){ toast('Could not open the print dialog: '+e.message,'err'); }
+    // Kept around briefly: Safari returns from print() before the dialog has
+    // actually taken the document, and removing the frame early prints blank.
+    setTimeout(()=>{ const el=document.getElementById('print-frame'); if(el) el.remove(); },60000);
+  };
+  // Give the SVGs a moment to lay out; onload alone does not cover them.
+  if(d.readyState==='complete') setTimeout(go,300);
+  else f.onload=()=>setTimeout(go,300);
 }
 
 // ═══════════════════════════════════════════════════════
@@ -5068,7 +5232,7 @@ document.getElementById('import-file').addEventListener('change', async function
       const text=/\.mxl$/i.test(f.name) ? await unzipMXL(await f.arrayBuffer()) : await f.text();
       importToProject(f.name.replace(/\.(mxl|xml|musicxml)$/i,''), parseMusicXML(text));
     }
-  }catch(e){ alert('Import failed: '+e.message); console.error(e); }
+  }catch(e){ sheetTell('Import failed',e.message); console.error(e); }
 });
 
 // ═══════════════════════════════════════════════════════
@@ -5082,6 +5246,9 @@ document.addEventListener('keydown', e=>{
   const t=e.target;
   if(t && (t.tagName==='INPUT'||t.tagName==='TEXTAREA'||t.isContentEditable)) return;
   if(typeof tourActive!=='undefined' && tourActive) return;
+  // A dialog is in front; its own handler owns Enter and Escape, and a letter
+  // key must not quietly write a note onto the staff behind it.
+  if(document.getElementById('app-sheet')?.classList.contains('on')) return;
 
   const k=e.key, mod=e.ctrlKey||e.metaKey;
 
@@ -5253,6 +5420,7 @@ function applyAriaLabels(){
 
 initTheme();
 pitchView=safeStore.get('mn_pitchview')==='concert'?'concert':'written';
+{ const z=parseFloat(safeStore.get('mn_zoom')); if(z && z>=MIN_ZOOM && z<=MAX_ZOOM) scoreZoom=z; }
 setAcc('key');clearArts();setDyn(null);setTempo(null);
 refreshDurIcons();
 relabelNoteButtons();
