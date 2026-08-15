@@ -585,6 +585,175 @@ await run('a11y', async () => {
   await p.context().close();
 });
 
+// ── 17. Dialogs and toasts in the app's own clothes (item 19) ────────────
+await run('dialogs', async () => {
+  const p = await boot(await page());
+  // Anything reaching a native dialog would hang the test rather than fail it.
+  await p.evaluate(() => {
+    window.__native = 0;
+    window.alert = () => { window.__native++; };
+    window.confirm = () => { window.__native++; return true; };
+    window.prompt = () => { window.__native++; return 'x'; };
+  });
+  const r = await p.evaluate(async () => {
+    const out = {};
+    // A nudge is a toast, not a modal.
+    selectedNote = null; toggleRepeatStart();
+    out.toast = document.querySelector('#toast-host .toast')?.textContent || '';
+    out.noModalForNudge = !document.getElementById('app-sheet').classList.contains('on');
+
+    // Confirm: open, cancel, and check nothing happened.
+    parts[0].notes = [{ keys: ['C/4'], dur: 'q', vfAccs: [null], midiVals: [60], rest: false,
+      lyric: null, dyn: null, arts: [], tempo: null, rud: null, grace: [], sticking: null }];
+    const pending = clearAll();
+    await new Promise(r => setTimeout(r, 60));
+    out.confirmOpen = document.getElementById('app-sheet').classList.contains('on');
+    out.confirmTitle = document.getElementById('app-sheet-title').textContent;
+    [...document.querySelectorAll('#app-sheet-btns button')].find(b => b.textContent === 'Cancel').click();
+    await pending;
+    out.cancelKeptNotes = parts[0].notes.length === 1;
+
+    // Confirm: accept.
+    const p2 = clearAll();
+    await new Promise(r => setTimeout(r, 60));
+    [...document.querySelectorAll('#app-sheet-btns button')].find(b => b.textContent === 'Clear all').click();
+    await p2;
+    out.acceptCleared = parts[0].notes.length === 0;
+
+    // Prompt: type a name and save.
+    const before = projects.length;
+    const p3 = newProjectPrompt();
+    await new Promise(r => setTimeout(r, 60));
+    out.promptHasInput = document.getElementById('app-sheet-input').style.display !== 'none';
+    document.getElementById('app-sheet-input').value = 'Test song from a sheet';
+    [...document.querySelectorAll('#app-sheet-btns button')].find(b => b.textContent === 'Save').click();
+    await p3;
+    out.named = projects.find(x => x.id === currentProjId)?.name;
+    out.added = projects.length === before + 1;
+
+    // Escape dismisses without acting.
+    const p4 = deleteProject(currentProjId);
+    await new Promise(r => setTimeout(r, 60));
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    await p4;
+    out.escapeKept = projects.some(x => x.id === currentProjId);
+    out.closed = !document.getElementById('app-sheet').classList.contains('on');
+    out.natives = window.__native;
+    return out;
+  });
+  ok('a nudge is a toast, not a modal', /Select a note first/.test(r.toast) && r.noModalForNudge, `toast="${r.toast}"`);
+  ok('confirm opens an in-app sheet', r.confirmOpen && /Clear this song/.test(r.confirmTitle), `title="${r.confirmTitle}"`);
+  ok('cancelling a confirm changes nothing', r.cancelKeptNotes === true);
+  ok('accepting a confirm goes through', r.acceptCleared === true);
+  ok('naming a song uses a text field in the sheet', r.promptHasInput && r.added, `added=${r.added}`);
+  ok('the typed name is what gets saved', r.named === 'Test song from a sheet', `got "${r.named}"`);
+  ok('Escape dismisses without acting', r.escapeKept === true && r.closed === true);
+  ok('no native alert/confirm/prompt is reached', r.natives === 0, `${r.natives} native calls`);
+  await p.context().close();
+});
+
+// ── 18. Sharing and printing (item 20) ───────────────────────────────────
+await run('share', async () => {
+  const p = await boot(await page());
+  const r = await p.evaluate(async () => {
+    const out = {};
+    parts[0].notes = [{ keys: ['C/4'], dur: 'q', vfAccs: [null], midiVals: [60], rest: false,
+      lyric: null, dyn: null, arts: [], tempo: null, rud: null, grace: [], sticking: null }];
+
+    // With a share sheet that takes files, that is the route taken.
+    let shared = null;
+    navigator.canShare = d => !!(d && d.files);
+    navigator.share = async d => { shared = { name: d.files[0].name, size: d.files[0].size, title: d.title }; };
+    let downloaded = 0;
+    const realClick = HTMLAnchorElement.prototype.click;
+    HTMLAnchorElement.prototype.click = function () { if (this.download) downloaded++; };
+    await deliverFile(new Blob(['x'], { type: 'audio/midi' }), 'song.mid', 'Song');
+    out.shared = shared; out.downloadsWhenShared = downloaded;
+
+    // A cancelled share must not then force a download.
+    navigator.share = async () => { const e = new Error('cancelled'); e.name = 'AbortError'; throw e; };
+    const how = await deliverFile(new Blob(['x'], { type: 'audio/midi' }), 'song.mid', 'Song');
+    out.cancelled = how; out.downloadsAfterCancel = downloaded;
+
+    // Without a usable share sheet, it falls back to a download.
+    navigator.canShare = () => false;
+    const how2 = await deliverFile(new Blob(['x'], { type: 'audio/midi' }), 'song.mid', 'Song');
+    out.fallback = how2; out.downloadsAfterFallback = downloaded;
+    HTMLAnchorElement.prototype.click = realClick;
+
+    // Printing must not reach window.open.
+    let opened = 0; const realOpen = window.open;
+    window.open = () => { opened++; return null; };
+    exportPDF('all');
+    await new Promise(r => setTimeout(r, 700));
+    window.open = realOpen;
+    const f = document.getElementById('print-frame');
+    out.windowOpens = opened;
+    out.framePrinted = !!f;
+    out.frameHasMusic = !!(f && f.contentDocument && f.contentDocument.querySelector('svg'));
+    out.frameHidden = !!(f && getComputedStyle(f).opacity === '0');
+    return out;
+  });
+  ok('a file goes to the share sheet when one can take it',
+     r.shared && r.shared.name === 'song.mid' && r.downloadsWhenShared === 0,
+     `shared=${JSON.stringify(r.shared)} downloads=${r.downloadsWhenShared}`);
+  ok('cancelling a share does not force a download',
+     r.cancelled === 'cancelled' && r.downloadsAfterCancel === 0, `${r.cancelled}, ${r.downloadsAfterCancel} downloads`);
+  ok('without a share sheet it still downloads',
+     r.fallback === 'downloaded' && r.downloadsAfterFallback === 1, `${r.fallback}, ${r.downloadsAfterFallback} downloads`);
+  ok('printing never opens a pop-up window', r.windowOpens === 0, `${r.windowOpens} window.open calls`);
+  ok('printing renders the music into a hidden frame',
+     r.framePrinted && r.frameHasMusic && r.frameHidden,
+     `frame=${r.framePrinted} music=${r.frameHasMusic} hidden=${r.frameHidden}`);
+  await p.context().close();
+});
+
+// ── 19. Zoom is remembered (item 21) ─────────────────────────────────────
+await run('zoom', async () => {
+  const p = await boot(await page());
+  await p.evaluate(() => { stepZoom(1); stepZoom(1); });
+  const before = await p.evaluate(() => scoreZoom);
+  await p.reload({ waitUntil: 'networkidle' });
+  await p.waitForTimeout(1200);
+  const after = await p.evaluate(() => scoreZoom);
+  ok('the staff zoom survives a reload', after === before && after !== 1, `${before} -> ${after}`);
+  await p.context().close();
+});
+
+// ── 20. The split files still add up to one working app (item 18) ────────
+await run('split', async () => {
+  const fs = await import('node:fs/promises');
+  const html = await fs.readFile(path.join(HERE, '..', 'index.html'), 'utf8');
+  // Every function named by an on*="..." attribute in the markup. These resolve
+  // from global scope at click time, so a name lost or reordered in the split
+  // fails silently on a button nobody presses until it matters.
+  const names = new Set();
+  for (const m of html.matchAll(/\bon(?:click|change|input|submit)="([^"]+)"/g)) {
+    for (const f of m[1].matchAll(/\b([A-Za-z_$][\w$]*)\s*\(/g)) names.add(f[1]);
+  }
+  const known = new Set(['location', 'event', 'alert', 'confirm', 'prompt', 'reload']);
+  const wanted = [...names].filter(n => !known.has(n));
+
+  const p = await boot(await page());
+  const r = await p.evaluate(list => {
+    const missing = list.filter(n => {
+      try { return typeof eval(n) !== 'function'; } catch (e) { return true; }
+    });
+    return { missing, checked: list.length };
+  }, wanted);
+  ok(`all ${r.checked} inline handlers resolve to a function`, r.missing.length === 0,
+     r.missing.length ? 'missing: ' + r.missing.join(', ') : '');
+
+  // The service worker has to precache every script the page loads, or the app
+  // opens offline with half of itself.
+  const sw = await fs.readFile(path.join(HERE, '..', 'sw.js'), 'utf8');
+  const srcs = [...html.matchAll(/<script src="([^"]+)"><\/script>/g)].map(m => m[1]);
+  const unprecached = srcs.filter(s => !sw.includes(s));
+  ok(`all ${srcs.length} scripts are precached for offline`, unprecached.length === 0,
+     unprecached.length ? 'missing from sw.js: ' + unprecached.join(', ') : '');
+  await p.context().close();
+});
+
 console.log(`\n${pass} passed, ${fail} failed`);
 await browser.close();
 process.exit(fail ? 1 : 0);
