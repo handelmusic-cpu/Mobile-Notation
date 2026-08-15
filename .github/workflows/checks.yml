@@ -9,20 +9,34 @@ on:
   pull_request:
   workflow_dispatch:
 
+# Least privilege: these checks only ever read the tree. Without this the job
+# inherits the repository default, which can include write access it has no use
+# for — and a workflow that installs npm packages is exactly the one you would
+# not want holding a writable token.
+permissions:
+  contents: read
+
+# Pushing again while a run is in flight makes that run irrelevant. Cancel it
+# rather than paying for an answer about code nobody has any more.
+concurrency:
+  group: checks-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   check:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Set up Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
           node-version: "22"
 
       # No package.json to install from — the checks need exactly one library.
+      # Pinned, so a Playwright release cannot fail this repo on its own.
       - name: Install Playwright
         run: npm install --no-save playwright@1.56.1
 
