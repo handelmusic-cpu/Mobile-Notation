@@ -1,0 +1,13 @@
+{
+  "name": "pagesmith",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Host your own websites on GitHub Pages — custom domain, free HTTPS, no provider bill.",
+  "type": "module",
+  "bin": { "pagesmith": "./bin/pagesmith.js" },
+  "scripts": {
+    "start": "node bin/pagesmith.js",
+    "test": "node --test test/"
+  },
+  "engines": { "node": ">=20.6.0" }
+}

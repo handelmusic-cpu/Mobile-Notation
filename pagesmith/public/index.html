@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Pagesmith</title>
+    <link rel="stylesheet" href="/style.css" />
+  </head>
+  <body>
+    <header class="bar">
+      <h1>Pagesmith</h1>
+      <div class="account" id="account"></div>
+    </header>
+
+    <main id="main">
+      <!-- Connect ------------------------------------------------------- -->
+      <section class="card" id="connect" hidden>
+        <h2>Connect GitHub</h2>
+        <p class="muted">
+          Your sites are published to GitHub Pages: free hosting, your own domain, free HTTPS.
+          Pagesmith needs a token to push on your behalf. It is stored only on this computer.
+        </p>
+        <ol class="steps">
+          <li>
+            Open
+            <a
+              href="https://github.com/settings/tokens/new?scopes=repo&amp;description=Pagesmith"
+              target="_blank"
+              rel="noreferrer"
+              >github.com/settings/tokens</a
+            >
+            and create a classic token with the <code>repo</code> scope.
+          </li>
+          <li>Paste it here.</li>
+        </ol>
+        <form id="token-form" class="row">
+          <input
+            type="password"
+            id="token"
+            placeholder="ghp_…"
+            autocomplete="off"
+            spellcheck="false"
+            required
+          />
+          <button type="submit">Connect</button>
+        </form>
+      </section>
+
+      <!-- Sites --------------------------------------------------------- -->
+      <section id="sites" hidden></section>
+
+      <!-- Add a site ---------------------------------------------------- -->
+      <section class="card" id="add" hidden>
+        <h2>Add a site</h2>
+        <form id="site-form">
+          <label>
+            <span>Name</span>
+            <input id="f-name" placeholder="Dutdut Records" required />
+          </label>
+          <label>
+            <span>Folder on this computer</span>
+            <span class="row">
+              <input id="f-dir" placeholder="/Users/you/sites/dutdut" required />
+              <button type="button" id="browse">Browse…</button>
+            </span>
+          </label>
+          <label>
+            <span>Repository to publish into</span>
+            <input id="f-repo" placeholder="dutdutrecords" required />
+            <small class="muted">Created for you if it does not exist. Must be public.</small>
+          </label>
+          <label>
+            <span>Custom domain <em>(optional)</em></span>
+            <input id="f-domain" placeholder="dutdutrecords.com" />
+            <small class="muted">Leave empty to use the free username.github.io address.</small>
+          </label>
+          <button type="submit">Add site</button>
+        </form>
+      </section>
+    </main>
+
+    <!-- Folder picker ---------------------------------------------------- -->
+    <dialog id="picker">
+      <h2>Choose a folder</h2>
+      <p class="path" id="picker-path"></p>
+      <ul id="picker-list"></ul>
+      <div class="row end">
+        <button type="button" id="picker-cancel">Cancel</button>
+        <button type="button" id="picker-choose">Use this folder</button>
+      </div>
+    </dialog>
+
+    <div id="toast" role="status" aria-live="polite"></div>
+
+    <script type="module" src="/app.js"></script>
+  </body>
+</html>

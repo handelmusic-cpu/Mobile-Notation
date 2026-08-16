@@ -1,0 +1,386 @@
+/* Dutdut Records — one stylesheet for the whole site.
+   No fonts, scripts or images are loaded from anywhere else, so the site works
+   offline, loads instantly, and has nothing to break when a CDN changes. */
+
+:root {
+  --bg: #0d0c10;
+  --bg-raised: #17161c;
+  --ink: #f2f0ee;
+  --muted: #a29fa8;
+  --line: #2b2933;
+  --accent: #ff5c39;
+  --accent-soft: #ffb199;
+  --max: 900px;
+  --radius: 14px;
+}
+
+/* The site is dark by design — a label sleeve, not a document. Readers who ask
+   for a light interface still get a usable one rather than an inverted mess. */
+@media (prefers-color-scheme: light) {
+  :root {
+    --bg: #faf8f6;
+    --bg-raised: #ffffff;
+    --ink: #17161c;
+    --muted: #5d5a63;
+    --line: #e3dfdb;
+    --accent: #c93d1c;
+    --accent-soft: #8a2d13;
+  }
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+  * {
+    animation: none !important;
+    transition: none !important;
+  }
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font: 16px/1.65 ui-sans-serif, system-ui, -apple-system, "Segoe UI", Helvetica, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+a {
+  color: var(--accent);
+}
+
+a:hover {
+  color: var(--accent-soft);
+}
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+  border-radius: 4px;
+}
+
+/* Keyboard users land here first; it stays out of the way until focused. */
+.skip {
+  position: absolute;
+  left: -9999px;
+  top: 0;
+  background: var(--accent);
+  color: #fff;
+  padding: 10px 16px;
+  z-index: 10;
+}
+
+.skip:focus {
+  left: 8px;
+  top: 8px;
+}
+
+.wrap {
+  max-width: var(--max);
+  margin: 0 auto;
+  padding: 0 20px;
+}
+
+/* ---- site chrome -------------------------------------------------------- */
+
+.site-head {
+  border-bottom: 1px solid var(--line);
+  position: sticky;
+  top: 0;
+  background: color-mix(in srgb, var(--bg) 92%, transparent);
+  backdrop-filter: blur(8px);
+  z-index: 5;
+}
+
+.site-head .wrap {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding-top: 14px;
+  padding-bottom: 14px;
+  flex-wrap: wrap;
+}
+
+.wordmark {
+  font-weight: 800;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  font-size: 13px;
+  text-decoration: none;
+  color: var(--ink);
+}
+
+.wordmark span {
+  color: var(--accent);
+}
+
+nav.top {
+  display: flex;
+  gap: 18px;
+  font-size: 14px;
+}
+
+nav.top a {
+  color: var(--muted);
+  text-decoration: none;
+}
+
+nav.top a:hover,
+nav.top a[aria-current="page"] {
+  color: var(--ink);
+}
+
+.site-foot {
+  border-top: 1px solid var(--line);
+  margin-top: 72px;
+  padding: 28px 0 48px;
+  color: var(--muted);
+  font-size: 14px;
+}
+
+.site-foot .wrap {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+/* ---- hero --------------------------------------------------------------- */
+
+.hero {
+  padding: 72px 0 8px;
+}
+
+.hero h1 {
+  font-size: clamp(38px, 9vw, 76px);
+  line-height: 1.02;
+  letter-spacing: -0.03em;
+  margin: 0 0 18px;
+}
+
+.hero p {
+  font-size: clamp(17px, 2.4vw, 20px);
+  color: var(--muted);
+  max-width: 46ch;
+  margin: 0;
+}
+
+.eyebrow {
+  font: 600 12px/1 ui-monospace, SFMono-Regular, Menlo, monospace;
+  letter-spacing: 0.24em;
+  text-transform: uppercase;
+  color: var(--accent);
+  margin: 0 0 18px;
+}
+
+/* ---- sections ----------------------------------------------------------- */
+
+section {
+  padding-top: 56px;
+}
+
+h2 {
+  font-size: 13px;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--muted);
+  border-bottom: 1px solid var(--line);
+  padding-bottom: 10px;
+  margin: 0 0 24px;
+}
+
+.cards {
+  display: grid;
+  gap: 16px;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.card {
+  background: var(--bg-raised);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 22px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  text-decoration: none;
+  color: inherit;
+  transition: border-color 0.15s ease, transform 0.15s ease;
+}
+
+a.card:hover {
+  border-color: var(--accent);
+  transform: translateY(-2px);
+}
+
+.card h3 {
+  margin: 0;
+  font-size: 22px;
+  letter-spacing: -0.01em;
+}
+
+.card p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 15px;
+}
+
+.card .go {
+  margin-top: auto;
+  padding-top: 12px;
+  font: 600 12px/1 ui-monospace, SFMono-Regular, Menlo, monospace;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+
+/* Each artist gets a mark built from their initial: no image files to manage,
+   and it still gives every card something to recognise at a glance. */
+.mark {
+  width: 52px;
+  height: 52px;
+  border-radius: 12px;
+  display: grid;
+  place-items: center;
+  font: 800 22px/1 ui-sans-serif, system-ui, sans-serif;
+  color: #0d0c10;
+  background: linear-gradient(135deg, var(--accent), var(--accent-soft));
+  margin-bottom: 6px;
+}
+
+.mark.b {
+  background: linear-gradient(135deg, #59c1ff, #9a7bff);
+}
+
+.mark.c {
+  background: linear-gradient(135deg, #6fe0a8, #d7e05a);
+}
+
+/* ---- artist pages ------------------------------------------------------- */
+
+.artist-head {
+  padding: 60px 0 0;
+  display: flex;
+  gap: 22px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.artist-head .mark {
+  width: 84px;
+  height: 84px;
+  font-size: 34px;
+  border-radius: 18px;
+  margin: 0;
+}
+
+.artist-head h1 {
+  margin: 0;
+  font-size: clamp(32px, 7vw, 56px);
+  letter-spacing: -0.03em;
+}
+
+.artist-head .tagline {
+  margin: 4px 0 0;
+  color: var(--muted);
+}
+
+.bio {
+  max-width: 62ch;
+}
+
+.bio p {
+  font-size: 17px;
+}
+
+ul.links {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+ul.links a {
+  display: inline-block;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 8px 16px;
+  text-decoration: none;
+  color: var(--ink);
+  font-size: 14px;
+  background: var(--bg-raised);
+}
+
+ul.links a:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+ol.releases {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  gap: 2px;
+}
+
+ol.releases li {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px 0;
+  border-bottom: 1px solid var(--line);
+  align-items: baseline;
+}
+
+ol.releases .title {
+  font-weight: 600;
+}
+
+ol.releases .meta {
+  color: var(--muted);
+  font: 13px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace;
+  white-space: nowrap;
+}
+
+.back {
+  display: inline-block;
+  margin-top: 40px;
+  font-size: 14px;
+  text-decoration: none;
+}
+
+/* ---- misc --------------------------------------------------------------- */
+
+.note {
+  color: var(--muted);
+  font-size: 15px;
+}
+
+.center {
+  text-align: center;
+  padding: 100px 0;
+}
+
+.center h1 {
+  font-size: clamp(40px, 12vw, 96px);
+  margin: 0 0 8px;
+  letter-spacing: -0.04em;
+}
