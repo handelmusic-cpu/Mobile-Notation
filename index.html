@@ -224,7 +224,7 @@ body { font-family:-apple-system,BlinkMacSystemFont,sans-serif; background:var(-
 /* Edit panel for selected note */
 
 /* Parts panel */
-#parts-list{display:flex;flex-direction:column;gap:4px;max-height:100px;overflow-y:auto;margin-bottom:5px;}
+#parts-list{display:flex;flex-direction:column;gap:4px;max-height:min(46vh,340px);overflow-y:auto;margin-bottom:5px;}
 .prow{display:flex;align-items:center;gap:5px;background:var(--bg);border-radius:7px;padding:5px 7px;border:1.5px solid var(--border);cursor:pointer;}
 .prow.ap{border-color:var(--info);background:var(--info-bg);}
 .pdot{width:7px;height:7px;border-radius:50%;background:var(--dot);flex-shrink:0;}
@@ -240,6 +240,13 @@ body { font-family:-apple-system,BlinkMacSystemFont,sans-serif; background:var(-
 .sr-only:focus-within{position:fixed;left:8px;top:8px;width:min(92vw,560px);height:auto;margin:0;
   clip:auto;clip-path:none;white-space:normal;padding:12px 14px;background:var(--surf4);color:var(--text);
   border:2px solid var(--accent);border-radius:10px;z-index:60;max-height:70vh;overflow:auto;font-size:13px;}
+/* Per-part fader. Sits on its own line under the row so the name still has
+   room on a phone, and dims when the part is muted. */
+.pvol{display:flex;align-items:center;gap:7px;padding:1px 6px 4px 10px;}
+.pvol.off{opacity:.45;}
+.pvol-icon{font-size:11px;flex:0 0 auto;}
+.pvol-val{font-size:10px;color:var(--muted4);min-width:34px;text-align:right;font-variant-numeric:tabular-nums;}
+.pvol-slider{flex:1;min-width:0;height:22px;accent-color:var(--accent);background:transparent;touch-action:pan-y;}
 .pmix{background:var(--bg);border:1.5px solid var(--border);color:var(--muted4);font-size:10px;font-weight:800;
   border-radius:5px;min-width:20px;height:20px;line-height:1;cursor:pointer;padding:0 4px;touch-action:manipulation;}
 .pmix.on{background:var(--accent);border-color:var(--accent);color:#fff;}

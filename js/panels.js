@@ -242,8 +242,13 @@ function renderPartsList(){
         b.onclick=e=>{ e.stopPropagation(); fn(); };
         return b;
       };
-      row.appendChild(mk('M',mutedParts.has(i),()=>toggleMute(i),'Mute this part'));
-      row.appendChild(mk('S',soloParts.has(i),()=>toggleSolo(i),'Play only the soloed parts'));
+      const m=mk('M',!!p.muted,()=>toggleMute(i),'Silence this part without changing a note of it');
+      m.setAttribute('aria-pressed',String(!!p.muted));
+      m.setAttribute('aria-label','Mute '+p.name);
+      const s=mk('S',isSoloed(i),()=>toggleSolo(i),'Play only the soloed parts');
+      s.setAttribute('aria-pressed',String(isSoloed(i)));
+      s.setAttribute('aria-label','Solo '+p.name);
+      row.appendChild(m); row.appendChild(s);
     }
     if(parts.length>1){
       const del=el('button','pdel','✕');
@@ -253,6 +258,29 @@ function renderPartsList(){
     }
     row.onclick=()=>{apIdx=i;selectedNote=null;caretGap=null;renderPartsList();render();updateSelectionUI();relabelNoteButtons();};
     ul.appendChild(row);
+    // A fader per part, on every row rather than only the active one —
+    // balancing a score means moving one part against another, which you
+    // cannot do if you have to select a part to reach its level.
+    if(parts.length>1){
+      const vr=document.createElement('div');
+      vr.className='pvol'+(p.muted?' off':'');
+      const sl=document.createElement('input');
+      sl.type='range'; sl.min='0'; sl.max='100'; sl.step='1';
+      sl.value=String(partVolume(p));
+      sl.className='pvol-slider';
+      sl.setAttribute('aria-label','Volume for '+p.name);
+      sl.setAttribute('aria-valuetext',partVolume(p)+' percent');
+      const val=el('span','pvol-val',partVolume(p)+'%');
+      val.id='pvol-val-'+i;
+      // `input` for the live drag, so the number tracks your thumb; the row's
+      // own click handler must not fire and steal the active part underneath.
+      sl.oninput=e=>{ e.stopPropagation(); setPartVolume(i,+e.target.value); sl.setAttribute('aria-valuetext',e.target.value+' percent'); };
+      sl.onclick=e=>e.stopPropagation();
+      vr.appendChild(el('span','pvol-icon',p.muted?'🔇':'🔊'));
+      vr.appendChild(sl);
+      vr.appendChild(val);
+      ul.appendChild(vr);
+    }
     // Transposition sits under the active part only — it is a per-part
     // property, but showing eight buttons against every row would bury the
     // list it belongs to.

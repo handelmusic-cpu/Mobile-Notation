@@ -185,7 +185,11 @@ function applyProject(d){
   // everything in them was entered at concert pitch — so a saved trumpet part
   // must keep sounding where it was written. Only parts created since then
   // inherit their instrument's default.
-  parts=(d.parts||[]).map(p=>({...p,hairpins:p.hairpins||[],transpose:p.transpose||0,notes:(p.notes||[]).map(normalizeNote)}));
+  parts=(d.parts||[]).map(p=>({...p,hairpins:p.hairpins||[],transpose:p.transpose||0,
+    volume:(p.volume==null?100:p.volume),muted:!!p.muted,notes:(p.notes||[]).map(normalizeNote)}));
+  // Solo is a listening gesture, not part of the song — never carry one in
+  // from a saved file, or a score reopens with most of it inexplicably silent.
+  soloParts=new Set();
   if(!parts.length) parts=[mkPart('Treble','piano','treble'),mkPart('Bass','piano','bass')];
   pid=d.pid||(Math.max(0,...parts.map(p=>p.id||0))+1);
   apIdx=Math.min(d.apIdx||0,parts.length-1);
@@ -503,6 +507,11 @@ function exportMIDI(){
     const nameB=Array.from(new TextEncoder().encode(part.name)).slice(0,64);
     evs.push({d:0,bytes:[0xFF,0x03,nameB.length,...nameB]});
     if(!perc) evs.push({d:0,bytes:[0xC0|ch,(inst.gm||0)&0x7F]});
+    // The mix travels with the file as channel volume (CC 7), so a score that
+    // was balanced here opens balanced in a DAW. Mute is deliberately not
+    // exported: it is a listening decision about this session, and the whole
+    // point of muting rather than deleting is that the part is still there.
+    evs.push({d:0,bytes:[0xB0|ch,7,Math.max(0,Math.min(127,Math.round(partVolume(part)/100*127)))]});
     let last=0;
     raw.forEach(e=>{ const d=e.tick-last; last=e.tick; evs.push({d,bytes:[(e.on?0x90:0x80)|ch, e.midi&0x7F, e.on?(e.vel||90):0]}); });
     tracks.push(buildTrack(evs));
