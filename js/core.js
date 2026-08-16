@@ -322,10 +322,14 @@ function togglePitchView(){ applyPitchView(pitchView==='written'?'concert':'writ
 // an odd instrument still describes itself.
 function transposeLabel(semis){
   if(!semis) return 'C (concert)';
-  const pc=((-semis)%12+12)%12;   // the pitch that sounds when the player reads C
+  // An instrument is named for the pitch that sounds when its player reads C,
+  // which is `semis` semitones *below* C — so this list is indexed by how far
+  // down, not by pitch class. Indexing it by pitch class named every
+  // instrument as its own inversion: a B♭ trumpet came out "D".
   const names=['C','B','B♭','A','A♭','G','G♭','F','E','E♭','D','D♭'];
+  const down=((semis%12)+12)%12;
   const oct=semis>=12?' (8vb)':semis<=-12?' (8va)':'';
-  return names[pc]+oct;
+  return names[down]+oct;
 }
 const TRANSPOSE_CHOICES=[
   {v:0,  label:'C'},
@@ -439,7 +443,7 @@ function keyChangeAt(mi){ return mi>0 && keyChanges[mi] && keyChanges[mi]!==keyA
 let pid=1;
 function mkPart(name,instId,clef){
   const inst=IMAP[instId];
-  return{id:pid++,name,instId,clef:clef||null,notes:[],hairpins:[],transpose:(inst&&inst.transpose)||0};
+  return{id:pid++,name,instId,clef:clef||null,notes:[],hairpins:[],transpose:(inst&&inst.transpose)||0,volume:100,muted:false};
 }
 let parts=[mkPart('Treble','piano','treble'), mkPart('Bass','piano','bass')];
 let apIdx=0;

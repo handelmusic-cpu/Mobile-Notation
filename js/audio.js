@@ -286,18 +286,48 @@ function quantizeSimpleGrid(events,unit,toBeat){
 // ═══════════════════════════════════════════════════════
 // Performance — turning the markings into sound
 // ═══════════════════════════════════════════════════════
-// Checking one line inside a full score is the first thing anyone wants from
-// multi-part playback. Solo wins over mute when both are set.
-let mutedParts=new Set(), soloParts=new Set();
+// The mix: how loud each part is, and which are silenced.
+//
+// Balance is a property of the song, so `volume` and `muted` live on the part
+// itself and are saved with it — a part muted while you work on another one is
+// still muted tomorrow, and nothing about it has been thrown away. They were
+// briefly held in a Set keyed by part *index*, which meant deleting a part
+// slid the mute onto its neighbour; the same trap the selection fell into.
+//
+// Solo is different: it is a "let me hear just this" gesture, not a decision
+// about the piece, so it stays for the session only. It is keyed by part id
+// rather than index, for the reason above.
+let soloParts=new Set();
 let loopPlayback=false;
-function partMuted(pi){ return soloParts.size?!soloParts.has(pi):mutedParts.has(pi); }
+const partVolume=p=>p&&p.volume!=null?Math.max(0,Math.min(100,p.volume)):100;
+// 0..1, applied to note velocity. Squared so the slider behaves the way a
+// fader should: halfway feels like half as loud, not 3dB down.
+function partGain(pi){
+  const v=partVolume(parts[pi])/100;
+  return v*v;
+}
+function partMuted(pi){
+  const p=parts[pi]; if(!p) return true;
+  if(soloParts.size) return !soloParts.has(p.id);
+  return !!p.muted || partVolume(p)===0;
+}
 function toggleMute(pi){
-  if(mutedParts.has(pi)) mutedParts.delete(pi); else mutedParts.add(pi);
-  renderPartsList();
+  const p=parts[pi]; if(!p) return;
+  p.muted=!p.muted;
+  renderPartsList(); scheduleAutosave();
 }
 function toggleSolo(pi){
-  if(soloParts.has(pi)) soloParts.delete(pi); else soloParts.add(pi);
+  const p=parts[pi]; if(!p) return;
+  if(soloParts.has(p.id)) soloParts.delete(p.id); else soloParts.add(p.id);
   renderPartsList();
+}
+function isSoloed(pi){ const p=parts[pi]; return !!(p&&soloParts.has(p.id)); }
+function setPartVolume(pi,v){
+  const p=parts[pi]; if(!p) return;
+  p.volume=Math.max(0,Math.min(100,Math.round(v)));
+  const lbl=document.getElementById('pvol-val-'+pi);
+  if(lbl) lbl.textContent=p.volume+'%';
+  scheduleAutosave();
 }
 function toggleLoop(){
   loopPlayback=!loopPlayback;
@@ -634,12 +664,16 @@ function toggleAudition(){
   auditionEnabled=!auditionEnabled;
   document.getElementById('audition-pill')?.classList.toggle('on',auditionEnabled);
 }
-async function auditionPreview(midiVals,instId){
+async function auditionPreview(midiVals,instId,partIdx){
   if(!auditionEnabled||!midiVals||!midiVals.length)return;
+  // Auditioning through the same mix as playback, so a part turned down stays
+  // turned down while you write into it.
+  const pi=(partIdx==null)?apIdx:partIdx;
+  if(partMuted(pi)) return;
   try{
     await Tone.start();
     const inst=IMAP[instId]||IMAP.piano;
-    const dur=0.35,vel=0.7,time=Tone.now();
+    const dur=0.35,vel=0.7*partGain(pi),time=Tone.now();
     if(inst.drumset){ midiVals.forEach(m=>drumsetHit(m,dur,time,vel)); return; }
     if(inst.unpitched||inst.pitchedDrum){
       const voice=getDrum(instId);
@@ -761,8 +795,13 @@ async function playScore(){
     };
     // Dynamics and hairpins are read per part, keyed by the note's own index
     // in the part, so tied pieces and repeats all report the same velocity.
-    const vels=velocityMap(part);
     if(partMuted(pi)) return;
+    // The part's fader multiplies into velocity rather than sitting on a gain
+    // node, because one sampler is shared by every part using that instrument —
+    // a node after it could not tell whose note it was carrying. With no
+    // velocity layers in these sample sets, the two are the same sound.
+    const gain=partGain(pi);
+    const vels=velocityMap(part).map(v=>Math.max(0,Math.min(1,v*gain)));
     let bt=0;
     playOrder.forEach(mi=>{
       const measureNotes=resolveMeasureNotes(allM[pi],mi);
