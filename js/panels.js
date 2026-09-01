@@ -142,6 +142,77 @@ function applyTheme(light){
   safeStore.set('mn_theme',light?'light':'dark');
 }
 function toggleTheme(){ applyTheme(!document.body.classList.contains('light')); }
+// ═══════════════════════════════════════════════════════
+// Notehead colour
+// ═══════════════════════════════════════════════════════
+const COLOR_MODES=[
+  {id:'off',    label:'Off',          hint:'Plain black noteheads.'},
+  {id:'boom',   label:'Boomwhackers', hint:'The colours printed on Boomwhacker tubes — C is always red, wherever the music goes. Match the note on the page to the tube in your hand.'},
+  {id:'degree', label:'Scale degree', hint:'The same colours, but red is the key you are in rather than C. Follows a key change mid-piece, so “red is home” stays true after a modulation.'},
+];
+function setNoteColorMode(mode){
+  if(!COLOR_MODES.some(m=>m.id===mode))mode='off';
+  noteColorMode=mode;
+  safeStore.set('mn_notecolor',mode);
+  syncNoteColorUI();
+  render();
+}
+function syncNoteColorUI(){
+  document.querySelectorAll('#color-mode-row .chip').forEach(b=>b.classList.toggle('on',b.dataset.mode===noteColorMode));
+  const hint=document.getElementById('color-hint');
+  if(hint)hint.textContent=(COLOR_MODES.find(m=>m.id===noteColorMode)||COLOR_MODES[0]).hint;
+  const legend=document.getElementById('color-legend');
+  if(legend)buildColorLegend(legend);
+  const lb=document.getElementById('letters-btn');
+  if(lb){ lb.classList.toggle('on',noteLetters); lb.setAttribute('aria-pressed',String(noteLetters)); }
+  const pill=document.getElementById('color-pill');
+  if(pill){
+    pill.classList.toggle('on',noteColorMode!=='off');
+    pill.textContent=noteColorMode==='off'?'🎨 Colour':(noteColorMode==='boom'?'🎨 Boomwhackers':'🎨 Degrees');
+  }
+}
+// The legend is the other half of the feature: a colour is only a teaching aid
+// once you can look up what it means.
+function buildColorLegend(host){
+  host.innerHTML='';
+  if(noteColorMode==='off'){ host.style.display='none'; return; }
+  host.style.display='flex';
+  if(noteColorMode==='boom'){
+    ['C','C♯','D','D♯','E','F','F♯','G','G♯','A','A♯','B'].forEach((name,pc)=>{
+      host.appendChild(swatch(BOOMWHACKER[pc],name));
+    });
+  }else{
+    const kd=KMAP[currentKeyId]||KEYS_DATA[0];
+    kd.scale.forEach(([n,a],i)=>{
+      host.appendChild(swatch(DEGREE_COLORS[i],(i+1)+'  '+n+(a==='#'?'♯':a==='b'?'♭':'')));
+    });
+    host.appendChild(swatch(OUT_OF_SCALE,'out'));
+  }
+}
+function swatch(color,label){
+  const w=el('span','cswatch');
+  const dot=el('span','cdot'); dot.style.background=color;
+  w.appendChild(dot); w.appendChild(el('span','clabel',label));
+  return w;
+}
+function toggleNoteLetters(){
+  noteLetters=!noteLetters;
+  safeStore.set('mn_noteletters',noteLetters?'1':'0');
+  syncNoteColorUI();
+  render();
+}
+function initNoteColor(){
+  const saved=safeStore.get('mn_notecolor');
+  noteColorMode=COLOR_MODES.some(m=>m.id===saved)?saved:'off';
+  noteLetters=safeStore.get('mn_noteletters')==='1';
+  syncNoteColorUI();
+}
+// Cycling from the toolbar pill: off -> Boomwhackers -> degree -> off.
+function cycleNoteColor(){
+  const i=COLOR_MODES.findIndex(m=>m.id===noteColorMode);
+  setNoteColorMode(COLOR_MODES[(i+1)%COLOR_MODES.length].id);
+}
+
 function initTheme(){
   const saved=safeStore.get('mn_theme');
   const prefersLight=window.matchMedia&&window.matchMedia('(prefers-color-scheme: light)').matches;

@@ -984,6 +984,89 @@ await run('picker', async () => {
   await p.context().close();
 });
 
+// ── 23. Notehead colour and letters ──────────────────────────────────────
+await run('notecolor', async () => {
+  const p = await boot(await page());
+  const r = await p.evaluate(async () => {
+    parts.length = 0; pid = 1; parts.push(mkPart('Scale', 'piano', 'treble')); apIdx = 0;
+    setKey('C'); setTimeSig('4/4'); keyChanges = {}; sigChanges = {}; pickupBeats = 0;
+    parts[0].notes = [60, 62, 64, 65, 67, 69, 71].map(m => { const sp = spellConcert(m);
+      return { keys: [sp.name + '/' + sp.oct], dur: 'q', vfAccs: [sp.vfAcc], midiVals: [m], rest: false,
+        lyric: null, dyn: null, arts: [], tempo: null, rud: null, grace: [], sticking: null }; });
+    selectedNote = null; caretGap = null;
+
+    const heads = () => [...document.querySelectorAll('#score-div svg g.vf-notehead')]
+      .map(e => e.getAttribute('fill')).filter(Boolean);
+
+    setNoteColorMode('off'); await new Promise(r => setTimeout(r, 250));
+    const offHeads = heads();
+
+    setNoteColorMode('boom'); await new Promise(r => setTimeout(r, 250));
+    const boomHeads = heads();
+
+    // Degree colouring has to move with the key; Boomwhackers must not.
+    keyChanges[0] = 'G';
+    const degreeTonicInG = (setNoteColorMode('degree'), noteheadColor('G/4', 0));
+    const degreeTonicInC = (keyChanges = {}, noteheadColor('C/4', 0));
+    setNoteColorMode('boom');
+    const boomGwhateverKey = [noteheadColor('G/4', 0), (keyChanges[0] = 'G', noteheadColor('G/4', 0))];
+    keyChanges = {};
+
+    // A selected note keeps the selection colour rather than its pitch colour,
+    // or "which note am I editing" stops being answerable.
+    setNoteColorMode('boom');
+    selectedNote = { partIdx: 0, noteIdx: 0 }; render(); updateSelectionUI();
+    await new Promise(r => setTimeout(r, 250));
+    const withSelection = heads();
+    selectedNote = null;
+
+    // Letters: drawn through the same context, so print gets them too.
+    noteLetters = true; setNoteColorMode('boom'); render();
+    await new Promise(r => setTimeout(r, 250));
+    const texts = [...document.querySelectorAll('#score-div svg text')]
+      .filter(t => /^[A-G]$/.test(t.textContent.trim()));
+    const letters = texts.map(t => t.textContent.trim());
+    const inks = texts.map(t => t.getAttribute('fill'));
+    // Every letter must sit on its own notehead, not beside it.
+    const headBoxes = [...document.querySelectorAll('#score-div svg g.vf-notehead')].map(h => h.getBBox());
+    const offCentre = texts.map((t, i) => {
+      const b = headBoxes[i]; if (!b) return 99;
+      return Math.max(Math.abs(+t.getAttribute('x') - (b.x + b.width / 2)),
+                      Math.abs(+t.getAttribute('y') - (b.y + b.height / 2)));
+    });
+
+    noteLetters = false; setNoteColorMode('off'); render();
+    return {
+      offHeads, boomHeads, degreeTonicInG, degreeTonicInC, boomGwhateverKey,
+      withSelection, letters, inks, offCentre,
+      expectBoom: [0, 2, 4, 5, 7, 9, 11].map(pc => BOOMWHACKER[pc]),
+      red: DEGREE_COLORS[0], selBlue: '#2980b9',
+      inkOnYellow: readableInk(BOOMWHACKER[4]), inkOnPurple: readableInk(BOOMWHACKER[9]),
+    };
+  });
+  ok('with colour off the noteheads carry no fill of their own', r.offHeads.length === 0,
+     JSON.stringify(r.offHeads));
+  ok('Boomwhackers paints each pitch its tube colour',
+     JSON.stringify(r.boomHeads) === JSON.stringify(r.expectBoom),
+     `${JSON.stringify(r.boomHeads)} vs ${JSON.stringify(r.expectBoom)}`);
+  ok('scale degree puts red on the tonic, whichever key that is',
+     r.degreeTonicInG === r.red && r.degreeTonicInC === r.red,
+     `G-in-G=${r.degreeTonicInG} C-in-C=${r.degreeTonicInC} red=${r.red}`);
+  ok('Boomwhackers ignores the key, which is the difference between the two',
+     r.boomGwhateverKey[0] === r.boomGwhateverKey[1], JSON.stringify(r.boomGwhateverKey));
+  ok('the selected note stays the selection colour, not its pitch colour',
+     r.withSelection[0] === undefined || r.withSelection[0] !== r.expectBoom[0],
+     `first head=${r.withSelection[0]}`);
+  ok('every notehead gets its letter', JSON.stringify(r.letters) === JSON.stringify(['C','D','E','F','G','A','B']),
+     JSON.stringify(r.letters));
+  ok('each letter is centred on its own notehead', r.offCentre.every(d => d < 1.5),
+     `worst offset ${Math.max(...r.offCentre).toFixed(2)}px`);
+  ok('the letter ink is chosen for contrast, not fixed',
+     r.inkOnYellow === '#000' && r.inkOnPurple === '#fff',
+     `yellow->${r.inkOnYellow} purple->${r.inkOnPurple}`);
+  await p.context().close();
+});
+
 console.log(`\n${pass} passed, ${fail} failed`);
 await browser.close();
 process.exit(fail ? 1 : 0);

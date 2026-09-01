@@ -709,6 +709,52 @@ function stopPlayhead(){
   if(ph) ph.style.display='none';
 }
 
+// The note's letter, printed inside its head. Drawn through VexFlow's own
+// render context rather than patched into the DOM afterwards, so the print and
+// PDF paths — which call drawVoice() too — get it without knowing about it.
+// Must run after voice.draw(), which is what gives the notes their geometry.
+function drawNoteLetters(ctx,vfNotes,noteData,part,mi){
+  if(!noteLetters)return;
+  vfNotes.forEach((vn,li)=>{
+    const n=noteData[li];
+    if(!n||n.rest||n.repeatBars||!vn)return;
+    let ys,x0,x1;
+    try{ ys=vn.getYs(); x0=vn.getNoteHeadBeginX(); x1=vn.getNoteHeadEndX(); }catch(e){ return; }
+    if(!ys||!ys.length||!isFinite(x0)||!isFinite(x1))return;
+    const disp=part?displayKeys(n,part,mi):{keys:n.keys};
+    const cx=(x0+x1)/2, w=Math.abs(x1-x0);
+    // VexFlow's setFont takes points, not pixels, so this reads ~1.33x larger
+    // than the number suggests. A notehead is about 12 wide and 10 tall, and
+    // the letter has to sit inside that with room to spare.
+    const size=Math.max(4,Math.min(6.5,w*0.45));
+    disp.keys.forEach((k,i)=>{
+      const y=ys[i]; if(y==null)return;
+      const letter=noteLetterOfKey(k); if(!letter)return;
+      // On a coloured head the ink has to contrast with that colour; on a
+      // plain black head the letter has to be white to be seen at all.
+      const head=noteheadColor(k,mi);
+      try{
+        ctx.save();
+        ctx.setFont('Arial',size,'bold');
+        ctx.setFillStyle(head?readableInk(head):'#fff');
+        ctx.fillText(letter,cx,y);
+        // measureText() on an SVG context is unreliable enough to visibly
+        // mis-centre a 7px letter, so centre it the way SVG itself can: anchor
+        // the text at the notehead's middle and let the renderer do the
+        // centring. The element just created is the context's last child.
+        const host=ctx.parent||ctx.svg;
+        const t=host&&host.lastElementChild;
+        if(t&&t.tagName==='text'){
+          t.setAttribute('text-anchor','middle');
+          t.setAttribute('dominant-baseline','central');
+          t.setAttribute('x',cx); t.setAttribute('y',y);
+          t.setAttribute('pointer-events','none');
+        }
+        ctx.restore();
+      }catch(e){}
+    });
+  });
+}
 function drawVoice(ctx,stave,noteData,mw,VF,partIdx,partOffset,clef,part,ts,mi){
   const{StaveNote,Voice,Formatter,Accidental,Beam,Annotation,Articulation,Dot,Tremolo,Ornament,GraceNote,GraceNoteGroup,RepeatNote,Tuplet}=VF;
   if(!noteData.length)return[];
@@ -730,6 +776,17 @@ function drawVoice(ctx,stave,noteData,mw,VF,partIdx,partOffset,clef,part,ts,mi){
       const sn=new StaveNote({keys:disp.keys,duration:stripTuplet(n.dur),clef});
       if(isSelected) sn.setStyle({fillStyle:'#2980b9',strokeStyle:'#2980b9'});
       else if(inCopyRange) sn.setStyle({fillStyle:'#27ae60',strokeStyle:'#27ae60'});
+      // Pitch colour goes on the noteheads alone, leaving stems and flags
+      // black — a coloured stem reads as a highlight, a coloured head reads as
+      // the note's identity, which is the whole point. Skipped while the note
+      // is selected or in a copy range so those keep saying what they mean;
+      // rests have no pitch to colour.
+      else if(noteColorMode!=='off'&&!n.rest){
+        disp.keys.forEach((k,i)=>{
+          const c=noteheadColor(k,mi);
+          if(c)try{sn.setKeyStyle(i,{fillStyle:c,strokeStyle:c});}catch(e){}
+        });
+      }
       const accs=disp.vfAccs||[];
       accs.forEach((acc,i)=>{if(acc)try{sn.addModifier(new Accidental(acc),i);}catch(e){};});
       if(n.dur.includes('d'))try{Dot.buildAndAttach([sn],{all:true});}catch(e){}
@@ -808,6 +865,7 @@ function drawVoice(ctx,stave,noteData,mw,VF,partIdx,partOffset,clef,part,ts,mi){
     const beamable=vfNotes.filter((_,i)=>{const b=decomposeDur(noteData[i].dur).base;return !noteData[i].rest&&['8','16','32'].includes(b);});
     const beams=beamable.length>=2?Beam.generateBeams(beamable):[];
     voice.draw(ctx,stave);
+    drawNoteLetters(ctx,vfNotes,noteData,part,mi);
     beams.forEach(b=>b.setContext(ctx).draw());
     tuplets.forEach(t=>{ try{ t.setContext(ctx).draw(); }catch(e){} });
     // Ties between the pieces of a split note. Drawn here, per measure, for

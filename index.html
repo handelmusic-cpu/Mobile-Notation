@@ -282,6 +282,10 @@ body { font-family:-apple-system,BlinkMacSystemFont,sans-serif; background:var(-
 .ipreview:active,.iadd:active{opacity:.6;}
 .iadd{font-size:19px;font-weight:700;}
 .iadd.on{color:var(--info-fg);}
+#color-legend{display:none;flex-wrap:wrap;gap:3px 8px;margin:5px 0 2px;}
+.cswatch{display:inline-flex;align-items:center;gap:4px;font-size:10px;color:var(--muted4);}
+.cdot{width:11px;height:11px;border-radius:50%;flex-shrink:0;border:1px solid rgba(0,0,0,.25);}
+.clabel{white-space:nowrap;}
 .iadd-bar{display:flex;align-items:center;gap:8px;}
 #inst-count{flex:1;font-size:12px;color:var(--muted2);font-weight:700;}
 #btn-add-confirm:disabled{background:var(--ctl);border-color:var(--border);color:var(--muted2);cursor:default;}
@@ -472,6 +476,7 @@ body { font-family:-apple-system,BlinkMacSystemFont,sans-serif; background:var(-
   <span class="pill" id="part-pill" onclick="switchTab('parts')" style="color:var(--gold);max-width:110px;overflow:hidden;text-overflow:ellipsis;" title="Instrument you're writing to — tap to switch">Treble · Piano</span>
   <span class="pill" id="key-pill" onclick="switchTab('score')">C</span>
   <span class="pill" id="pitch-pill" onclick="togglePitchView()" title="Written pitch shows each part as its player reads it; concert pitch shows the score as it sounds">Written</span>
+  <span class="pill" id="color-pill" onclick="cycleNoteColor()" title="Colour the noteheads by pitch, to learn the staff — tap to cycle off, Boomwhackers, scale degree">🎨 Colour</span>
   <span class="pill on" id="audition-pill" onclick="toggleAudition()" title="Hear each note as you enter or edit it">🔊 Audition</span>
   <span class="pill" id="midi-pill">No MIDI</span>
   <span class="pill" id="voice-pill" aria-live="polite" style="display:none"></span>
@@ -706,6 +711,18 @@ body { font-family:-apple-system,BlinkMacSystemFont,sans-serif; background:var(-
     <button class="chip" onclick="addMeasureRepeat(4)" style="font-size:11px">%%%% Repeat Last 4</button>
   </div>
   <div class="hint">Adds a repeat-previous-measure(s) symbol to the active part, in place of writing it out again. Only works right at the start of a new measure.</div>
+  <div class="sec">Note colours — learning the staff</div>
+  <div class="row" id="color-mode-row">
+    <button class="chip on" data-mode="off"    onclick="setNoteColorMode('off')"    style="font-size:11px">Off</button>
+    <button class="chip"    data-mode="boom"   onclick="setNoteColorMode('boom')"   style="font-size:11px">Boomwhackers</button>
+    <button class="chip"    data-mode="degree" onclick="setNoteColorMode('degree')" style="font-size:11px">Scale degree</button>
+  </div>
+  <div class="row" style="margin-top:4px">
+    <button class="chip" id="letters-btn" onclick="toggleNoteLetters()" style="font-size:11px" aria-pressed="false">Ⓒ Letters in noteheads</button>
+  </div>
+  <div id="color-legend" role="list" aria-label="What each note colour means"></div>
+  <div class="hint" id="color-hint"></div>
+  <div class="hint">Letters work with or without colour — and they are the version that still reads if you cannot tell the red from the green.</div>
 </div>
 
 <!-- Files / projects panel -->

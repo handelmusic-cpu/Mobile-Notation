@@ -190,6 +190,94 @@ const INST_ALIASES = {
 };
 
 // ═══════════════════════════════════════════════════════
+// Notehead colour — learning the staff by sight
+// ═══════════════════════════════════════════════════════
+// The Boomwhackers tube colours, in semitone order from C. These are the ones
+// printed on the physical tubes a classroom already owns, so a child matches
+// the note on the page to the tube in their hand without reading the staff at
+// all. Deliberately the real published set rather than an evenly spaced
+// rainbow — the point is that they match the plastic.
+const BOOMWHACKER = [
+  '#e21c48', // C   red
+  '#f04e23', // C#  red-orange
+  '#f68f1e', // D   orange
+  '#ffce00', // D#  amber
+  '#e7e51a', // E   yellow
+  '#a0c93b', // F   yellow-green
+  '#00a550', // F#  green
+  '#00aaad', // G   teal
+  '#1b75bb', // G#  blue
+  '#6b52a2', // A   purple
+  '#92278f', // A#  violet
+  '#c6168d', // B   magenta
+];
+// Scale-degree colouring reuses the seven *diatonic* Boomwhacker colours, but
+// anchors red on the tonic instead of on C. So a learner who knows "red is
+// home" keeps that after a modulation, where absolute colouring would move the
+// tonic to a different colour and teach the wrong lesson. Notes outside the
+// scale stay grey, which is itself the information: this one is borrowed.
+const DEGREE_COLORS = ['#e21c48','#f68f1e','#e7e51a','#a0c93b','#00aaad','#6b52a2','#c6168d'];
+const OUT_OF_SCALE = '#8a8a99';
+
+const PC_OF_LETTER = {c:0,d:2,e:4,f:5,g:7,a:9,b:11};
+// A VexFlow key looks like 'c#/4' or 'bb/3' — the spelling always carries its
+// own accidental, so this needs no key signature to be right.
+function pitchClassOfKey(k){
+  const m=/^([a-gA-G])(#{1,2}|b{1,2})?\//.exec(String(k||''));
+  if(!m)return null;
+  let pc=PC_OF_LETTER[m[1].toLowerCase()];
+  if(pc==null)return null;
+  const acc=m[2]||'';
+  if(acc[0]==='#')pc+=acc.length; else if(acc[0]==='b')pc-=acc.length;
+  return ((pc%12)+12)%12;
+}
+// 'off' | 'boom' | 'degree'. A view preference like zoom and pitch view, so it
+// is stored per device rather than baked into the song — someone else opening
+// the file should see it in their own setting, not the author's.
+let noteColorMode='off';
+// The colour a notehead should be drawn in, or null to leave it black. `mi` is
+// the measure, so degree colouring can follow a mid-piece key change.
+function noteheadColor(k,mi){
+  if(noteColorMode==='off')return null;
+  const pc=pitchClassOfKey(k);
+  if(pc==null)return null;
+  if(noteColorMode==='boom')return BOOMWHACKER[pc];
+  // Degree: measure the note against the tonic of whatever key is in force
+  // here, then colour by which scale degree it lands on.
+  const kd=KMAP[keyAt(mi||0)]||KEYS_DATA[0];
+  const tonicPc=pitchClassOfKey((kd.scale[0][0]+(kd.scale[0][1]||''))+'/4');
+  if(tonicPc==null)return null;
+  const scalePcs=kd.scale.map(([n,a])=>pitchClassOfKey(n+(a||'')+'/4'));
+  const deg=scalePcs.indexOf(pc);
+  return deg>=0?DEGREE_COLORS[deg]:OUT_OF_SCALE;
+}
+// The letter a learner would say out loud, for printing inside the notehead.
+function noteLetterOfKey(k){
+  const m=/^([a-gA-G])/.exec(String(k||''));
+  return m?m[1].toUpperCase():'';
+}
+// Letters inside the noteheads, independent of colour. Colour alone is a poor
+// channel — roughly one boy in twelve cannot separate the red from the green
+// in the Boomwhacker set — so the letter carries the same information without
+// relying on hue at all, and helps every beginner besides.
+let noteLetters=false;
+// Black or white, whichever the eye can actually read on that head. Uses the
+// WCAG relative-luminance formula rather than a naive average, because a
+// saturated yellow and a saturated blue of the same average are nowhere near
+// equally bright.
+function readableInk(hex){
+  const m=/^#?([0-9a-f]{6})$/i.exec(String(hex||''));
+  if(!m)return '#fff';
+  const v=parseInt(m[1],16);
+  const lin=c=>{c/=255;return c<=0.03928?c/12.92:Math.pow((c+.055)/1.055,2.4);};
+  const L=.2126*lin((v>>16)&255)+.7152*lin((v>>8)&255)+.0722*lin(v&255);
+  // Black and white contrast equally at L = sqrt(1.05*0.05) - 0.05; above that
+  // black wins, below it white does. Eyeballing the threshold instead puts
+  // white on the orange tube at 2.4:1 where black would have given 8.8:1.
+  return L>0.1791?'#000':'#fff';
+}
+
+// ═══════════════════════════════════════════════════════
 // Key / Scale data
 // ═══════════════════════════════════════════════════════
 const KEYS_DATA = [
