@@ -126,6 +126,11 @@ const INSTRUMENTS = [
   {id:'viola',   label:'Viola',       cat:'Strings',   clef:'alto',       osc:'sawtooth4', env:{a:.12,d:.05,s:1,r:.5},  vol:-8, gm:41, defaultOct:4},
   {id:'cello',   label:'Cello',       cat:'Strings',   clef:'bass',       osc:'sawtooth4', env:{a:.14,d:.05,s:1,r:.6},  vol:-8, gm:42, defaultOct:3},
   {id:'dbass',   label:'Dbl Bass',    cat:'Strings',   clef:'bass',       osc:'sawtooth2', env:{a:.15,d:.1,s:.9,r:.7},  vol:-6, gm:43, defaultOct:2, transpose:12},
+  {id:'guitar',  label:'Acoustic Guitar',cat:'Plucked Strings',clef:'treble', osc:'triangle4', env:{a:.005,d:.6,s:0,r:.3},  vol:-6, gm:24, defaultOct:4, transpose:12},
+  {id:'nylon',   label:'Classical Guitar',cat:'Plucked Strings',clef:'treble',osc:'triangle',  env:{a:.008,d:.7,s:0,r:.35}, vol:-6, gm:24, defaultOct:4, transpose:12},
+  {id:'ukulele', label:'Ukulele',     cat:'Plucked Strings',clef:'treble',    osc:'triangle4', env:{a:.003,d:.35,s:0,r:.15}, vol:-8, gm:24, defaultOct:5},
+  {id:'ebass',   label:'Electric Bass',cat:'Plucked Strings',clef:'bass',     osc:'sine2',     env:{a:.005,d:.5,s:.2,r:.2},  vol:-4, gm:33, defaultOct:2, transpose:12},
+  {id:'harp',    label:'Harp',        cat:'Plucked Strings',clef:'treble',    osc:'triangle8', env:{a:.004,d:1.2,s:0,r:.6},  vol:-8, gm:46, defaultOct:4},
   {id:'flute',   label:'Flute',       cat:'Woodwinds', clef:'treble',     osc:'sine',      env:{a:.06,d:.05,s:.9,r:.4}, vol:-10, gm:73, defaultOct:5},
   {id:'oboe',    label:'Oboe',        cat:'Woodwinds', clef:'treble',     osc:'sawtooth8', env:{a:.04,d:.1,s:.85,r:.3}, vol:-10, gm:68, defaultOct:4},
   {id:'clarinet',label:'Clarinet',    cat:'Woodwinds', clef:'treble',     osc:'square',    env:{a:.04,d:.05,s:.85,r:.35},vol:-10, gm:71, defaultOct:4, transpose:2},
@@ -142,17 +147,47 @@ const INSTRUMENTS = [
   {id:'tenorv',  label:'Tenor',       cat:'Vocal',     clef:'treble',     osc:'triangle',  env:{a:.08,d:.1,s:.85,r:.7}, vol:-8, gm:53, defaultOct:3},
   {id:'baritonev',label:'Baritone',   cat:'Vocal',     clef:'bass',       osc:'triangle',  env:{a:.09,d:.1,s:.85,r:.8}, vol:-8, gm:53, defaultOct:3},
   {id:'bassv',   label:'Bass Voice',  cat:'Vocal',     clef:'bass',       osc:'triangle',  env:{a:.1,d:.1,s:.85,r:.8},  vol:-8, gm:53, defaultOct:2},
-  {id:'timpani', label:'Timpani',     cat:'Percussion',clef:'bass',       osc:'membrane',  env:{a:.001,d:.5,s:0,r:.5},  vol:-4, gm:47, defaultOct:3},
-  {id:'xyloph',  label:'Xylophone',   cat:'Percussion',clef:'treble',     osc:'fm',        env:{a:.001,d:.3,s:0,r:.1},  vol:-8, gm:13, defaultOct:5, transpose:-12},
-  {id:'marimba', label:'Marimba',     cat:'Percussion',clef:'treble',     osc:'fm',        env:{a:.001,d:.6,s:0,r:.2},  vol:-6, gm:12, defaultOct:4},
+  {id:'timpani', label:'Timpani',     cat:'Pitched Percussion',clef:'bass',       osc:'membrane',  env:{a:.001,d:.5,s:0,r:.5},  vol:-4, gm:47, defaultOct:3},
+  {id:'xyloph',  label:'Xylophone',   cat:'Pitched Percussion',clef:'treble',     osc:'fm',        env:{a:.001,d:.3,s:0,r:.1},  vol:-8, gm:13, defaultOct:5, transpose:-12},
+  {id:'marimba', label:'Marimba',     cat:'Pitched Percussion',clef:'treble',     osc:'fm',        env:{a:.001,d:.6,s:0,r:.2},  vol:-6, gm:12, defaultOct:4},
   {id:'snare',   label:'Snare',       cat:'Percussion',clef:'percussion', osc:'noise',     env:{a:.001,d:.2,s:0,r:.1},  vol:-6, unpitched:true, gm:0, staffLines:1, defaultOct:4},
   {id:'bassdrum',label:'Bass Drum',   cat:'Percussion',clef:'percussion', osc:'membrane',  env:{a:.001,d:.4,s:0,r:.2},  vol:-4, unpitched:true, gm:0, staffLines:1, defaultOct:4},
   {id:'tenordrum',label:'Tenor Drum', cat:'Percussion',clef:'percussion', osc:'membrane',  env:{a:.001,d:.35,s:0,r:.15},vol:-4, pitchedDrum:true, gm:0, defaultOct:4},
   {id:'marchbass',label:'Marching Bass',cat:'Percussion',clef:'percussion', osc:'membrane',env:{a:.001,d:.5,s:0,r:.2},  vol:-4, pitchedDrum:true, gm:0, defaultOct:3},
   {id:'drumset', label:'Drum Set',    cat:'Percussion',clef:'percussion', osc:'membrane',  env:{a:.001,d:.3,s:0,r:.2},  vol:-4, drumset:true, gm:0, defaultOct:4},
+  // Fun voices, built from the same oscillator/envelope engine as everything
+  // else — no samples to download, so they work offline like the rest.
+  // synthOnly keeps them out of getSampler()'s sample path, whose fallback for
+  // an unmapped instrument is the piano set — without it, every one of these
+  // would sound like a piano, which is exactly what they exist not to be.
+  {id:'musicbox',label:'Music Box',   cat:'Special',   clef:'treble',     osc:'fm',        env:{a:.001,d:1.1,s:0,r:.5},  vol:-8, gm:10, defaultOct:5, synthOnly:true},
+  {id:'retro',   label:'Retro Game',  cat:'Special',   clef:'treble',     osc:'square',    env:{a:.004,d:0,s:1,r:.02},   vol:-14, gm:80, defaultOct:5, synthOnly:true},
+  {id:'kazoo',   label:'Kazoo',       cat:'Special',   clef:'treble',     osc:'sawtooth8', env:{a:.02,d:.05,s:.9,r:.1},  vol:-14, gm:79, defaultOct:4, synthOnly:true},
+  {id:'theremin',label:'Theremin',    cat:'Special',   clef:'treble',     osc:'sine',      env:{a:.25,d:0,s:1,r:.4},     vol:-10, gm:85, defaultOct:5, synthOnly:true},
 ];
 const IMAP = Object.fromEntries(INSTRUMENTS.map(i=>[i.id,i]));
 const CATS  = [...new Set(INSTRUMENTS.map(i=>i.cat))];
+// One glyph per family, so a collapsed picker is scannable without reading
+// every heading. Purely decorative — the heading text carries the meaning,
+// and the icon is hidden from screen readers.
+const CAT_ICON = {
+  'Keyboard':'\u{1F3B9}', 'Strings':'\u{1F3BB}', 'Plucked Strings':'\u{1F3B8}',
+  'Woodwinds':'\u{1F3B7}', 'Brass':'\u{1F3BA}', 'Vocal':'\u{1F3A4}',
+  'Pitched Percussion':'\u{1F514}', 'Percussion':'\u{1F941}', 'Special':'\u2728',
+};
+// Words that should find an instrument even though they are not in its label —
+// what someone would actually type into the search box.
+const INST_ALIASES = {
+  guitar:'acoustic steel string', nylon:'spanish classical guitar', ukulele:'uke',
+  ebass:'electric bass guitar', harp:'concert harp',
+  dbass:'double contrabass upright', sax:'alto saxophone', tsax:'tenor saxophone',
+  harpsi:'harpsichord cembalo', horn:'french horn', xyloph:'xylophone mallets',
+  marimba:'mallets', timpani:'kettle drums', bassv:'bass voice',
+  altov:'alto voice', tenorv:'tenor voice',
+  drumset:'drum kit trap set', marchbass:'marching bass drums',
+  musicbox:'toy chime', retro:'8-bit chiptune video game arcade',
+  kazoo:'buzzer', theremin:'sci-fi space wobble',
+};
 
 // ═══════════════════════════════════════════════════════
 // Key / Scale data
@@ -456,7 +491,9 @@ let hairpinPending=null;
 let chordBuildMode=false;
 let chord7Mode=false;
 let pendingChordNotes=[];
-let newInstId=null;
+// The instruments ticked in the picker but not yet added — the picker adds a
+// whole section in one pass, so this is a set of ids rather than one id.
+let pickedInsts=new Set();
 
 let notePositions=[];
 let selectedNote=null;

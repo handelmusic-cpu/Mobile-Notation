@@ -898,6 +898,92 @@ await run('mixer-audio', async () => {
   await p.context().close();
 });
 
+// ── 22. The instrument picker ────────────────────────────────────────────
+await run('picker', async () => {
+  const p = await boot(await page());
+  const r = await p.evaluate(async () => {
+    switchTab('parts');
+    // Every family opened, so the whole catalogue is on the page at once.
+    openFamilies = new Set(CATS); instQuery = ''; pickedInsts.clear();
+    buildInstrumentPicker();
+    const listed = [...document.querySelectorAll('.iname')].map(e => e.textContent);
+
+    // Search by a word that is not in the label.
+    searchInstruments('chiptune');
+    const byAlias = [...document.querySelectorAll('.iname')].map(e => e.textContent);
+    searchInstruments('nothinghere');
+    const empty = document.querySelectorAll('.irow').length;
+    searchInstruments('');
+
+    // Tick three from two different families, then add them in one pass.
+    parts.length = 0; pid = 1; parts.push(mkPart('Piano', 'piano', 'treble')); apIdx = 0;
+    pickedInsts.clear();
+    ['ukulele', 'guitar', 'musicbox'].forEach(toggleInstPick);
+    const footer = document.getElementById('inst-count').textContent;
+    confirmAddPart();
+    const added = parts.map(x => `${x.instId}:${x.clef}:${x.transpose}`);
+
+    // Preview has to survive every instrument shape — sampled, synth-only,
+    // unpitched, pitched drum and the drum set all take different paths.
+    let threw = null;
+    for (const inst of INSTRUMENTS) {
+      try { await previewInstrument(inst.id); } catch (e) { threw = inst.id + ': ' + e.message; break; }
+    }
+
+    // Preview voices are the same cached objects playback uses, so previewing
+    // mid-playback would release a note the transport is still holding.
+    let sounded = 0;
+    const spy = Tone.PolySynth.prototype.triggerAttackRelease;
+    Tone.PolySynth.prototype.triggerAttackRelease = function (...a) { sounded++; try { return spy.apply(this, a); } catch (e) { return this; } };
+    playing = true;
+    await previewInstrument('musicbox');
+    const duringPlayback = sounded;
+    playing = false;
+    await previewInstrument('musicbox');
+    const whenIdle = sounded - duringPlayback;
+    Tone.PolySynth.prototype.triggerAttackRelease = spy;
+
+    // getSampler()'s fallback for an unmapped instrument is the piano sample
+    // set, so a synthesised instrument that reached it would sound like a
+    // piano — and share one cached voice with every other one.
+    const synthy = INSTRUMENTS.filter(i => i.synthOnly).map(i => i.id);
+    const voices = synthy.map(id => getSampler(id));
+    const pianoish = synthy.filter((id, i) => voices[i].sampleKey !== undefined);
+    const shared = new Set(voices).size !== voices.length;
+
+    return {
+      listed, byAlias, empty, footer, added, threw, duringPlayback, whenIdle,
+      synthy: synthy.length, pianoish, shared,
+      total: INSTRUMENTS.length,
+      // An instrument whose cat is a typo would render in no family at all.
+      orphans: INSTRUMENTS.filter(i => !CATS.includes(i.cat)).map(i => i.id),
+      picked: pickedInsts.size,
+      expanded: document.querySelector('.ifam-head')?.getAttribute('aria-expanded'),
+      labelled: [...document.querySelectorAll('.ipreview, .iadd')].every(b => b.getAttribute('aria-label')),
+    };
+  });
+  ok('every instrument is reachable in a family', r.listed.length === r.total && r.orphans.length === 0,
+     `${r.listed.length} of ${r.total} listed, orphans: ${JSON.stringify(r.orphans)}`);
+  ok('search matches words that are not in the label', r.byAlias.length === 1 && r.byAlias[0] === 'Retro Game',
+     JSON.stringify(r.byAlias));
+  ok('a search with no match lists nothing', r.empty === 0, `${r.empty} rows`);
+  ok('the footer counts what is ticked', r.footer === '3 selected', `"${r.footer}"`);
+  ok('one Add adds every ticked instrument, in catalogue order',
+     r.added.length === 4 && r.added[1] === 'guitar:treble:12' && r.added[2] === 'ukulele:treble:0'
+     && r.added[3] === 'musicbox:treble:0', JSON.stringify(r.added));
+  ok('adding clears the selection for the next pass', r.picked === 0, `${r.picked} still ticked`);
+  ok('preview handles every instrument shape without throwing', r.threw === null, r.threw || '');
+  ok('a synthesised instrument never falls back to the piano sample set',
+     r.synthy > 0 && r.pianoish.length === 0 && r.shared === false,
+     `${r.synthy} synth-only, on the sample path: ${JSON.stringify(r.pianoish)}, sharing a voice: ${r.shared}`);
+  ok('preview stays silent during playback, and sounds when idle',
+     r.duringPlayback === 0 && r.whenIdle > 0,
+     `playing=${r.duringPlayback} idle=${r.whenIdle}`);
+  ok('families say whether they are open, and the buttons are named',
+     r.expanded === 'true' && r.labelled === true, `expanded=${r.expanded} labelled=${r.labelled}`);
+  await p.context().close();
+});
+
 console.log(`\n${pass} passed, ${fail} failed`);
 await browser.close();
 process.exit(fail ? 1 : 0);

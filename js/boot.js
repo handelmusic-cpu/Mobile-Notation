@@ -52,7 +52,7 @@ const TOUR=[
   {tab:'notes', sel:'#dur-row', title:'Note length & octave', text:'Pick whole, half, quarter, 8th, 16th, 32nd — and the dot for dotted rhythms. With a note selected, tapping a length changes that note. “Nudge” shifts a note up or down an octave.'},
   {tab:'notes', sel:'#acc-row', title:'Sharps & flats', text:'“Key” follows the key signature automatically; ♯ ♭ ♮ force an accidental on the notes you enter.'},
   {tab:'markings', sel:'#panel-markings', title:'Markings', text:'Lyrics, dynamics (p, f, cresc.), articulations (accent, staccato), tempo words, and drumline rudiments (rolls, flams, stickings). They apply to a selected note, or attach to your next note.'},
-  {tab:'parts', sel:'#panel-parts', title:'Instruments & parts', text:'Each staff is a part — tap one to make it active for writing. Add instruments: strings, brass, voices, and percussion including single-line snare/bass drum, 5-line marching tenors & basses, and a 5-line drum set.'},
+  {tab:'parts', sel:'#panel-parts', title:'Instruments & parts', text:'Each staff is a part — tap one to make it active for writing. To add more, open a family below, tap ▷ to hear an instrument, and tick as many as you want before hitting Add — or just search for one by name. Forty instruments: strings and guitars, brass, voices, mallets, drumline and drum set, plus a Special family for music box, kazoo and 8-bit.'},
   {tab:'score', sel:'#panel-score', title:'Key, time & repeats', text:'Set the key and time signature, and add repeats — repeat barlines and “repeat previous measure” (%) symbols that actually play back.'},
   {tab:'notes', sel:'#chord-palette', title:'Chords', text:'Tap a chord to drop the whole thing in at once. “7th” adds the seventh; “Build” lets you stack a custom chord note by note.'},
   {tab:'notes', sel:'#copy-toggle-btn', title:'Copy & paste', text:'Tap the scissors, then tap the first and last note of a range, Copy, switch to another part, and Paste — it replaces the music at the paste point. Great for repeating sections across staves.'},
@@ -197,6 +197,7 @@ setAcc('key');clearArts();setDyn(null);setTempo(null);
 refreshDurIcons();
 relabelNoteButtons();
 renderDiatonicChords();
+buildInstrumentPicker();
 initProjects();
 applyKeyHue();   // initProjects() may have loaded a song in another key
 applyAriaLabels();

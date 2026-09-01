@@ -167,39 +167,116 @@ function setTimeSig(sig){
 // ═══════════════════════════════════════════════════════
 // Parts panel
 // ═══════════════════════════════════════════════════════
-(function initCatGrid(){
-  const cg=document.getElementById('cat-grid');
-  CATS.forEach(cat=>{
-    const b=document.createElement('button');
-    b.className='chip'; b.textContent=cat; b.dataset.cat=cat;
-    b.onclick=()=>selectCat(cat);
-    cg.appendChild(b);
-  });
-})();
+// The picker is one scrolling list of collapsible families rather than a
+// category row that swaps a second row underneath it: you can see everything
+// on offer by scrolling, hear anything before committing to it, and tick a
+// whole section (say four saxes) to add in one pass.
+let openFamilies=new Set(['Keyboard']);
+let instQuery='';
 
-function selectCat(cat){
-  document.querySelectorAll('#cat-grid .chip').forEach(b=>b.classList.toggle('on',b.dataset.cat===cat));
-  const ig=document.getElementById('inst-grid');
-  ig.innerHTML=''; newInstId=null;
-  document.getElementById('btn-add-confirm').style.display='none';
-  INSTRUMENTS.filter(i=>i.cat===cat).forEach(inst=>{
-    const b=document.createElement('button');
-    b.className='chip'; b.textContent=inst.label; b.dataset.id=inst.id;
-    b.onclick=()=>{newInstId=inst.id;document.querySelectorAll('#inst-grid .chip').forEach(x=>x.classList.toggle('on',x.dataset.id===inst.id));document.getElementById('btn-add-confirm').style.display='inline-flex';};
-    ig.appendChild(b);
+function buildInstrumentPicker(){
+  const host=document.getElementById('inst-picker');
+  if(!host)return;
+  host.innerHTML='';
+  const q=instQuery.trim().toLowerCase();
+  // Searching flattens the accordion — with a query typed, hiding matches
+  // behind a collapsed heading is the opposite of what was asked for.
+  const matches=inst=>!q||(inst.label+' '+inst.cat+' '+(INST_ALIASES[inst.id]||'')).toLowerCase().includes(q);
+  let shown=0;
+
+  CATS.forEach(cat=>{
+    const insts=INSTRUMENTS.filter(i=>i.cat===cat&&matches(i));
+    if(!insts.length)return;
+    shown+=insts.length;
+    const open=q?true:openFamilies.has(cat);
+
+    const fam=el('div','ifam');
+    const head=el('button','ifam-head');
+    head.type='button';
+    head.setAttribute('aria-expanded',String(open));
+    const icon=el('span','ifam-icon',CAT_ICON[cat]||'');
+    icon.setAttribute('aria-hidden','true');
+    head.appendChild(icon);
+    head.appendChild(el('span','ifam-name',cat));
+    head.appendChild(el('span','ifam-count',String(insts.length)));
+    const chev=el('span','ifam-chev',open?'▴':'▾');
+    chev.setAttribute('aria-hidden','true');
+    head.appendChild(chev);
+    // A query is showing every match already; collapsing one out from under
+    // the search would just hide a result the user is looking at.
+    head.onclick=()=>{ if(q)return; openFamilies.has(cat)?openFamilies.delete(cat):openFamilies.add(cat); buildInstrumentPicker(); };
+    fam.appendChild(head);
+
+    if(open){
+      const body=el('div','ifam-body');
+      insts.forEach(inst=>{
+        const row=el('div','irow'+(pickedInsts.has(inst.id)?' picked':''));
+
+        const prev=el('button','ipreview','▷');
+        prev.type='button';
+        prev.title='Hear '+inst.label;
+        prev.setAttribute('aria-label','Hear '+inst.label);
+        prev.onclick=e=>{ e.stopPropagation(); previewInstrument(inst.id); };
+        row.appendChild(prev);
+
+        row.appendChild(el('span','iname',inst.label));
+
+        const picked=pickedInsts.has(inst.id);
+        const add=el('button','iadd'+(picked?' on':''),picked?'✓':'+');
+        add.type='button';
+        add.setAttribute('aria-pressed',String(picked));
+        add.setAttribute('aria-label',(picked?'Remove ':'Add ')+inst.label+' to the parts to be added');
+        add.onclick=e=>{ e.stopPropagation(); toggleInstPick(inst.id); };
+        row.appendChild(add);
+
+        row.onclick=()=>toggleInstPick(inst.id);
+        body.appendChild(row);
+      });
+      fam.appendChild(body);
+    }
+    host.appendChild(fam);
   });
+
+  if(!shown) host.appendChild(el('div','hint','No instrument matches “'+instQuery.trim()+'”.'));
+  syncAddFooter();
 }
+
+function toggleInstPick(id){
+  pickedInsts.has(id)?pickedInsts.delete(id):pickedInsts.add(id);
+  buildInstrumentPicker();
+}
+
+function searchInstruments(v){
+  instQuery=v||'';
+  buildInstrumentPicker();
+}
+
+function syncAddFooter(){
+  const n=pickedInsts.size;
+  const count=document.getElementById('inst-count');
+  const btn=document.getElementById('btn-add-confirm');
+  if(count) count.textContent=n===0?'None selected':(n===1?'1 selected':n+' selected');
+  if(btn){
+    btn.disabled=n===0;
+    btn.textContent=n>1?('+ Add '+n+' Parts'):'+ Add Part';
+  }
+}
+
+// Adds every ticked instrument, in the order the picker lists them, and makes
+// the last one active — the same end state as adding them one at a time.
 function confirmAddPart(){
-  if(!newInstId)return;
-  const inst=IMAP[newInstId];
-  parts.push(mkPart(inst.label,newInstId,inst.clef||'treble'));
+  if(!pickedInsts.size)return;
+  INSTRUMENTS.filter(i=>pickedInsts.has(i.id)).forEach(inst=>{
+    parts.push(mkPart(inst.label,inst.id,inst.clef||'treble'));
+  });
   apIdx=parts.length-1;
-  newInstId=null;
-  document.querySelectorAll('#cat-grid .chip').forEach(b=>b.classList.remove('on'));
-  document.getElementById('inst-grid').innerHTML='';
-  document.getElementById('btn-add-confirm').style.display='none';
-  renderPartsList(); render();
+  pickedInsts.clear();
+  // A stale selection would still hold the *old* active part's note index.
+  selectedNote=null; caretGap=null;
+  buildInstrumentPicker();
+  renderPartsList(); render(); updateSelectionUI(); relabelNoteButtons();
 }
+
 function deletePart(i){
   if(parts.length<=1)return;
   parts.splice(i,1);

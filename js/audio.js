@@ -523,7 +523,12 @@ const INST_SAMPLE={
   flute:'flute', oboe:'flute', clarinet:'clarinet', bassoon:'bassoon', sax:'saxophone',
   trumpet:'trumpet', horn:'frenchhorn', trombone:'trombone', tuba:'tuba', tsax:'saxophone',
   soprano:'organ', mezzo:'organ', altov:'organ', tenorv:'organ', baritonev:'organ', bassv:'organ',
-  timpani:'piano', xyloph:'xylophone', marimba:'xylophone'
+  timpani:'piano', xyloph:'xylophone', marimba:'xylophone',
+  // The acoustic-guitar set was already being fetched for the harpsichord;
+  // the plucked family is what it was actually recorded for.
+  guitar:'guitar', nylon:'guitar', ukulele:'guitar', harp:'guitar', ebass:'contrabass'
+  // The Special voices are deliberately absent: they carry synthOnly, so
+  // getSampler() hands back their own synth voice instead of a sample set.
 };
 // Every instrument routes here instead of straight toDestination(). With each
 // voice going directly to the speakers, playing several parts at once (or a
@@ -538,7 +543,7 @@ function getMasterBus(){
   return _masterBus;
 }
 
-const _samplerCache={}, _drumCache={};
+const _samplerCache={}, _drumCache={}, _synthCache={};
 // The recorded instruments stream from tonejs.github.io. That fetch can fail
 // — offline, captive wifi, the host having a bad day — and a Sampler that
 // never loads simply plays nothing, so the app looked broken with no clue
@@ -574,6 +579,13 @@ function updateVoicePill(){
   }
 }
 function getSampler(instId){
+  // Instruments defined as synthesis rather than recording never touch the
+  // sample path — its fallback key is the piano, which would be the wrong
+  // sound rather than a degraded one. Cached per instrument, not per sample
+  // set, because each of these *is* its own voice.
+  if(IMAP[instId]?.synthOnly){
+    return _synthCache[instId]||(_synthCache[instId]=buildSynthVoice(instId));
+  }
   const key=INST_SAMPLE[instId]||'piano';
   if(_samplerCache[key])return _samplerCache[key];
   const def=SAMP[key]||SALAMANDER;
@@ -685,6 +697,52 @@ async function auditionPreview(midiVals,instId,partIdx){
     const notes=midiVals.map(m=>Tone.Frequency(m,'midi').toNote());
     voice.triggerAttackRelease(notes.length===1?notes[0]:notes,dur,time,vel);
   }catch(e){}
+}
+
+// Hear an instrument from the picker, before any part exists for it. Plays a
+// short rising figure rather than one note, because what tells two instruments
+// apart is mostly the attack and decay of successive notes. Deliberately
+// independent of the audition toggle and of part mute: nothing is muted yet,
+// and pressing ▷ is an explicit request to hear something.
+let _previewVoices=[];
+async function previewInstrument(instId){
+  const inst=IMAP[instId]; if(!inst)return;
+  // Voices are cached and shared, so releasing a preview would cut short a
+  // note the transport is holding. Nothing to preview over anyway — the point
+  // of ▷ is to hear one instrument on its own.
+  if(playing||recState!=='idle')return;
+  try{
+    await Tone.start();
+    // A second ▷ interrupts the first rather than layering on top of it.
+    stopInstrumentPreview();
+    const t0=Tone.now()+.05, step=.16, dur=.34;
+    if(inst.drumset){
+      // The drum set's figure is kick / snare / hat rather than a scale.
+      [36,38,42,38].forEach((m,i)=>drumsetHit(m,dur,t0+i*step,.7));
+      return;
+    }
+    if(inst.unpitched){
+      const voice=getDrum(instId); _previewVoices.push(voice);
+      for(let i=0;i<3;i++){
+        if(inst.osc==='noise') voice.triggerAttackRelease(dur,t0+i*step,.7);
+        else voice.triggerAttackRelease('C2',dur,t0+i*step,.7);
+      }
+      return;
+    }
+    const root=12*((inst.defaultOct??4)+1);   // MIDI C of the instrument's home octave
+    const figure=inst.pitchedDrum?[0,0,7]:[0,4,7,12];
+    if(inst.pitchedDrum){
+      const voice=getDrum(instId); _previewVoices.push(voice);
+      figure.forEach((iv,i)=>voice.triggerAttackRelease(Tone.Frequency(root+iv,'midi').toNote(),dur,t0+i*step,.7));
+      return;
+    }
+    const voice=getSampler(instId); _previewVoices.push(voice);
+    figure.forEach((iv,i)=>voice.triggerAttackRelease(Tone.Frequency(root+iv,'midi').toNote(),dur,t0+i*step,.7));
+  }catch(e){}
+}
+function stopInstrumentPreview(){
+  _previewVoices.forEach(v=>{ try{ v.releaseAll?v.releaseAll():v.triggerRelease?.(); }catch(e){} });
+  _previewVoices=[];
 }
 
 let playing=false,_activeVoices=[];

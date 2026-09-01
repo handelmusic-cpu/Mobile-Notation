@@ -200,6 +200,10 @@ body { font-family:-apple-system,BlinkMacSystemFont,sans-serif; background:var(-
      overflow horizontally. */
   #diatonic-grid{ grid-template-columns:repeat(4,1fr); }
   .dyn-grid,.key-major-grid,.key-minor-grid{ grid-template-columns:repeat(4,1fr); }
+  /* The rail is already a scrolling column here, so the portrait cap would
+     leave the picker a three-row window inside another scroller. Still
+     bounded, so the "N selected / Add" footer stays within reach. */
+  #inst-picker{ max-height:52vh; }
 }
 
 .panel{display:none;padding:6px 8px;background:var(--surf2);flex-shrink:0;}
@@ -253,8 +257,34 @@ body { font-family:-apple-system,BlinkMacSystemFont,sans-serif; background:var(-
 /* The playhead sweeps inside #score-div, so it scrolls with the music. */
 #score-playhead{position:absolute;left:0;top:0;width:2px;background:var(--accent);opacity:.75;
   pointer-events:none;display:none;border-radius:2px;will-change:transform;}
-.cat-grid{display:flex;gap:3px;flex-wrap:wrap;margin-bottom:4px;}
-#inst-grid{display:flex;gap:3px;flex-wrap:wrap;min-height:0;margin-bottom:4px;}
+/* ── Instrument picker: collapsible families, preview, multi-select ── */
+.isearch{display:flex;align-items:center;gap:6px;background:var(--bg);border:1.5px solid var(--border);border-radius:7px;padding:0 9px;margin-bottom:5px;color:var(--muted2);font-size:15px;}
+.isearch input{flex:1;background:none;border:none;outline:none;color:var(--text2);font-size:14px;padding:8px 0;min-width:0;font-family:inherit;}
+.isearch input::-webkit-search-cancel-button{filter:grayscale(1) opacity(.6);}
+/* Capped so the list scrolls inside the panel instead of pushing the Add
+   button off the bottom of a phone screen. */
+#inst-picker{max-height:38vh;overflow-y:auto;-webkit-overflow-scrolling:touch;display:flex;flex-direction:column;gap:4px;margin-bottom:5px;}
+.ifam{flex:0 0 auto;background:var(--bg);border:1.5px solid var(--border);border-radius:7px;overflow:hidden;}
+.ifam-head{display:flex;align-items:center;gap:7px;width:100%;padding:8px 9px;background:none;border:none;color:var(--text3);font-size:13px;font-weight:700;font-family:inherit;cursor:pointer;text-align:left;min-height:38px;touch-action:manipulation;}
+.ifam-head:active{opacity:.7;}
+.ifam-icon{font-size:14px;line-height:1;}
+.ifam-name{flex:1;}
+.ifam-count{font-size:10px;color:var(--muted2);font-weight:600;background:var(--ctl);border-radius:9px;padding:1px 7px;}
+.ifam-chev{color:var(--muted);font-size:11px;}
+.ifam-body{border-top:1.5px solid var(--border);}
+.irow{display:flex;align-items:center;gap:8px;padding:6px 9px;cursor:pointer;border-top:1px solid var(--border);touch-action:manipulation;}
+.ifam-body .irow:first-child{border-top:none;}
+.irow:active{background:var(--ctl);}
+.irow.picked{background:var(--info-bg);}
+.iname{flex:1;font-size:14px;color:var(--text2);}
+.irow.picked .iname{color:var(--info-fg);font-weight:600;}
+.ipreview,.iadd{background:none;border:none;color:var(--sky);font-size:15px;cursor:pointer;min-width:34px;min-height:34px;display:inline-flex;align-items:center;justify-content:center;padding:0;touch-action:manipulation;font-family:inherit;}
+.ipreview:active,.iadd:active{opacity:.6;}
+.iadd{font-size:19px;font-weight:700;}
+.iadd.on{color:var(--info-fg);}
+.iadd-bar{display:flex;align-items:center;gap:8px;}
+#inst-count{flex:1;font-size:12px;color:var(--muted2);font-weight:700;}
+#btn-add-confirm:disabled{background:var(--ctl);border-color:var(--border);color:var(--muted2);cursor:default;}
 
 /* Dyn */
 .dyn-grid{display:grid;grid-template-columns:repeat(6,1fr);gap:3px;margin-bottom:5px;}
@@ -511,9 +541,16 @@ body { font-family:-apple-system,BlinkMacSystemFont,sans-serif; background:var(-
   <div style="font-size:9px;color:var(--muted2);margin-bottom:3px">TAP TO SELECT ACTIVE PART FOR NOTE ENTRY</div>
   <div id="parts-list"></div>
   <div class="sec">Add new part</div>
-  <div class="cat-grid" id="cat-grid"></div>
-  <div id="inst-grid"></div>
-  <button class="chip on2" id="btn-add-confirm" onclick="confirmAddPart()" style="display:none">+ Add This Part</button>
+  <div class="isearch">
+    <span aria-hidden="true">⌕</span>
+    <input type="search" id="inst-search" placeholder="Search instruments…" aria-label="Search instruments"
+           autocomplete="off" oninput="searchInstruments(this.value)">
+  </div>
+  <div id="inst-picker" role="group" aria-label="Instruments you can add"></div>
+  <div class="iadd-bar">
+    <span id="inst-count" aria-live="polite">None selected</span>
+    <button class="chip on2" id="btn-add-confirm" onclick="confirmAddPart()" disabled>+ Add Part</button>
+  </div>
 </div>
 
 <!-- Markings panel (Lyrics / Dynamics / Articulation / Tempo, grouped) -->
