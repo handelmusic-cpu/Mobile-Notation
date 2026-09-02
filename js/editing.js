@@ -235,6 +235,166 @@ function updateUndoRedoButtons(){
   if(u) u.disabled = histIndex<=0;
   if(r) r.disabled = histIndex>=history.length-1;
 }
+// ═══════════════════════════════════════════════════════
+// Measure structure — insert and remove whole bars
+// ═══════════════════════════════════════════════════════
+// A part is one flat list of notes; a "measure" only exists once toMeasures()
+// walks that list against the bar capacities. So inserting a bar is not a
+// splice into an array of bars — it is putting a bar's worth of silence at the
+// same point in every part at once, then moving every measure-indexed marking
+// that sat after it: key and metre changes, repeat barlines, and each part's
+// note-indexed hairpins.
+//
+// toMeasures() already does the hard half of that. It reports, for every
+// rendered piece, which stored note it came from (srcIdx) and whether it is
+// the tail of a note that began in an earlier bar (tieFrom) — which is exactly
+// what tells us whether a barline falls between two notes or inside one.
+function measureCount(){
+  return Math.max(1,...parts.map(p=>toMeasures(p.notes).length));
+}
+// Where measure `mi` begins in a part's note list, and whether that barline
+// falls cleanly between two notes. `clean:false` means a note is sounding
+// across it — there is no note index that means "here", because "here" is
+// halfway through a note.
+function barBoundaryInPart(part,mi){
+  const ms=toMeasures(part.notes);
+  if(mi>=ms.length) return {index:part.notes.length,clean:true,past:true};
+  const bar=ms[mi];
+  if(!bar.length) return {index:part.notes.length,clean:true,past:true};
+  return {index:bar[0].srcIdx,clean:!bar[0].tieFrom,past:false};
+}
+// The stored notes that measure `mi` owns outright. `clean` is false if the
+// bar either starts or ends mid-note, since removing it would then take music
+// out of a neighbouring bar too.
+function barNoteRange(part,mi){
+  const ms=toMeasures(part.notes);
+  if(mi>=ms.length||!ms[mi].length) return {from:part.notes.length,to:part.notes.length,clean:true,empty:true};
+  const bar=ms[mi];
+  const startsClean=!bar[0].tieFrom;
+  const next=ms[mi+1];
+  // The bar ends cleanly if nothing carries on into the next one.
+  const endsClean=!next||!next.length||!next[0].tieFrom;
+  return {from:bar[0].srcIdx,to:bar[bar.length-1].srcIdx,clean:startsClean&&endsClean,empty:false};
+}
+// A bar's worth of silence, as the fewest rests that add up to it — 'hdr' for
+// a dotted-half rest, matching the duration strings toMeasures() already
+// builds when it splits a note.
+function restNotesFor(part,beats){
+  const clef=part.clef||IMAP[part.instId]?.clef||'treble';
+  const rk=clef==='bass'?'d/3':'b/4';
+  return beatsToDurs(beats).map(d=>({keys:[rk],dur:d+'r',vfAccs:[null],midiVals:[],rest:true,
+    lyric:null,dyn:null,arts:[],tempo:null,rud:null,grace:[],sticking:null}));
+}
+// Key and metre changes and repeat barlines are all keyed by measure index, so
+// every one of them after the edit point has to move with the music. delta is
+// +1 for an inserted bar and -1 for a removed one; on a removal anything
+// sitting on the removed bar goes with it.
+function shiftMeasureMarks(at,delta){
+  const shiftMap=m=>{
+    const out={};
+    Object.keys(m).map(Number).sort((a,b)=>a-b).forEach(k=>{
+      if(delta>0){ out[k>=at?k+delta:k]=m[k]; return; }
+      if(k===at) return;                      // removed along with its bar
+      out[k>at?k+delta:k]=m[k];
+    });
+    return out;
+  };
+  keyChanges=shiftMap(keyChanges);
+  sigChanges=shiftMap(sigChanges);
+  const shiftArr=a=>{
+    const out=[];
+    a.forEach(k=>{
+      if(delta>0){ out.push(k>=at?k+delta:k); return; }
+      if(k===at) return;
+      out.push(k>at?k+delta:k);
+    });
+    return [...new Set(out)].filter(k=>k>=0).sort((x,y)=>x-y);
+  };
+  repeatStartMeasures=shiftArr(repeatStartMeasures);
+  repeatEndMeasures=shiftArr(repeatEndMeasures);
+}
+// Hairpins are stored as a pair of note indices into their own part, so they
+// move by however many notes went in or out ahead of them — not by measures.
+function shiftHairpins(part,atIdx,delta){
+  part.hairpins=(part.hairpins||[]).map(hp=>({...hp,
+    start:hp.start>=atIdx?hp.start+delta:hp.start,
+    end:hp.end>=atIdx?hp.end+delta:hp.end}));
+}
+// The bar a note is in — for aiming an insert or remove at the selection.
+// measureIndexOfNote() already derives this from toMeasures(), so a note split
+// across a barline reports the bar it starts in and the two cannot disagree.
+function measureOfSelection(){
+  if(!selectedNote) return null;
+  const mi=measureIndexOfNote(selectedNote.partIdx,selectedNote.noteIdx);
+  return mi==null||mi<0?null:mi;
+}
+// Refuses rather than mangles: a note sounding across the barline has no
+// single note index that means "the start of this bar", and splitting it into
+// two would sound as two articulated notes rather than one held one, because
+// a tie between two stored notes is not something this format can express yet.
+function reportUncleanBar(mi,which){
+  const bad=parts.filter(p=>!(which==='insert'?barBoundaryInPart(p,mi):barNoteRange(p,mi)).clean);
+  toast('Bar '+(mi+1)+': a note in '+bad.map(p=>p.name).join(' and ')+
+        ' is held across that barline. Shorten it, or pick another bar.','warn');
+}
+
+function insertMeasureAt(mi){
+  const total=measureCount();
+  mi=Math.max(0,Math.min(mi,total));
+  if(parts.some(p=>!barBoundaryInPart(p,mi).clean)){ reportUncleanBar(mi,'insert'); return; }
+  // The new bar takes whatever the metre gives it at that point — which for
+  // bar 0 of a song with a pickup is the short pickup length.
+  const beats=beatsAt(mi);
+  // Appending past the end grows every part that has music, so the parts stay
+  // the same length. Inserting *within* the score only touches the parts the
+  // new barline actually falls inside: a part whose music stops earlier has
+  // nothing to push along, and padding it would add rests nobody asked for.
+  const appending=mi>=total;
+  parts.forEach(p=>{
+    if(!p.notes.length) return;
+    if(!appending&&mi>=toMeasures(p.notes).length) return;
+    const b=barBoundaryInPart(p,mi);
+    const rests=restNotesFor(p,beats);
+    p.notes.splice(b.index,0,...rests);
+    shiftHairpins(p,b.index,rests.length);
+  });
+  shiftMeasureMarks(mi,1);
+  selectedNote=null; caretGap=null;
+  render(); updateSelectionUI();
+  toast('Empty bar inserted at '+(mi+1)+'.','ok');
+}
+function removeMeasureAt(mi){
+  const total=measureCount();
+  if(total<=1){ toast('There is only one bar — nothing to remove.','warn'); return; }
+  if(mi<0||mi>=total){ toast('That bar does not exist.','warn'); return; }
+  if(parts.some(p=>!barNoteRange(p,mi).clean)){ reportUncleanBar(mi,'remove'); return; }
+  parts.forEach(p=>{
+    const r=barNoteRange(p,mi);
+    if(r.empty) return;
+    const count=r.to-r.from+1;
+    // A hairpin anchored to a note that is going away goes with it; the rest
+    // slide back by however many notes were taken out ahead of them.
+    p.hairpins=(p.hairpins||[]).filter(hp=>!(hp.start>=r.from&&hp.start<=r.to)&&!(hp.end>=r.from&&hp.end<=r.to));
+    p.notes.splice(r.from,count);
+    shiftHairpins(p,r.from,-count);
+  });
+  shiftMeasureMarks(mi,-1);
+  selectedNote=null; caretGap=null;
+  render(); updateSelectionUI();
+  toast('Bar '+(mi+1)+' removed.','ok');
+}
+// The panel buttons work on the bar the selected note is in, and fall back to
+// the end of the song when nothing is selected — which is what "add a bar"
+// means when you are not pointing at anything.
+function insertMeasureBefore(){ const mi=measureOfSelection(); insertMeasureAt(mi==null?measureCount():mi); }
+function insertMeasureAfter(){ const mi=measureOfSelection(); insertMeasureAt(mi==null?measureCount():mi+1); }
+
+function removeMeasureHere(){
+  const mi=measureOfSelection();
+  if(mi==null){ toast('Select a note in the bar you want to remove first.','warn'); return; }
+  removeMeasureAt(mi);
+}
+
 async function clearAll(){
   if(!parts.some(p=>p.notes.length))return;
   if(!await sheetConfirm('Clear this song?','Every note in every part is removed. Undo will still bring it back.','Clear all',true))return;

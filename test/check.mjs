@@ -1067,6 +1067,117 @@ await run('notecolor', async () => {
   await p.context().close();
 });
 
+// ── 24. Inserting and removing whole measures ────────────────────────────
+await run('measures', async () => {
+  const p = await boot(await page());
+  const r = await p.evaluate(() => {
+    const mk = (m, dur) => { const sp = spellConcert(m);
+      return { keys: [sp.name + '/' + sp.oct], dur, vfAccs: [sp.vfAcc], midiVals: [m], rest: false,
+        lyric: null, dyn: null, arts: [], tempo: null, rud: null, grace: [], sticking: null }; };
+    const reset = (a, b) => { parts.length = 0; pid = 1;
+      parts.push(mkPart('A', 'piano', 'treble')); parts.push(mkPart('B', 'piano', 'bass'));
+      apIdx = 0; setKey('C'); setTimeSig('4/4'); keyChanges = {}; sigChanges = {}; pickupBeats = 0;
+      repeatStartMeasures = []; repeatEndMeasures = []; selectedNote = null; caretGap = null;
+      parts[0].notes = [...Array(a)].map((_, i) => mk(60 + (i % 12), 'q'));
+      parts[1].notes = [...Array(b)].map((_, i) => mk(48 + (i % 12), 'q'));
+      render(); };
+    const barsOf = () => parts.map(x => toMeasures(x.notes).length);
+    const out = {};
+
+    // Everything keyed by measure has to travel with the music.
+    reset(16, 16);
+    keyChanges[2] = 'G'; sigChanges[3] = '3/4';
+    repeatStartMeasures = [1]; repeatEndMeasures = [3];
+    parts[0].hairpins = [{ type: 'cresc', start: 8, end: 11 }];
+    render();
+    insertMeasureAt(1);
+    out.marks = { key: { ...keyChanges }, sig: { ...sigChanges },
+      rs: [...repeatStartMeasures], re: [...repeatEndMeasures],
+      hp: parts[0].hairpins.map(h => [h.start, h.end]),
+      newBarSilent: toMeasures(parts[0].notes)[1].every(n => n.rest),
+      newBarBeats: toMeasures(parts[0].notes)[1].reduce((s, n) => s + noteBeats(n), 0),
+      bothParts: parts.map(x => x.notes.length) };
+    // Undo has to restore the markings too, not just the notes.
+    undo();
+    out.undone = { key: { ...keyChanges }, rs: [...repeatStartMeasures],
+      notes: parts[0].notes.length, hp: parts[0].hairpins.map(h => [h.start, h.end]) };
+    redo();
+    removeMeasureAt(1);
+    out.removed = { key: { ...keyChanges }, sig: { ...sigChanges },
+      rs: [...repeatStartMeasures], re: [...repeatEndMeasures],
+      hp: parts[0].hairpins.map(h => [h.start, h.end]),
+      notes: parts.map(x => x.notes.length) };
+
+    // A part whose music stops before the new barline must not collect rests.
+    reset(16, 8);
+    insertMeasureAt(3);
+    out.uneven = { bars: barsOf(), notes: parts.map(x => x.notes.length) };
+
+    // Appending grows every part, so they stay the same length.
+    reset(16, 8);
+    insertMeasureAt(measureCount());
+    out.append = { notes: parts.map(x => x.notes.length) };
+
+    // The new bar takes the metre in force there, not the song's opening one.
+    reset(16, 16); sigChanges[1] = '3/4'; render();
+    insertMeasureAt(2);
+    out.metre = toMeasures(parts[0].notes)[2].reduce((s, n) => s + noteBeats(n), 0);
+
+    // And the pickup's short bar 0 stays short.
+    reset(16, 16); pickupBeats = 1; render();
+    insertMeasureAt(0);
+    out.pickup = toMeasures(parts[0].notes)[0].reduce((s, n) => s + noteBeats(n), 0);
+
+    // A note sounding across the barline is refused, with the part named.
+    reset(8, 8);
+    parts[0].notes = [mk(60, 'q'), mk(62, 'q'), mk(64, 'q'), mk(65, 'h'), mk(67, 'q')];
+    parts[0].name = 'Violin'; render();
+    document.getElementById('toast-host').innerHTML = '';
+    const n = parts[0].notes.length;
+    insertMeasureAt(1);
+    out.unclean = { refused: parts[0].notes.length === n,
+      msg: (document.querySelector('#toast-host .toast') || {}).textContent || '' };
+
+    // The last remaining bar cannot be removed out from under the song.
+    reset(4, 4);
+    const n2 = parts[0].notes.length;
+    removeMeasureAt(0);
+    out.lastBar = parts[0].notes.length === n2;
+    return out;
+  });
+  ok('an inserted bar pushes key and metre changes along with the music',
+     r.marks.key['3'] === 'G' && r.marks.sig['4'] === '3/4', JSON.stringify([r.marks.key, r.marks.sig]));
+  ok('repeat barlines move too', JSON.stringify(r.marks.rs) === '[2]' && JSON.stringify(r.marks.re) === '[4]',
+     `${JSON.stringify(r.marks.rs)} ${JSON.stringify(r.marks.re)}`);
+  ok('hairpins follow their own part’s note indices', JSON.stringify(r.marks.hp) === '[[9,12]]',
+     JSON.stringify(r.marks.hp));
+  ok('the new bar is silent and exactly one bar long',
+     r.marks.newBarSilent && Math.abs(r.marks.newBarBeats - 4) < 1e-6,
+     `silent=${r.marks.newBarSilent} beats=${r.marks.newBarBeats}`);
+  ok('every part gets the bar, so the staves stay in step',
+     JSON.stringify(r.marks.bothParts) === '[17,17]', JSON.stringify(r.marks.bothParts));
+  ok('undo restores the markings, not just the notes',
+     r.undone.key['2'] === 'G' && JSON.stringify(r.undone.rs) === '[1]' && r.undone.notes === 16
+     && JSON.stringify(r.undone.hp) === '[[8,11]]', JSON.stringify(r.undone));
+  ok('removing a bar puts everything back where it was',
+     r.removed.key['2'] === 'G' && r.removed.sig['3'] === '3/4'
+     && JSON.stringify(r.removed.rs) === '[1]' && JSON.stringify(r.removed.hp) === '[[8,11]]'
+     && JSON.stringify(r.removed.notes) === '[16,16]', JSON.stringify(r.removed));
+  ok('a part whose music ends earlier collects no stray rests',
+     JSON.stringify(r.uneven.bars) === '[5,2]' && JSON.stringify(r.uneven.notes) === '[17,8]',
+     `${JSON.stringify(r.uneven.bars)} ${JSON.stringify(r.uneven.notes)}`);
+  ok('appending past the end grows every part', JSON.stringify(r.append.notes) === '[17,9]',
+     JSON.stringify(r.append.notes));
+  ok('the new bar takes the metre in force at that point, not the opening one',
+     Math.abs(r.metre - 3) < 1e-6, `${r.metre} beats`);
+  ok('inserting at a pickup keeps the short bar short', Math.abs(r.pickup - 1) < 1e-6, `${r.pickup} beats`);
+  ok('a note held across the barline is refused, and says which part',
+     r.unclean.refused && /Violin/.test(r.unclean.msg) && /Bar 2/.test(r.unclean.msg),
+     `refused=${r.unclean.refused} "${r.unclean.msg}"`);
+  ok('the last remaining bar cannot be removed', r.lastBar === true);
+  await p.context().close();
+});
+
 console.log(`\n${pass} passed, ${fail} failed`);
 await browser.close();
 process.exit(fail ? 1 : 0);

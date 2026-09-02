@@ -711,6 +711,13 @@ body { font-family:-apple-system,BlinkMacSystemFont,sans-serif; background:var(-
     <button class="chip" onclick="addMeasureRepeat(4)" style="font-size:11px">%%%% Repeat Last 4</button>
   </div>
   <div class="hint">Adds a repeat-previous-measure(s) symbol to the active part, in place of writing it out again. Only works right at the start of a new measure.</div>
+  <div class="sec">Measures</div>
+  <div class="row">
+    <button class="chip" onclick="insertMeasureBefore()" style="font-size:11px">⎘← Insert Bar Before</button>
+    <button class="chip" onclick="insertMeasureAfter()" style="font-size:11px">→⎘ Insert Bar After</button>
+    <button class="chip" onclick="removeMeasureHere()" style="font-size:11px">⊟ Remove Bar</button>
+  </div>
+  <div class="hint">Works on the bar holding the selected note — with nothing selected, a new bar goes on the end. Every part gets the bar, and key changes, metre changes and repeat marks after it all move along with the music. Undo puts it back.</div>
   <div class="sec">Note colours — learning the staff</div>
   <div class="row" id="color-mode-row">
     <button class="chip on" data-mode="off"    onclick="setNoteColorMode('off')"    style="font-size:11px">Off</button>
