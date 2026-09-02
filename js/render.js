@@ -55,6 +55,22 @@ function toMeasures(notes){
   const ms=[]; let cur=[], beats=0;
   let BMAX=beatsAt(0);
   const closeIfFull=()=>{ if(beats>=BMAX-.001){ ms.push(cur); cur=[]; beats=0; BMAX=beatsAt(ms.length); } };
+  // A stored tie holds one note into the next. Every piece pushed below needs
+  // to know where it sits in such a chain, so resolve that up front:
+  // tiedOut(i) — note i is held into i+1; tiedIn(i) — note i continues i-1.
+  // tieFrom says a piece continues something; contFrom says specifically that
+  // it is the tail of the SAME stored note, split by a barline. The measure
+  // operations need the second: a barline between two tied notes still has a
+  // note index that means "the start of this bar", but one through the middle
+  // of a single note does not.
+  const tiedOut=i=>tieHoldsAt(notes,i);
+  const tiedIn=i=>i>0&&tieHoldsAt(notes,i-1);
+  // How long the whole held chain starting at i sounds for. Playback and MIDI
+  // read soundBeats off the piece that actually speaks (the one without
+  // tieFrom), so a chain has to report its total there, not its first note's
+  // written value. Walked backwards so each note can reuse the next one's sum.
+  const chain=new Array(notes.length).fill(0);
+  for(let i=notes.length-1;i>=0;i--) chain[i]=noteBeats(notes[i])+(tiedOut(i)?chain[i+1]:0);
   notes.forEach((n,srcIdx)=>{
     // Measure repeats and tuplet members are never split: a repeat glyph owns
     // a whole bar by definition, and cutting a tuplet apart would destroy the
@@ -62,7 +78,7 @@ function toMeasures(notes){
     const atomic=n.repeatBars||tupletNumOf(n.dur);
     let left=noteBeats(n), first=true;
     if(atomic){
-      cur.push({...n,srcIdx,tieFrom:false,tieTo:false,soundBeats:left});
+      cur.push({...n,srcIdx,tieFrom:tiedIn(srcIdx),tieTo:tiedOut(srcIdx),tieToNext:tiedOut(srcIdx),contFrom:false,soundBeats:chain[srcIdx]});
       beats+=left; closeIfFull(); return;
     }
     while(left>1e-6){
@@ -71,15 +87,18 @@ function toMeasures(notes){
       if(left<=space+1e-6){
         if(first){
           // Untouched note — keep its own duration string so dots and rests
-          // survive exactly as written.
-          cur.push({...n,srcIdx,tieFrom:false,tieTo:false,soundBeats:left});
+          // survive exactly as written. Its tie flags are whatever the stored
+          // tie says, since nothing was split here.
+          cur.push({...n,srcIdx,tieFrom:tiedIn(srcIdx),tieTo:tiedOut(srcIdx),tieToNext:tiedOut(srcIdx),contFrom:false,soundBeats:chain[srcIdx]});
         }else{
           // Tail of a split. It has to be written as whatever is actually
           // left, not the note's original value — carrying the full duration
           // over was what made the following bar overfull in turn.
           const tail=beatsToDurs(left);
           tail.forEach((pd,k)=>{
-            cur.push({...n,dur:durWithFlags(pd,n),srcIdx,tieFrom:true,tieTo:k<tail.length-1,soundBeats:noteBeats(n)});
+            const last=k===tail.length-1;
+            cur.push({...n,dur:durWithFlags(pd,n),srcIdx,tieFrom:true,contFrom:true,
+              tieTo:last?tiedOut(srcIdx):true,tieToNext:last&&tiedOut(srcIdx),soundBeats:chain[srcIdx]});
           });
         }
         beats+=left; left=0;
@@ -87,7 +106,8 @@ function toMeasures(notes){
         // Fill what's left of this bar, then carry the remainder over.
         const pieces=beatsToDurs(space);
         pieces.forEach((pd,k)=>{
-          cur.push({...n,dur:durWithFlags(pd,n),srcIdx,tieFrom:!first||k>0,tieTo:true,soundBeats:noteBeats(n)});
+          cur.push({...n,dur:durWithFlags(pd,n),srcIdx,contFrom:!first||k>0,
+            tieFrom:(!first||k>0)?true:tiedIn(srcIdx),tieTo:true,tieToNext:false,soundBeats:chain[srcIdx]});
         });
         beats+=space; left-=space; first=false;
       }
@@ -364,7 +384,7 @@ function drawScore(){
   // note arriving in the next one. Both ends exist only when both bars are
   // inside the render window, which is why this runs after the whole loop.
   pendingTieOut.forEach(o=>{
-    const i=pendingTieIn.find(v=>v.partIdx===o.partIdx&&v.srcIdx===o.srcIdx);
+    const i=pendingTieIn.find(v=>v.partIdx===o.partIdx&&v.srcIdx===o.matchIdx);
     if(!i)return;
     try{
       new StaveTie({first_note:o.vfNote,last_note:i.vfNote,first_indices:[0],last_indices:[0]})
@@ -872,7 +892,9 @@ function drawVoice(ctx,stave,noteData,mw,VF,partIdx,partOffset,clef,part,ts,mi){
     // pieces that sit in the same bar; the ones that straddle a barline are
     // stitched together in drawScore(), which can see both bars.
     for(let li=0;li+1<noteData.length;li++){
-      if(noteData[li].tieTo && noteData[li+1].tieFrom && noteData[li].srcIdx===noteData[li+1].srcIdx){
+      // Adjacent pieces whose flags meet are tied. The srcIdx no longer has to
+      // match: a split note ties to itself, a stored tie joins two notes.
+      if(noteData[li].tieTo && noteData[li+1].tieFrom){
         try{ new VF.StaveTie({first_note:vfNotes[li],last_note:vfNotes[li+1],first_indices:[0],last_indices:[0]}).setContext(ctx).draw(); }catch(e){}
       }
     }
@@ -880,7 +902,10 @@ function drawVoice(ctx,stave,noteData,mw,VF,partIdx,partOffset,clef,part,ts,mi){
     // are reported so drawScore() can join them across the barline.
     noteData.forEach((it,li)=>{
       if(!vfNotes[li])return;
-      if(it.tieTo&&li===noteData.length-1) pendingTieOut.push({partIdx,srcIdx:it.srcIdx,vfNote:vfNotes[li],stave});
+      // A tie leaving the bar lands either on the rest of the same note (a
+      // split) or on the next note (a stored tie), so it has to say which.
+      if(it.tieTo&&li===noteData.length-1)
+        pendingTieOut.push({partIdx,srcIdx:it.srcIdx,matchIdx:it.tieToNext?it.srcIdx+1:it.srcIdx,vfNote:vfNotes[li],stave});
       if(it.tieFrom&&li===0) pendingTieIn.push({partIdx,srcIdx:it.srcIdx,vfNote:vfNotes[li],stave});
     });
     vfNotes.forEach((vn,li)=>{

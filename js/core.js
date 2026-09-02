@@ -190,6 +190,32 @@ const INST_ALIASES = {
 };
 
 // ═══════════════════════════════════════════════════════
+// Ties
+// ═══════════════════════════════════════════════════════
+// A stored note carries `tie:true` to mean "held into the note after it".
+// Everything downstream — the tie curves, playback, MIDI and MusicXML — already
+// worked in terms of the tieFrom/tieTo/soundBeats flags that toMeasures()
+// produces when it splits a long note across a barline. A stored tie sets the
+// same flags, so it arrives at all of them through the path they already have.
+//
+// Validity is checked on read as well as on write: a song file is data from
+// outside the app, and a tie to nothing, to a rest, or between two different
+// pitches would otherwise reach the renderer as a curve to nowhere.
+function samePitches(a,b){
+  const x=a.midiVals||[], y=b.midiVals||[];
+  return x.length>0 && x.length===y.length && x.every((v,i)=>v===y[i]);
+}
+function tieHoldsAt(notes,i){
+  const n=notes[i], m=notes[i+1];
+  return !!(n&&m&&n.tie&&!n.rest&&!m.rest&&!n.repeatBars&&!m.repeatBars&&samePitches(n,m));
+}
+// Whether a tie could be put on note i — the same rule, ignoring the flag.
+function canTieAt(notes,i){
+  const n=notes[i], m=notes[i+1];
+  return !!(n&&m&&!n.rest&&!m.rest&&!n.repeatBars&&!m.repeatBars&&samePitches(n,m));
+}
+
+// ═══════════════════════════════════════════════════════
 // Notehead colour — learning the staff by sight
 // ═══════════════════════════════════════════════════════
 // The Boomwhackers tube colours, in semitone order from C. These are the ones

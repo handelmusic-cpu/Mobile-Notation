@@ -1128,15 +1128,22 @@ await run('measures', async () => {
     insertMeasureAt(0);
     out.pickup = toMeasures(parts[0].notes)[0].reduce((s, n) => s + noteBeats(n), 0);
 
-    // A note sounding across the barline is refused, with the part named.
+    // A note sounding across the barline is split into a tied pair rather than
+    // blocking the insert — and the music has to sound the same afterwards.
     reset(8, 8);
     parts[0].notes = [mk(60, 'q'), mk(62, 'q'), mk(64, 'q'), mk(65, 'h'), mk(67, 'q')];
-    parts[0].name = 'Violin'; render();
-    document.getElementById('toast-host').innerHTML = '';
-    const n = parts[0].notes.length;
+    render();
+    const soundBefore = toMeasures(parts[0].notes).flat()
+      .filter(x => !x.tieFrom).reduce((t, x) => t + x.soundBeats, 0);
     insertMeasureAt(1);
-    out.unclean = { refused: parts[0].notes.length === n,
-      msg: (document.querySelector('#toast-host .toast') || {}).textContent || '' };
+    out.held = {
+      soundBefore,
+      soundAfter: toMeasures(parts[0].notes).flat()
+        .filter(x => !x.tieFrom && !x.rest).reduce((t, x) => t + x.soundBeats, 0),
+      durs: parts[0].notes.map(x => x.dur),
+      // The tie cannot survive a bar of silence opening up between the pair.
+      tieAcrossGap: parts[0].notes.some((x, i) => x.tie && parts[0].notes[i + 1] && parts[0].notes[i + 1].rest),
+    };
 
     // The last remaining bar cannot be removed out from under the song.
     reset(4, 4);
@@ -1171,10 +1178,113 @@ await run('measures', async () => {
   ok('the new bar takes the metre in force at that point, not the opening one',
      Math.abs(r.metre - 3) < 1e-6, `${r.metre} beats`);
   ok('inserting at a pickup keeps the short bar short', Math.abs(r.pickup - 1) < 1e-6, `${r.pickup} beats`);
-  ok('a note held across the barline is refused, and says which part',
-     r.unclean.refused && /Violin/.test(r.unclean.msg) && /Bar 2/.test(r.unclean.msg),
-     `refused=${r.unclean.refused} "${r.unclean.msg}"`);
+  ok('a note held across the barline is split into a tied pair, not blocked',
+     Math.abs(r.held.soundAfter - r.held.soundBefore) < 1e-6,
+     `${r.held.soundBefore} beats of music before, ${r.held.soundAfter} after — ${JSON.stringify(r.held.durs)}`);
+  ok('the tie does not survive a bar of silence opening between the pair',
+     r.held.tieAcrossGap === false);
   ok('the last remaining bar cannot be removed', r.lastBar === true);
+  await p.context().close();
+});
+
+// ── 25. Ties ─────────────────────────────────────────────────────────────
+await run('ties', async () => {
+  const p = await boot(await page());
+  const r = await p.evaluate(async () => {
+    const mk = (m, dur) => { const sp = spellConcert(m);
+      return { keys: [sp.name + '/' + sp.oct], dur, vfAccs: [sp.vfAcc], midiVals: [m], rest: false,
+        lyric: null, dyn: null, arts: [], tempo: null, rud: null, grace: [], sticking: null }; };
+    const setup = notes => { parts.length = 0; pid = 1; parts.push(mkPart('T', 'piano', 'treble')); apIdx = 0;
+      setKey('C'); setTimeSig('4/4'); keyChanges = {}; sigChanges = {}; pickupBeats = 0;
+      repeatStartMeasures = []; repeatEndMeasures = []; selectedNote = null; caretGap = null;
+      parts[0].notes = notes; render(); };
+    const out = {};
+
+    // Two quarters on one pitch, tied: the pair speaks once, for two beats.
+    setup([mk(60, 'q'), mk(60, 'q'), mk(64, 'q'), mk(65, 'q')]);
+    parts[0].notes[0].tie = true; render();
+    const bar = toMeasures(parts[0].notes)[0];
+    out.chain = bar.map(n => ({ from: n.tieFrom, to: n.tieTo, cont: n.contFrom, sound: n.soundBeats }));
+    out.curves = document.querySelectorAll('#score-div svg .vf-stavetie').length;
+
+    // A tie is not a slur: these must be ignored on read, not drawn to nowhere.
+    const tiesDrawnFor = notes => { setup(notes); parts[0].notes[0].tie = true; render();
+      return toMeasures(parts[0].notes)[0].some(n => n.tieTo); };
+    out.differentPitch = tiesDrawnFor([mk(60, 'q'), mk(67, 'q')]);
+    out.toRest = tiesDrawnFor([mk(60, 'q'), { ...mk(60, 'q'), rest: true, midiVals: [] }]);
+    out.toNothing = tiesDrawnFor([mk(60, 'q')]);
+
+    // MusicXML has to say so in its own vocabulary.
+    setup([mk(60, 'q'), mk(60, 'q')]); parts[0].notes[0].tie = true; render();
+    const xml = buildMusicXML();
+    out.xml = { start: (xml.match(/<tie type="start"\/>/g) || []).length,
+                stop: (xml.match(/<tie type="stop"\/>/g) || []).length,
+                tied: (xml.match(/<tied type="start"\/>/g) || []).length };
+
+    // MIDI: a tied pair is one strike held over both, not two strikes. Run it
+    // twice off the same notes so the only difference is the tie itself.
+    const midiOns = async tie => {
+      setup([mk(60, 'q'), mk(60, 'q')]);
+      if (tie) parts[0].notes[0].tie = true;
+      render();
+      let cap = null;
+      const rc = URL.createObjectURL; URL.createObjectURL = b => { cap = b; return 'blob:stub'; };
+      const rk = HTMLAnchorElement.prototype.click; HTMLAnchorElement.prototype.click = function () {};
+      exportMIDI();
+      URL.createObjectURL = rc; HTMLAnchorElement.prototype.click = rk;
+      const u8 = new Uint8Array(await cap.arrayBuffer());
+      let n = 0;
+      for (let i = 0; i < u8.length - 2; i++)
+        if ((u8[i] & 0xf0) === 0x90 && u8[i + 1] === 60 && u8[i + 2] > 0) n++;
+      return n;
+    };
+    out.midi = { untied: await midiOns(false), tied: await midiOns(true) };
+
+    // A tie across a barline draws too — that is the case ties exist for.
+    setup([mk(60, 'q'), mk(62, 'q'), mk(64, 'q'), mk(72, 'q'), mk(72, 'q')]);
+    parts[0].notes[3].tie = true; render();
+    out.acrossBarline = document.querySelectorAll('#score-div svg .vf-stavetie').length;
+
+    // Round trip: a tie has to survive being written out and read back in.
+    setup([mk(60, 'q'), mk(60, 'q'), mk(64, 'q'), mk(65, 'q')]);
+    parts[0].notes[0].tie = true; render();
+    const roundXml = buildMusicXML();
+    const back = parseMusicXML(roundXml);
+    const firstLine = (back.parts || back)[0];
+    const backNotes = (firstLine.notes || firstLine);
+    out.roundTrip = { tieOnFirst: !!backNotes[0]?.tie, tieOnThird: !!backNotes[2]?.tie,
+                      count: backNotes.length };
+
+    // The toggle refuses politely rather than writing a tie that means nothing.
+    setup([mk(60, 'q'), mk(67, 'q')]);
+    selectedNote = { partIdx: 0, noteIdx: 0 }; updateSelectionUI();
+    document.getElementById('toast-host').innerHTML = '';
+    toggleTie();
+    out.refuse = { tied: !!parts[0].notes[0].tie,
+      msg: (document.querySelector('#toast-host .toast') || {}).textContent || '',
+      btnDisabled: document.getElementById('qe-tie').disabled };
+    return out;
+  });
+  ok('a tied pair speaks once, for the length of the whole chain',
+     r.chain[0].to === true && r.chain[0].sound === 2
+     && r.chain[1].from === true, JSON.stringify(r.chain.slice(0, 2)));
+  ok('a tie is not a split, so it does not report one',
+     r.chain[0].cont === false && r.chain[1].cont === false);
+  ok('the tie curve is drawn', r.curves === 1, `${r.curves} curves`);
+  ok('it also draws across a barline', r.acrossBarline === 1, `${r.acrossBarline} curves`);
+  ok('a tie to a different pitch is ignored', r.differentPitch === false);
+  ok('a tie to a rest is ignored', r.toRest === false);
+  ok('a tie to nothing is ignored', r.toNothing === false);
+  ok('a tied pair is one MIDI strike held over both, where untied is two',
+     r.midi.untied === 2 && r.midi.tied === 1, JSON.stringify(r.midi));
+  ok('MusicXML carries the tie in both its vocabularies',
+     r.xml.start === 1 && r.xml.stop === 1 && r.xml.tied === 1, JSON.stringify(r.xml));
+  ok('a tie survives a MusicXML round trip',
+     r.roundTrip.tieOnFirst === true && r.roundTrip.tieOnThird === false,
+     JSON.stringify(r.roundTrip));
+  ok('the button refuses a tie between different pitches, and says why',
+     r.refuse.tied === false && /same pitch/.test(r.refuse.msg) && r.refuse.btnDisabled === true,
+     `"${r.refuse.msg}" disabled=${r.refuse.btnDisabled}`);
   await p.context().close();
 });
 

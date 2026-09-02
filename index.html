@@ -454,6 +454,7 @@ body { font-family:-apple-system,BlinkMacSystemFont,sans-serif; background:var(-
   <button class="chip qe-pitch-btn" onclick="moveSelNote(-2)" title="Down a whole step">↓W</button>
   <button class="chip qe-pitch-btn" onclick="moveSelNote(2)"  title="Up a whole step">↑W</button>
   <span class="qe-sep"></span>
+  <button class="chip" id="qe-tie" onclick="toggleTie()" title="Tie this note into the next one, so they sound as one held note" aria-pressed="false">⌒Tie</button>
   <button class="chip" id="qe-rest" onclick="makeRest()" title="Turn this note into a rest, keeping its timing">⇢Rest</button>
   <button class="chip" id="qe-del"  onclick="removeSelected()" title="Delete this note">🗑</button>
 </div>

@@ -235,6 +235,50 @@ function updateUndoRedoButtons(){
   if(u) u.disabled = histIndex<=0;
   if(r) r.disabled = histIndex>=history.length-1;
 }
+// Ties the selected note into the one after it, or unties it. Only offered
+// when the pair could actually be tied — same pitch, neither a rest — because
+// a tie between two different pitches is not a tie, it is a slur, and this app
+// does not draw one yet.
+function toggleTie(){
+  if(!selectedNote){ toast('Select a note first — a tie joins it to the note after it.','warn'); return; }
+  const p=parts[selectedNote.partIdx];
+  const i=selectedNote.noteIdx, n=p.notes[i];
+  if(!n) return;
+  if(n.tie){ delete n.tie; render(); updateSelectionUI(); toast('Tie removed.','ok'); return; }
+  if(!canTieAt(p.notes,i)){
+    const next=p.notes[i+1];
+    toast(!next ? 'Nothing after this note to tie it to.'
+         : (n.rest||next.rest) ? 'A rest cannot be tied.'
+         : 'A tie joins two notes of the same pitch — these differ. Match the pitches first.','warn');
+    return;
+  }
+  n.tie=true; render(); updateSelectionUI();
+  toast('Tied — the pair now sounds as one held note.','ok');
+}
+// Splits a stored note into two tied notes, `headBeats` long and the rest.
+// The pair sounds exactly as the single note did, which is the whole reason
+// ties had to exist before a bar could be inserted through the middle of one.
+// Returns how many notes replaced the original.
+function splitNoteTied(part,k,headBeats){
+  const n=part.notes[k];
+  const total=noteBeats(n);
+  if(headBeats<=1e-6||headBeats>=total-1e-6) return 1;
+  const mkPieces=beats=>beatsToDurs(beats).map(d=>({...n,dur:durWithFlags(d,n)}));
+  const head=mkPieces(headBeats), tail=mkPieces(total-headBeats);
+  if(!head.length||!tail.length) return 1;
+  const all=[...head,...tail];
+  // Every piece but the last is held into the one after it, so the chain
+  // sounds as the one note it came from. Markings belong to the note as a
+  // whole, so they stay on the piece that speaks — the first.
+  all.forEach((piece,idx)=>{
+    if(idx<all.length-1) piece.tie=true; else delete piece.tie;
+    if(idx>0){ piece.lyric=null; piece.dyn=null; piece.arts=[]; piece.tempo=null; piece.grace=[]; piece.sticking=null; }
+  });
+  part.notes.splice(k,1,...all);
+  shiftHairpins(part,k+1,all.length-1);
+  return all.length;
+}
+
 // ═══════════════════════════════════════════════════════
 // Measure structure — insert and remove whole bars
 // ═══════════════════════════════════════════════════════
@@ -261,7 +305,7 @@ function barBoundaryInPart(part,mi){
   if(mi>=ms.length) return {index:part.notes.length,clean:true,past:true};
   const bar=ms[mi];
   if(!bar.length) return {index:part.notes.length,clean:true,past:true};
-  return {index:bar[0].srcIdx,clean:!bar[0].tieFrom,past:false};
+  return {index:bar[0].srcIdx,clean:!bar[0].contFrom,past:false};
 }
 // The stored notes that measure `mi` owns outright. `clean` is false if the
 // bar either starts or ends mid-note, since removing it would then take music
@@ -270,10 +314,10 @@ function barNoteRange(part,mi){
   const ms=toMeasures(part.notes);
   if(mi>=ms.length||!ms[mi].length) return {from:part.notes.length,to:part.notes.length,clean:true,empty:true};
   const bar=ms[mi];
-  const startsClean=!bar[0].tieFrom;
+  const startsClean=!bar[0].contFrom;
   const next=ms[mi+1];
   // The bar ends cleanly if nothing carries on into the next one.
-  const endsClean=!next||!next.length||!next[0].tieFrom;
+  const endsClean=!next||!next.length||!next[0].contFrom;
   return {from:bar[0].srcIdx,to:bar[bar.length-1].srcIdx,clean:startsClean&&endsClean,empty:false};
 }
 // A bar's worth of silence, as the fewest rests that add up to it — 'hdr' for
@@ -341,6 +385,21 @@ function reportUncleanBar(mi,which){
 function insertMeasureAt(mi){
   const total=measureCount();
   mi=Math.max(0,Math.min(mi,total));
+  // A note sounding across this barline used to make the whole operation
+  // impossible: there is no note index that means "the start of this bar" when
+  // a note is halfway through it. Now it can be split into a tied pair, which
+  // sounds identical, and the insert proceeds against a clean boundary.
+  parts.forEach(p=>{
+    const b=barBoundaryInPart(p,mi);
+    if(b.clean) return;
+    const ms=toMeasures(p.notes);
+    const k=ms[mi][0].srcIdx;
+    // How much of that note has already sounded by the time the barline
+    // arrives — the sum of its pieces in the bars before this one.
+    let head=0;
+    for(let j=0;j<mi;j++) (ms[j]||[]).forEach(it=>{ if(it.srcIdx===k) head+=durBeats(it.dur); });
+    splitNoteTied(p,k,head);
+  });
   if(parts.some(p=>!barBoundaryInPart(p,mi).clean)){ reportUncleanBar(mi,'insert'); return; }
   // The new bar takes whatever the metre gives it at that point — which for
   // bar 0 of a song with a pickup is the short pickup length.
@@ -356,6 +415,10 @@ function insertMeasureAt(mi){
     const b=barBoundaryInPart(p,mi);
     const rests=restNotesFor(p,beats);
     p.notes.splice(b.index,0,...rests);
+    // A tie into the bar we just pushed apart no longer joins anything: a bar
+    // of silence now sits between the two notes, so the hold is over.
+    const prev=p.notes[b.index-1];
+    if(prev&&prev.tie) delete prev.tie;
     shiftHairpins(p,b.index,rests.length);
   });
   shiftMeasureMarks(mi,1);
@@ -367,6 +430,19 @@ function removeMeasureAt(mi){
   const total=measureCount();
   if(total<=1){ toast('There is only one bar — nothing to remove.','warn'); return; }
   if(mi<0||mi>=total){ toast('That bar does not exist.','warn'); return; }
+  // Same treatment as insert: split any note straddling either end of the bar
+  // into a tied pair, so the bar owns whole notes and can be lifted out.
+  parts.forEach(p=>{
+    [mi,mi+1].forEach(edge=>{
+      const b=barBoundaryInPart(p,edge);
+      if(b.clean) return;
+      const ms=toMeasures(p.notes);
+      const k=ms[edge][0].srcIdx;
+      let head=0;
+      for(let j=0;j<edge;j++) (ms[j]||[]).forEach(it=>{ if(it.srcIdx===k) head+=durBeats(it.dur); });
+      splitNoteTied(p,k,head);
+    });
+  });
   if(parts.some(p=>!barNoteRange(p,mi).clean)){ reportUncleanBar(mi,'remove'); return; }
   parts.forEach(p=>{
     const r=barNoteRange(p,mi);
@@ -376,6 +452,10 @@ function removeMeasureAt(mi){
     // slide back by however many notes were taken out ahead of them.
     p.hairpins=(p.hairpins||[]).filter(hp=>!(hp.start>=r.from&&hp.start<=r.to)&&!(hp.end>=r.from&&hp.end<=r.to));
     p.notes.splice(r.from,count);
+    // The note before the gap was tied into music that has just gone; whatever
+    // now follows it is a different note, so the tie does not survive.
+    const prev=p.notes[r.from-1];
+    if(prev&&prev.tie) delete prev.tie;
     shiftHairpins(p,r.from,-count);
   });
   shiftMeasureMarks(mi,-1);
@@ -418,6 +498,14 @@ function updateSelectionUI(){
   qe.style.display='flex';
   document.getElementById('qe-label').textContent=label;
   document.querySelectorAll('.qe-pitch-btn').forEach(b=>b.style.display=n.rest?'none':'');
+  const tb=document.getElementById('qe-tie');
+  if(tb){
+    const on=!!n.tie, able=canTieAt(parts[selectedNote.partIdx].notes,selectedNote.noteIdx);
+    tb.classList.toggle('on',on);
+    tb.setAttribute('aria-pressed',String(on));
+    tb.disabled=!on&&!able;
+    tb.style.display=n.rest?'none':'';
+  }
   refreshDurRow();
   syncEditorsToSelection();
   announceSelection();
@@ -435,7 +523,11 @@ function speakPitch(key,acc){
   const [name,oct]=String(key||'').split('/');
   return name+(acc&&ACC_WORDS[acc]?ACC_WORDS[acc]:'')+' '+oct;
 }
-function describeNote(n,part,mi){
+// `n` is either a stored note — in which case pass its index so a tie can be
+// looked up — or one of toMeasures()' rendered pieces, which carries its own
+// tie flags already. The outline passes pieces, so indexOf() there would both
+// miss (a piece is a copy) and cost O(n²) on a long score.
+function describeNote(n,part,mi,idx){
   if(!n) return '';
   const d=decomposeDur(n.dur);
   const bits=[];
@@ -453,6 +545,10 @@ function describeNote(n,part,mi){
   if(n.tempo) bits.push(n.tempo);
   if(n.lyric) bits.push('lyric '+n.lyric);
   if(n.sticking) bits.push('stick '+(n.sticking==='R'?'right':'left'));
+  // A tie changes how long the note is held, which is exactly the sort of
+  // thing the staff shows and a screen reader would otherwise miss.
+  const tied=(n.tieTo!=null)?n.tieTo:(idx!=null&&part&&tieHoldsAt(part.notes,idx));
+  if(tied) bits.push('tied to the next note');
   return bits.join(', ');
 }
 // Where a note sits, counted the way a musician would say it.
@@ -477,7 +573,7 @@ function announceSelection(){
   const n=part?.notes[selectedNote.noteIdx];
   if(!n){ live.textContent=''; return; }
   const pos=positionOfNote(selectedNote.partIdx,selectedNote.noteIdx);
-  live.textContent=part.name+', bar '+pos.measure+' beat '+pos.beat+', '+describeNote(n,part,pos.measure-1);
+  live.textContent=part.name+', bar '+pos.measure+' beat '+pos.beat+', '+describeNote(n,part,pos.measure-1,selectedNote.noteIdx);
 }
 // A readable outline of the active part, so the music itself is reachable —
 // not only the note the cursor happens to be on.

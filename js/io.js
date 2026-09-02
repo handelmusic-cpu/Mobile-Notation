@@ -997,7 +997,16 @@ function parseMusicXML(text){
           const oct=parseInt(pit.querySelector('octave').textContent);
           const acc=alterToAcc(xmlAlter(pit));
           const lyr=nEl.querySelector('lyric text')?.textContent.trim()||null;
-          line.notes.push({keys:[step+'/'+oct],dur,vfAccs:[xmlAcc(nEl)],midiVals:[noteToMidi(step,acc,oct)],rest:false,lyric:lyr,dyn:null,arts:[],tempo:null,grace:[],rud:null,sticking:null});
+          // A tie begins on the note carrying type="start" — <tie> is the
+          // sounding element and <tied> the engraved one, and a file may use
+          // either. A note in the middle of a chain carries stop and start
+          // both; only the start matters here, because that is what "held into
+          // the next note" means. tieHoldsAt() re-checks it against the note
+          // that actually follows, so a tie that leads nowhere is dropped.
+          const tied=!!(nEl.querySelector('tie[type="start"]')||nEl.querySelector('tied[type="start"]'));
+          const nn={keys:[step+'/'+oct],dur,vfAccs:[xmlAcc(nEl)],midiVals:[noteToMidi(step,acc,oct)],rest:false,lyric:lyr,dyn:null,arts:[],tempo:null,grace:[],rud:null,sticking:null};
+          if(tied) nn.tie=true;
+          line.notes.push(nn);
         }
         lastKey=key;
         cursor+=xmlDur; line.cursor=cursor;
