@@ -851,7 +851,7 @@ function parseMIDI(buf){
   if(rstr(4)!=='MThd')throw new Error('Not a MIDI file');
   rd32(); rd16(); const ntrk=rd16(); const div=rd16();
   const ppq=(div&0x8000)?480:div;
-  let tempo=500000, timeSig='4/4';
+  let tempo=500000, timeSig='4/4', keySig=null;
   const tracks=[];
   for(let t=0;t<ntrk;t++){
     if(rstr(4)!=='MTrk')throw new Error('Bad MIDI track');
@@ -865,6 +865,8 @@ function parseMIDI(buf){
       if(status===0xFF){ const mt=rd8(); const ml=vlqRead(); const ms=p;
         if(mt===0x51)tempo=(dv.getUint8(p)<<16)|(dv.getUint8(p+1)<<8)|dv.getUint8(p+2);
         else if(mt===0x58){const nn=dv.getUint8(p),dd=dv.getUint8(p+1);timeSig=nn+'/'+Math.pow(2,dd);}
+        // First key signature wins: sf is sharps (+) or flats (−), mi 1 for minor.
+        else if(mt===0x59&&ml>=2&&!keySig){keySig={fifths:dv.getInt8(p),mode:dv.getUint8(p+1)?'minor':'major'};}
         p=ms+ml;
       } else if(status===0xF0||status===0xF7){ const sl=vlqRead(); p+=sl; }
       else if(type===0x90||type===0x80){ const note=rd8(),vel=rd8(); events.push({tick,on:(type===0x90&&vel>0),note}); }
@@ -874,10 +876,14 @@ function parseMIDI(buf){
     }
     p=end; if(events.length)tracks.push(events);
   }
-  return {ppq,tempo,timeSig,tracks};
+  return {ppq,tempo,timeSig,keySig,tracks};
 }
 function midiToData(parsed){
   const bpm=Math.max(20,Math.min(320,Math.round(60000000/parsed.tempo)));
+  let keyId='C';
+  if(parsed.keySig){ try{ keyId=fifthsToKey(parsed.keySig.fifths,parsed.keySig.mode)||'C'; }catch(err){ keyId='C'; } }
+  const kd=parsed.keySig?KMAP[keyId]:null;
+  const preferFlat=!!kd&&FLAT_KEYS.includes(kd.vfSig);
   const ppq=parsed.ppq||480, tol=ppq*0.12;
   const outParts=[];
   parsed.tracks.forEach(events=>{
@@ -896,13 +902,15 @@ function midiToData(parsed){
       if(start-cursor>tol)nd.push(restNote((start-cursor)/ppq));
       const dur=Math.max(...group.map(g=>g.end-g.start));
       const midis=group.map(g=>g.midi).sort((a,b)=>a-b);
-      const res=midis.map(m=>midiToNote(m));
-      nd.push({keys:res.map(r=>r.name+'/'+r.oct),dur:beatsToDur(dur/ppq),vfAccs:res.map(r=>r.acc),midiVals:midis,rest:false,lyric:null,dyn:null,arts:[],tempo:null});
+      // With a key signature in the file, spell in that key: notes of the key draw no
+      // accidental. Without one, as before (C, every black key with its sharp).
+      const res=kd?midis.map(m=>spellInScale(m,kd.scale,preferFlat)):midis.map(m=>{const r=midiToNote(m);return {...r,vfAcc:r.acc};});
+      nd.push({keys:res.map(r=>r.name+'/'+r.oct),dur:beatsToDur(dur/ppq),vfAccs:res.map(r=>r.vfAcc),midiVals:midis,rest:false,lyric:null,dyn:null,arts:[],tempo:null});
       cursor=start+dur; i=j;
     }
     outParts.push({notes:nd});
   });
-  return {bpm,timeSig:parsed.timeSig,keyId:'C',parts:outParts};
+  return {bpm,timeSig:parsed.timeSig,keyId,parts:outParts};
 }
 
 // ---- MusicXML ----

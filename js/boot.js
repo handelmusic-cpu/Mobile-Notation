@@ -214,7 +214,9 @@ if(_handoff){
     if(_handoff.kind==='midi') importToProject(name, midiToData(parseMIDI(_handoff.data.buffer.slice(_handoff.data.byteOffset,_handoff.data.byteOffset+_handoff.data.byteLength))));
     else if(_handoff.kind==='musicxml') importToProject(name, parseMusicXML(_handoff.data));
     else throw new Error('This version of mõdScore can\'t open "'+_handoff.kind+'" yet.');
-    toast('Opened from '+(_handoff.fromName||'another mõd app')+': '+name);
+    // mõdRïff titles its charts "mõdRïff: A♭ - D♭ - …"; don't say the app's name twice.
+    const from=_handoff.fromName||'another mõd app';
+    toast(name.startsWith(from)?'Opened '+name:'Opened from '+from+': '+name);
   }catch(e){ sheetTell('Could not open the song', e.message); console.error(e); }
 } else if(!safeStore.get('mn_tutorial_seen')) setTimeout(startTour, 500);
 
