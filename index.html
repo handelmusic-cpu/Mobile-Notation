@@ -192,8 +192,14 @@ body { font-family:-apple-system,BlinkMacSystemFont,sans-serif; background:var(-
 #save-warn{background:var(--danger);color:#fff;}
 
 #tab-bar{display:flex;background:var(--surf);border-top:1px solid var(--border);flex-shrink:0;}
-.tab-btn{flex:1;padding:11px 1px;border:none;background:transparent;color:var(--muted3);font-size:11.5px;font-weight:700;cursor:pointer;border-bottom:2px solid transparent;white-space:nowrap;text-transform:uppercase;letter-spacing:.5px;}
+.tab-btn{flex:1;padding:11px 1px;border:none;background:transparent;color:var(--muted3);font-size:13px;font-weight:600;cursor:pointer;border-bottom:2px solid transparent;white-space:nowrap;}
 .tab-btn.on{color:var(--accent);border-bottom-color:var(--accent);}
+/* Tracked capitals made "INSTRUMENTS" and "MARKINGS" run into each other on
+   a 390px phone. Sentence case is narrower and easier to read, and below
+   420px (and in the landscape rail) the two long names give way to short
+   ones; the full name stays on the button's aria-label. */
+.tab-btn .sm{display:none;}
+@media (max-width:419px){ .tab-btn .lg{display:none;} .tab-btn .sm{display:inline;} }
 
 /* Collapsed controls (landscape / more staff room): hide the tall control
    stack. The rail wraps the tab bar, every panel and the chord palette, so
@@ -216,9 +222,9 @@ body { font-family:-apple-system,BlinkMacSystemFont,sans-serif; background:var(-
     grid-template-areas:"tbar tbar" "qedit qedit" "score rail" "ngrid ngrid";
   }
   #toolbar{ grid-area:tbar; }
-  /* Five labels have to share the rail's width — the portrait letter-spacing
-     is what pushes "SONGS" off the end. */
-  .tab-btn{ font-size:9.5px; letter-spacing:0; padding:11px 1px; }
+  /* Five labels have to share the rail's width. */
+  .tab-btn{ font-size:11px; padding:11px 1px; }
+  .tab-btn .lg{display:none;} .tab-btn .sm{display:inline;}
   #quick-edit-bar{ grid-area:qedit; }
   #score-wrap{ grid-area:score; min-height:0; }
   #control-rail{ grid-area:rail; border-left:1px solid var(--border); }
@@ -484,9 +490,9 @@ body { font-family:-apple-system,BlinkMacSystemFont,sans-serif; background:var(-
 
 <div id="tab-bar">
   <button class="tab-btn on"  onclick="switchTab('notes')">Notes</button>
-  <button class="tab-btn"     onclick="switchTab('parts')">Instruments</button>
-  <button class="tab-btn"     onclick="switchTab('markings')">Markings</button>
-  <button class="tab-btn"     onclick="switchTab('score')">Key/Time</button>
+  <button class="tab-btn"     onclick="switchTab('parts')" aria-label="Instruments"><span class="lg">Instruments</span><span class="sm">Parts</span></button>
+  <button class="tab-btn"     onclick="switchTab('markings')" aria-label="Markings"><span class="lg">Markings</span><span class="sm">Marks</span></button>
+  <button class="tab-btn"     onclick="switchTab('score')" aria-label="Key and time"><span class="lg">Key / time</span><span class="sm">Key/time</span></button>
   <button class="tab-btn"     onclick="switchTab('proj')">Songs</button>
 </div>
 
