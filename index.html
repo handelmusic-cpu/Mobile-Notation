@@ -20,6 +20,8 @@
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="MōdScore">
+<!-- Matches the panel background of whichever theme is showing; applyTheme()
+     rewrites it once the saved choice is known, these cover first paint. -->
 <meta name="theme-color" content="#12121f" media="(prefers-color-scheme: dark)">
 <meta name="theme-color" content="#eceef6" media="(prefers-color-scheme: light)">
 <meta name="description" content="Write, hear and share music notation on your phone. Works offline once opened, and installs to the home screen.">
@@ -56,9 +58,11 @@
   --border2:#333;
   --paper:#f4efe4;     /* the score's page — stays paper in both themes */
 
-  /* ── Text ── */
+  /* ── Text ── muted2/muted3 carry the small uppercase labels, hints and
+     inactive tabs; at #667/#778 they measured 3.0 and 3.9 : 1 on the panels,
+     under the 4.5 small text needs. Raised to clear it. */
   --text:#e0e4ef; --text2:#dde; --text3:#ccd; --text4:#d5d8e5;
-  --muted:#889; --muted2:#667; --muted3:#778; --muted4:#aab; --muted5:#99a;
+  --muted:#889; --muted2:#84849c; --muted3:#8a8aa2; --muted4:#aab; --muted5:#99a;
 
   /* ── Semantic accents ── */
   --accent:#e94560;    /* primary / selected */
@@ -90,8 +94,10 @@ body.light{
   --surf3:#dde0ee; --surf4:#fff; --ctl:#ccd1e2; --ctl2:#d3d7e6;
   --border:#c1c6dc; --border2:#b4b9d0;
   --text:#1b1d2b; --text2:#262938; --text3:#2f3245; --text4:#2a2d3d;
-  --muted:#5c6078; --muted2:#6b6f87; --muted3:#5c6078; --muted4:#3c3f54; --muted5:#6b6f87;
-  --info-bg:#dbe7f5; --ok-bg:#d9f0e3; --sky:#2b6ca3; --gold:#7d5600;
+  --muted:#5c6078; --muted2:#585c74; --muted3:#5c6078; --muted4:#3c3f54; --muted5:#6b6f87;
+  /* info-fg is the focus ring and some labels: the dark theme's #5dade2 was
+     2.1 : 1 on these light panels, too faint to find keyboard focus by. */
+  --info-bg:#dbe7f5; --info-fg:#21689f; --ok-bg:#d9f0e3; --sky:#2b6ca3; --gold:#7d5600;
   --rec-fg:#a3251a; --ok-fg:#1c6b41;
   --dot:#a9aec6; --rest-btn:#8d93ad;
   --ch-bg-l:87%; --ch-7-l:81%; --ch-bd-l:52%; --ch-fg-l:30%;
