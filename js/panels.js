@@ -1,5 +1,5 @@
 // ═══════════════════════════════════════════════════════════════════════
-// MōdScore — The control panels: score setup, parts, tabs, note controls, chords
+// mõdScore — The control panels: score setup, parts, tabs, note controls, chords
 // ═══════════════════════════════════════════════════════════════════════
 // Part of a single shared script, split across files so a change to one
 // concern is not a change inside a five-thousand-line file. These load as

@@ -19,7 +19,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="apple-mobile-web-app-title" content="MōdScore">
+<meta name="apple-mobile-web-app-title" content="mõdScore">
 <!-- Matches the panel background of whichever theme is showing; applyTheme()
      rewrites it once the saved choice is known, these cover first paint. -->
 <meta name="theme-color" content="#12121f" media="(prefers-color-scheme: dark)">
@@ -28,12 +28,12 @@
 <!-- Share previews. og:image is left out on purpose: crawlers want an
      absolute URL, and the app must not hard-code the host it is served from. -->
 <meta property="og:type" content="website">
-<meta property="og:title" content="MōdScore">
+<meta property="og:title" content="mõdScore">
 <meta property="og:description" content="Write, hear and share music notation on your phone.">
 <meta name="twitter:card" content="summary">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="apple-touch-icon" href="icon-180.png">
-<title>MōdScore</title>
+<title>mõdScore</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%20100%20100'%3E%3Crect%20width='100'%20height='100'%20rx='22'%20fill='%2312121f'/%3E%3Ctext%20x='50'%20y='70'%20font-family='Arial,Helvetica,sans-serif'%20font-size='58'%20font-weight='800'%20fill='%23e94560'%20text-anchor='middle'%3EM%3C/text%3E%3C/svg%3E">
 <style>
 /* ═══════════════════════════════════════════════════════
@@ -335,7 +335,10 @@ body { font-family:-apple-system,BlinkMacSystemFont,sans-serif; background:var(-
 /* Brand wordmark — shown on the Songs tab rather than the always-visible
    toolbar, so it never competes with the score for space on a small screen. */
 #brand{text-align:center;padding:6px 0 12px;}
-#brand-mark{font-size:26px;font-weight:800;letter-spacing:.5px;background:linear-gradient(90deg,var(--green),var(--gold),var(--accent));-webkit-background-clip:text;background-clip:text;color:transparent;}
+/* Branded like its sibling mõdRïff: solid lettering, the second word in italic, and the same rainbow as a
+   thin line under it (it was gradient-filled text, which matched nothing else). */
+#brand-mark{font-size:26px;font-weight:800;letter-spacing:.2px;color:var(--text);display:inline-block;padding-bottom:6px;background:linear-gradient(90deg,#ff5a5f,#ff9a3c,#ffd23f,#5fdc6a,#2ad4c8,#3a9bff,#b46bff) left bottom/100% 3px no-repeat;}
+#brand-mark i{font-style:italic;}
 #brand-tag{font-size:10px;color:var(--muted2);letter-spacing:1.5px;text-transform:uppercase;margin-top:2px;}
 
 /* Diatonic chord palette — always visible */
@@ -716,7 +719,7 @@ body { font-family:-apple-system,BlinkMacSystemFont,sans-serif; background:var(-
 
 <!-- Files / projects panel -->
 <div id="panel-proj" class="panel">
-  <div id="brand"><div id="brand-mark">MōdScore</div><div id="brand-tag">Mobile Music Notation</div></div>
+  <div id="brand"><div id="brand-mark" aria-label="mõdScore">mõd<i>Score</i></div><div id="brand-tag">Mobile Music Notation</div></div>
   <div class="row" style="gap:6px">
     <button class="chip on2" onclick="newProjectPrompt()" style="font-size:11px">+ New Song</button>
     <button class="chip" id="theme-btn" onclick="toggleTheme()" style="font-size:11px" title="Switch between the dark and light interface">☀&#xFE0E; Light mode</button>
@@ -825,10 +828,10 @@ body { font-family:-apple-system,BlinkMacSystemFont,sans-serif; background:var(-
 // A missing engine used to be invisible; say so instead of rendering nothing.
 if(typeof Vex==='undefined'||typeof Tone==='undefined'){
   document.body.innerHTML='<div style="padding:28px;font:15px/1.5 -apple-system,BlinkMacSystemFont,sans-serif;color:var(--text)">'
-    +'<h2 style="color:var(--accent);margin-bottom:10px">MōdScore could not start</h2>'
+    +'<h2 style="color:var(--accent);margin-bottom:10px">mõdScore could not start</h2>'
     +'<p>The notation and audio engines failed to load. If you opened this file directly from disk, serve the folder over HTTP instead — the <code>lib/</code> folder has to load alongside this page.</p>'
     +'<p style="margin-top:10px"><a href="" onclick="location.reload();return false" style="color:var(--info-fg)">Reload</a></p></div>';
-  throw new Error('MōdScore: VexFlow/Tone failed to load');
+  throw new Error('mõdScore: VexFlow/Tone failed to load');
 }
 </script>
 <script src="js/core.js"></script>

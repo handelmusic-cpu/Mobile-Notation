@@ -1,4 +1,4 @@
-/* MōdScore service worker.
+/* mõdScore service worker.
  *
  * The app was already set up to be installed — manifest, Apple meta tags,
  * standalone display, VexFlow and Tone vendored into lib/ after a CDN outage
@@ -18,7 +18,7 @@
 // Versioned separately on purpose. Bumping the shell must not throw away tens
 // of megabytes of downloaded instruments that have not changed — and on a
 // phone on rehearsal-room wifi, re-fetching them is the expensive part.
-const SHELL = 'modscore-shell-v3';
+const SHELL = 'modscore-shell-v4';
 const SAMPLES = 'modscore-samples-v1';
 
 const SHELL_FILES = [

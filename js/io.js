@@ -1,5 +1,5 @@
 // ═══════════════════════════════════════════════════════════════════════
-// MōdScore — Song storage, autosave, and every import and export path
+// mõdScore — Song storage, autosave, and every import and export path
 // ═══════════════════════════════════════════════════════════════════════
 // Part of a single shared script, split across files so a change to one
 // concern is not a change inside a five-thousand-line file. These load as
@@ -252,7 +252,7 @@ document.getElementById('project-file').addEventListener('change', async functio
   try{
     const payload=JSON.parse(await f.text());
     const data=payload && payload.data ? payload.data : payload; // tolerate a bare data object
-    if(!data || !Array.isArray(data.parts)) throw new Error('Not a MōdScore song file');
+    if(!data || !Array.isArray(data.parts)) throw new Error('Not a mõdScore song file');
     const id='p'+Date.now();
     const name=(payload.name||f.name.replace(/\.(mnote\.)?json$/i,'')||'Imported song');
     projects.push({id,name,data,updated:Date.now()});
@@ -546,7 +546,7 @@ function buildMusicXML(){
   out.push('<!DOCTYPE score-partwise PUBLIC "-//Recordare//DTD MusicXML 3.1 Partwise//EN" "http://www.musicxml.org/dtds/partwise.dtd">');
   out.push('<score-partwise version="3.1">');
   out.push('<work><work-title>'+esc(title)+'</work-title></work>');
-  out.push('<identification><encoding><software>MōdScore</software></encoding></identification>');
+  out.push('<identification><encoding><software>mõdScore</software></encoding></identification>');
   out.push('<part-list>');
   parts.forEach((p,pi)=>{
     const inst=IMAP[p.instId]||IMAP.piano;

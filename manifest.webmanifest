@@ -1,6 +1,6 @@
 {
-  "name": "MōdScore",
-  "short_name": "MōdScore",
+  "name": "mõdScore",
+  "short_name": "mõdScore",
   "description": "Mobile music notation",
   "start_url": "./",
   "scope": "./",

@@ -1,5 +1,5 @@
 // ═══════════════════════════════════════════════════════════════════════
-// MōdScore — Keyboard entry, the guided tour, and starting the app
+// mõdScore — Keyboard entry, the guided tour, and starting the app
 // ═══════════════════════════════════════════════════════════════════════
 // Part of a single shared script, split across files so a change to one
 // concern is not a change inside a five-thousand-line file. These load as
@@ -45,7 +45,7 @@ document.addEventListener('keydown', e=>{
 // Guided tour (hybrid walkthrough + spotlight on the real controls)
 // ═══════════════════════════════════════════════════════
 const TOUR=[
-  {title:'Welcome to MōdScore 🎵', text:'A quick tour of everything the app can do. Tap Next to step through — or Skip anytime. You can reopen this later with the “?” button.'},
+  {title:'Welcome to mõdScore 🎵', text:'A quick tour of everything the app can do. Tap Next to step through — or Skip anytime. You can reopen this later with the “?” button.'},
   {tab:'notes', sel:'#note-grid', title:'Write notes', text:'Tap a letter (C–B) to add that note. Each one lands in the octave closest to the note before it, so melodies flow naturally. The last button adds a rest.'},
   {tab:'notes', sel:'#score-wrap', title:'The cursor', text:'Tap a note on the staff to select it (it turns blue). New notes insert right after it — so you can add music in the middle, not just the end. Tap an empty spot to drop the blue cursor where the next note will go.'},
   {tab:'notes', sel:'#quick-edit-bar', title:'Change or delete a note', text:'Select a note and this bar appears above the staff with everything for it: lengths, ↑½ ↓½ and ♯ ♭ ♮ for pitch, ↑8va ↓8va for octaves, ⇢Rest to turn it into a rest, and 🗑 to delete it.'},
