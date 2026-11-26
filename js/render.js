@@ -148,6 +148,9 @@ function partClefFor(p){
 }
 
 const BASE_MW=190, PX_PER_NOTE=46, FX=115, PG=90, TP=22;
+// Where every system starts. It was 10, but VexFlow draws a piano brace
+// ~14px left of its stave, so the brace was cut off at the edge of the page.
+const SYS_X=18;
 // Notes need horizontal room roughly proportional to their duration — counting
 // every note as the same 1 unit (regardless of whether it's a whole note or a
 // 32nd) squashed long-note measures and over-spread short-note ones, which is
@@ -259,7 +262,7 @@ function drawScore(){
   const partClefs=parts.map(partClefFor);
 
   const mws=Array.from({length:numM},(_,mi)=>calcMW(allM,mi));
-  const totalW=FX+mws.reduce((a,b)=>a+b,0)+40;
+  const totalW=SYS_X+FX+mws.reduce((a,b)=>a+b,0)+30;
   const totalH=TP+numP*PG+30;
 
   // Per-measure duration (beats), used by playScore() to time the playback auto-scroll.
@@ -286,7 +289,7 @@ function drawScore(){
   // and cheap; it's the drawing that costs, so the window below decides what
   // to paint while the geometry stays complete for scrolling and playback.
   {
-    let lx=10;
+    let lx=SYS_X;
     // Stored scaled: every consumer (the render window, scrollToMeasure)
     // compares these against scrollLeft, which is screen pixels.
     for(let mi=0;mi<numM;mi++){ measureXs.push(lx*scoreZoom); lx+=(mi===0?mws[mi]+FX:mws[mi]); }
@@ -295,7 +298,7 @@ function drawScore(){
   const win=measureWindow(measureXs,measureWs,numM);
   _lastWindow=windowKey(win);
 
-  let x=10;
+  let x=SYS_X;
   for(let mi=0;mi<numM;mi++){
     const first=mi===0;
     const mw=first?mws[mi]+FX:mws[mi];
@@ -372,7 +375,16 @@ function drawScore(){
     }catch(e){}
   });
 
-  drawPartLabels(div.querySelector('svg'),Math.round(4*scoreZoom));
+  // A label may run as far as the first notehead of bar 1 on its own staff
+  // or the one above (whose low notes and down-stems share the gap it sits
+  // in). With no notes there it gets the room a long name needs. Positions
+  // are still unscaled here.
+  {
+    const lx=SYS_X+5, firstX=parts.map(()=>Infinity), end0=measureXs.length>1?measureXs[1]/scoreZoom:Infinity;
+    notePositions.forEach(q=>{ if(q.x<end0 && q.x<firstX[q.partIdx]) firstX[q.partIdx]=q.x; });
+    drawPartLabels(div.querySelector('svg'),Math.round(lx*scoreZoom),
+      pi=>Math.max(40,Math.min(150,Math.min(firstX[pi],pi?firstX[pi-1]:Infinity)-8-lx)));
+  }
 
   // VexFlow reports note metrics in unscaled user units. Everything that
   // consumes notePositions — the tap hit-test, the caret, scrollToNoteEnd —
@@ -402,20 +414,24 @@ function partLabelText(p){
   const nm=(inst&&inst.label)||p.name||'Part';
   return (p.name&&p.name!==nm)?(p.name+' · '+nm):nm;
 }
-function drawPartLabels(svg,xPx){
+function drawPartLabels(svg,xPx,capFor){
   if(!svg)return 0;
   let widest=0;
   parts.forEach((p,pi)=>{
     const t=document.createElementNS(SVGNS,'text');
     t.setAttribute('x',xPx);
-    // In the gap below this staff's five lines, clear of both the clef above
-    // and the next staff below.
-    t.setAttribute('y',Math.round((TP+pi*PG+93)*scoreZoom));
+    // Above this staff's top line, just inside the system's left barline (the
+    // caller passes SYS_X+5 so the line joining the staves misses it). It used to
+    // sit in the gap *below* the staff, at x=4, which put it straight across
+    // the treble clef's tail (that glyph hangs ~17px under the bottom line)
+    // and through the brace. Above, the only neighbour is the treble clef's
+    // top curl, which starts ~4px below this baseline's descenders.
+    t.setAttribute('y',Math.round((TP+pi*PG+22)*scoreZoom));
     t.setAttribute('font-size',Math.round(9*scoreZoom));
     t.setAttribute('font-family','-apple-system,BlinkMacSystemFont,Helvetica,Arial,sans-serif');
     t.setAttribute('font-weight',pi===apIdx?'700':'400');
     t.setAttribute('fill',pi===apIdx?'#c62b45':'#000');
-    t.setAttribute('opacity',pi===apIdx?'0.9':'0.38');
+    t.setAttribute('opacity',pi===apIdx?'0.9':'0.5');
     t.setAttribute('pointer-events','none');
     t.textContent=partLabelText(p);
     svg.appendChild(t);
@@ -425,7 +441,7 @@ function drawPartLabels(svg,xPx){
       // Bar 0's first notehead sits ~75px in even in C major (the tightest
       // key signature), so stay well short of it — stems from the staff above
       // reach down into this band.
-      const cap=62*scoreZoom;
+      const cap=(capFor?capFor(pi):58)*scoreZoom;
       let txt=t.textContent;
       while(t.getComputedTextLength()>cap && txt.length>4){
         txt=txt.slice(0,-2); t.textContent=txt+'…';
@@ -446,6 +462,10 @@ function renderClefGutter(){
   const kd=KMAP[currentKeyId];
   const numP=parts.length;
   const PROBE=260;  // generous stave width; the host clips to what's used
+  // Text can only be measured while it is laid out. The overlay is usually
+  // display:none when this runs, so the label measured 0 and the gutter was
+  // sized for the clef alone, cutting the staff names off mid-word.
+  host.style.visibility='hidden'; host.style.display='block';
   try{
     const renderer=new Renderer(host,Renderer.Backends.SVG);
     // Matches the staff's own zoom, or the frozen clef would drift out of
@@ -456,7 +476,7 @@ function renderClefGutter(){
     let endX=0;
     const staves=parts.map((p,pi)=>{
       const inst=IMAP[p.instId]||IMAP['piano'];
-      const st=new Stave(10,TP+pi*PG,PROBE);
+      const st=new Stave(SYS_X,TP+pi*PG,PROBE);
       if(inst.staffLines===1)st.setConfigForLines([{visible:false},{visible:false},{visible:true},{visible:false},{visible:false}]);
       st.addClef(partClefFor(p)).addKeySignature(partVfSig(p));
       st.setContext(ctx).draw();
@@ -464,12 +484,14 @@ function renderClefGutter(){
       return st;
     });
     if(numP>=2) new StaveConnector(staves[0],staves[numP-1]).setType('singleLeft').setContext(ctx).draw();
-    const labelW=drawPartLabels(host.querySelector('svg'),Math.round(4*scoreZoom));
+    const labelW=drawPartLabels(host.querySelector('svg'),Math.round((SYS_X+5)*scoreZoom));
     // Wide enough for the clef and key, or the longest instrument name.
-    _gutterW=Math.round(Math.max(Math.min(PROBE,endX+4)*scoreZoom, labelW+20*scoreZoom));
+    _gutterW=Math.round(Math.max(Math.min(PROBE,endX+4)*scoreZoom, labelW+(SYS_X+11)*scoreZoom));
     host.style.width=_gutterW+'px';
     host.style.height=Math.round((TP+numP*PG+30)*scoreZoom)+'px';
   }catch(e){ host.innerHTML=''; _gutterW=0; }
+  host.style.visibility='';
+  if(!_gutterW) host.style.display='none';
   syncClefGutter();
 }
 // Pins the overlay to the left edge of the scroll viewport. Absolute children
