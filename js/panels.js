@@ -139,6 +139,12 @@ function applyTheme(light){
   document.body.classList.toggle('light',!!light);
   const btn=document.getElementById('theme-btn');
   if(btn) btn.textContent=light?'☾ Dark mode':'☀ Light mode';
+  // The browser chrome / Android status bar follows theme-color. The head
+  // tags follow the OS setting, which is wrong once the user has picked the
+  // other theme, so collapse them to one tag carrying the theme in use.
+  const metas=document.querySelectorAll('meta[name="theme-color"]');
+  metas.forEach((m,i)=>{ if(i) m.remove(); });
+  if(metas[0]){ metas[0].removeAttribute('media'); metas[0].content=light?'#eceef6':'#12121f'; }
   safeStore.set('mn_theme',light?'light':'dark');
 }
 function toggleTheme(){ applyTheme(!document.body.classList.contains('light')); }

@@ -20,7 +20,15 @@
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="MōdScore">
-<meta name="theme-color" content="#12121f">
+<meta name="theme-color" content="#12121f" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#eceef6" media="(prefers-color-scheme: light)">
+<meta name="description" content="Write, hear and share music notation on your phone. Works offline once opened, and installs to the home screen.">
+<!-- Share previews. og:image is left out on purpose: crawlers want an
+     absolute URL, and the app must not hard-code the host it is served from. -->
+<meta property="og:type" content="website">
+<meta property="og:title" content="MōdScore">
+<meta property="og:description" content="Write, hear and share music notation on your phone.">
+<meta name="twitter:card" content="summary">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="apple-touch-icon" href="icon-180.png">
 <title>MōdScore</title>
