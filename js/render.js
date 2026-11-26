@@ -239,6 +239,37 @@ const windowKey=w=>w.first+':'+w.last+':'+w.fFirst+':'+w.fLast;
 // Paint only. render() is for "the music changed"; this is for "the view
 // moved", and must not touch undo history or autosave.
 function redraw(){ drawScore(); renderCaret(); }
+// A score shorter than the screen used to stop at its natural width: one empty
+// bar was 320px of a 1280px page, which read as a broken layout rather than a
+// blank sheet. Short scores now stretch their bars, in proportion, to end at
+// the right edge (what an engraver does to a final system). A score already
+// wider than the screen is left alone and scrolls as before.
+let _justifiedFor=0;
+function justifyToViewport(mws){
+  const wrap=document.getElementById('score-wrap');
+  if(!wrap) return;
+  const cs=getComputedStyle(wrap);
+  const inner=wrap.clientWidth-parseFloat(cs.paddingLeft)-parseFloat(cs.paddingRight);
+  _justifiedFor=wrap.clientWidth;
+  const avail=Math.floor(inner/scoreZoom)-(SYS_X+FX+30);
+  const sum=mws.reduce((a,b)=>a+b,0);
+  if(!(avail>sum) || !sum) return;
+  const k=avail/sum;
+  for(let i=0;i<mws.length;i++) mws[i]=Math.floor(mws[i]*k);
+}
+// Bar widths depend on the viewport now, so redraw when the staff's box
+// changes size (rotation, window resize, collapsing the control rail). Not
+// through render(): nothing about the song changed.
+if(window.ResizeObserver){
+  let t=0;
+  new ResizeObserver(()=>{
+    clearTimeout(t);
+    t=setTimeout(()=>{
+      const wrap=document.getElementById('score-wrap');
+      if(wrap && Math.abs(wrap.clientWidth-_justifiedFor)>2){ redraw(); renderClefGutter(); syncClefGutter(); }
+    },120);
+  }).observe(document.getElementById('score-wrap'));
+}
 function render(){
   drawScore();
   renderCaret();
@@ -262,6 +293,7 @@ function drawScore(){
   const partClefs=parts.map(partClefFor);
 
   const mws=Array.from({length:numM},(_,mi)=>calcMW(allM,mi));
+  justifyToViewport(mws);
   const totalW=SYS_X+FX+mws.reduce((a,b)=>a+b,0)+30;
   const totalH=TP+numP*PG+30;
 
