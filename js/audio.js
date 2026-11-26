@@ -492,10 +492,13 @@ function durSecs(dur,bpm){
 }
 
 // ── Sample-based instruments (real recordings) ──────────
-// Salamander grand piano (Tone.js official) + tonejs-instruments library.
-const TI='https://nbrosowsky.github.io/tonejs-instruments/samples/';
+// Salamander grand piano + the tonejs-instruments library, both CC-BY 3.0, served from this
+// app's own samples/ folder (credits in samples/CREDITS.md). They used to stream from two
+// github.io hosts, which made every hosting site send visitors to a third party and left
+// any instrument not yet cached silent offline.
+const TI='samples/';
 const SALAMANDER={
-  base:'https://tonejs.github.io/audio/salamander/',
+  base:'samples/salamander/',
   map:{'A0':'A0.mp3','C1':'C1.mp3','D#1':'Ds1.mp3','F#1':'Fs1.mp3','A1':'A1.mp3','C2':'C2.mp3','D#2':'Ds2.mp3','F#2':'Fs2.mp3','A2':'A2.mp3','C3':'C3.mp3','D#3':'Ds3.mp3','F#3':'Fs3.mp3','A3':'A3.mp3','C4':'C4.mp3','D#4':'Ds4.mp3','F#4':'Fs4.mp3','A4':'A4.mp3','C5':'C5.mp3','D#5':'Ds5.mp3','F#5':'Fs5.mp3','A5':'A5.mp3','C6':'C6.mp3','D#6':'Ds6.mp3','F#6':'Fs6.mp3','A6':'A6.mp3','C7':'C7.mp3','D#7':'Ds7.mp3','F#7':'Fs7.mp3','A7':'A7.mp3','C8':'C8.mp3'}
 };
 // folder -> sampled pitches (Sampler pitch-shifts to fill the gaps; '#' -> 's' in filename)
@@ -506,7 +509,7 @@ const SAMP={
   contrabass:{base:TI+'contrabass/', pitches:['C2','E2','G1']},
   flute:{base:TI+'flute/', pitches:['C4','C5','C6','A5']},
   clarinet:{base:TI+'clarinet/', pitches:['D4','D5','F4']},
-  bassoon:{base:TI+'bassoon/', pitches:['C3','C4','G2','A3']},
+  bassoon:{base:TI+'bassoon/', pitches:['C3','C4','A3']},
   saxophone:{base:TI+'saxophone/', pitches:['A4','C5','D5','E4']},
   trumpet:{base:TI+'trumpet/', pitches:['C4','F4','G4']},
   frenchhorn:{base:TI+'french-horn/', pitches:['C4','D3','F3']},
@@ -539,8 +542,8 @@ function getMasterBus(){
 }
 
 const _samplerCache={}, _drumCache={};
-// The recorded instruments stream from tonejs.github.io. That fetch can fail
-// — offline, captive wifi, the host having a bad day — and a Sampler that
+// The recorded instruments load from samples/. That fetch can fail
+// — offline before they were ever cached, a flaky connection — and a Sampler that
 // never loads simply plays nothing, so the app looked broken with no clue
 // why. Every instrument already carries an oscillator/envelope definition
 // for exactly this shape of sound, so fall back to synthesizing it: quieter

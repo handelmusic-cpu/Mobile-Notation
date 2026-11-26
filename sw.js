@@ -10,15 +10,14 @@
  *   SHELL   the app itself. Precached on install, replaced wholesale on
  *           version bump, and always served from cache first — an installed
  *           app should not wait on a network round trip to open.
- *   SAMPLES the recorded instruments, which stream from tonejs.github.io and
- *           nbrosowsky.github.io. Cached as they are played, so the second
+ *   SAMPLES the recorded instruments in samples/. Cached as they are played, so the second
  *           time you play a piano part offline it still sounds like a piano
  *           instead of falling back to the oscillator voice.
  */
 // Versioned separately on purpose. Bumping the shell must not throw away tens
 // of megabytes of downloaded instruments that have not changed — and on a
 // phone on rehearsal-room wifi, re-fetching them is the expensive part.
-const SHELL = 'modscore-shell-v4';
+const SHELL = 'modscore-shell-v6';
 const SAMPLES = 'modscore-samples-v1';
 
 const SHELL_FILES = [
@@ -37,11 +36,8 @@ const SHELL_FILES = [
   './icon-180.png',
   './icon-192.png',
   './icon-512.png',
+  './icon-maskable-512.png',
 ];
-
-// Hosts whose responses are worth keeping. Opaque cross-origin responses are
-// cacheable and replayable even though we cannot read their status.
-const SAMPLE_HOSTS = ['tonejs.github.io', 'nbrosowsky.github.io'];
 
 self.addEventListener('install', e => {
   e.waitUntil((async () => {
@@ -70,16 +66,16 @@ self.addEventListener('message', e => { if (e.data === 'skipWaiting') self.skipW
 self.addEventListener('fetch', e => {
   const req = e.request;
   if (req.method !== 'GET') return;
-  const url = new URL(req.url);
 
-  if (SAMPLE_HOSTS.includes(url.hostname)) {
-    e.respondWith(cacheThenNetwork(req, SAMPLES));
-    return;
-  }
   // Same origin is not the same app when hosted under a sub-path: a request
   // for the parent site's own pages or assets must not be answered from, or
   // stored in, this app's shell cache.
   if (!req.url.startsWith(self.registration.scope)) return;
+
+  if (req.url.startsWith(self.registration.scope + 'samples/')) {
+    e.respondWith(cacheThenNetwork(req, SAMPLES));
+    return;
+  }
 
   // Navigations: cache first so the app opens instantly and offline, with a
   // background refresh so a deploy is picked up by the next launch.
