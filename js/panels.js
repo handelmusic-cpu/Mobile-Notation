@@ -1,5 +1,5 @@
 // ═══════════════════════════════════════════════════════════════════════
-// MōdScore — The control panels: score setup, parts, tabs, note controls, chords
+// mõdScore — The control panels: score setup, parts, tabs, note controls, chords
 // ═══════════════════════════════════════════════════════════════════════
 // Part of a single shared script, split across files so a change to one
 // concern is not a change inside a five-thousand-line file. These load as
@@ -138,7 +138,14 @@ function syncKeyTimeUI(){
 function applyTheme(light){
   document.body.classList.toggle('light',!!light);
   const btn=document.getElementById('theme-btn');
-  if(btn) btn.textContent=light?'☾ Dark mode':'☀ Light mode';
+  // U+FE0E asks for the text glyph: iOS otherwise draws ☀ and ▶ as emoji.
+  if(btn) btn.textContent=light?'☾ Dark mode':'☀\uFE0E Light mode';
+  // The browser chrome / Android status bar follows theme-color. The head
+  // tags follow the OS setting, which is wrong once the user has picked the
+  // other theme, so collapse them to one tag carrying the theme in use.
+  const metas=document.querySelectorAll('meta[name="theme-color"]');
+  metas.forEach((m,i)=>{ if(i) m.remove(); });
+  if(metas[0]){ metas[0].removeAttribute('media'); metas[0].content=light?'#eceef6':'#12121f'; }
   safeStore.set('mn_theme',light?'light':'dark');
 }
 function toggleTheme(){ applyTheme(!document.body.classList.contains('light')); }
@@ -606,7 +613,7 @@ function renderDiatonicChords(){
     btn.className='dchord-btn dc-'+funcs[deg];
     const top=document.createElement('div');
     top.className='dchord-7';
-    top.textContent=chord7Mode?'▶ 7th':'7th';
+    top.textContent=chord7Mode?'▶\uFE0E 7th':'7th';
     top.addEventListener('click', e=>{e.stopPropagation();enterDiatonicChord(deg,kd,true);});
     const bot=document.createElement('div');
     bot.className='dchord-triad';

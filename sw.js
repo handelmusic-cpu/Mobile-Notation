@@ -1,4 +1,4 @@
-/* MōdScore service worker.
+/* mõdScore service worker.
  *
  * The app was already set up to be installed — manifest, Apple meta tags,
  * standalone display, VexFlow and Tone vendored into lib/ after a CDN outage
@@ -18,7 +18,7 @@
 // Versioned separately on purpose. Bumping the shell must not throw away tens
 // of megabytes of downloaded instruments that have not changed — and on a
 // phone on rehearsal-room wifi, re-fetching them is the expensive part.
-const SHELL = 'modscore-shell-v2';
+const SHELL = 'modscore-shell-v4';
 const SAMPLES = 'modscore-samples-v1';
 
 const SHELL_FILES = [
@@ -55,8 +55,12 @@ self.addEventListener('install', e => {
 
 self.addEventListener('activate', e => {
   e.waitUntil((async () => {
+    // Only our own old caches. Cache Storage belongs to the whole origin, not
+    // to this worker's scope, so on a shared host (dutdutrecords.com/apps/…)
+    // the old "delete everything not ours" sweep would wipe every sibling
+    // app's offline copy each time this one updated.
     const keep = new Set([SHELL, SAMPLES]);
-    for (const k of await caches.keys()) if (!keep.has(k)) await caches.delete(k);
+    for (const k of await caches.keys()) if (k.startsWith('modscore-') && !keep.has(k)) await caches.delete(k);
     await self.clients.claim();
   })());
 });
@@ -72,7 +76,10 @@ self.addEventListener('fetch', e => {
     e.respondWith(cacheThenNetwork(req, SAMPLES));
     return;
   }
-  if (url.origin !== self.location.origin) return;
+  // Same origin is not the same app when hosted under a sub-path: a request
+  // for the parent site's own pages or assets must not be answered from, or
+  // stored in, this app's shell cache.
+  if (!req.url.startsWith(self.registration.scope)) return;
 
   // Navigations: cache first so the app opens instantly and offline, with a
   // background refresh so a deploy is picked up by the next launch.

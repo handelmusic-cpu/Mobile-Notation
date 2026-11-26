@@ -1,5 +1,5 @@
 // ═══════════════════════════════════════════════════════════════════════
-// MōdScore — Note entry, undo/redo, and editing the selected note
+// mõdScore — Note entry, undo/redo, and editing the selected note
 // ═══════════════════════════════════════════════════════════════════════
 // Part of a single shared script, split across files so a change to one
 // concern is not a change inside a five-thousand-line file. These load as
@@ -410,8 +410,7 @@ function toggleCopyMode(){
   copyMode=!copyMode;
   copyRangeSel=null;
   if(copyMode){ selectedNote=null; caretGap=null; } // avoid showing both the edit panel and the copy panel at once
-  document.getElementById('copy-toggle-btn').style.background=copyMode?'#27ae60':'#2a2a40';
-  document.getElementById('copy-toggle-btn').style.color=copyMode?'#fff':'#9bd';
+  document.getElementById('copy-toggle-btn').classList.toggle('on',copyMode);
   render(); updateSelectionUI(); updateCopyUI();
 }
 function pickCopyRangeNote(partIdx,noteIdx){
@@ -447,14 +446,12 @@ function copySelectedRange(){
   const {partIdx,startIdx,endIdx}=copyRangeSel;
   clipboard=JSON.parse(JSON.stringify(parts[partIdx].notes.slice(startIdx,endIdx+1)));
   copyMode=false; copyRangeSel=null;
-  document.getElementById('copy-toggle-btn').style.background='#2a2a40';
-  document.getElementById('copy-toggle-btn').style.color='#9bd';
+  document.getElementById('copy-toggle-btn').classList.remove('on');
   render(); updateCopyUI(); updatePasteUI();
 }
 function cancelCopyRange(){
   copyMode=false; copyRangeSel=null;
-  document.getElementById('copy-toggle-btn').style.background='#2a2a40';
-  document.getElementById('copy-toggle-btn').style.color='#9bd';
+  document.getElementById('copy-toggle-btn').classList.remove('on');
   render(); updateCopyUI();
 }
 function updatePasteUI(){

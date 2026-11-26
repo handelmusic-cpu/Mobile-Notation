@@ -19,11 +19,21 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="apple-mobile-web-app-title" content="MōdScore">
-<meta name="theme-color" content="#12121f">
+<meta name="apple-mobile-web-app-title" content="mõdScore">
+<!-- Matches the panel background of whichever theme is showing; applyTheme()
+     rewrites it once the saved choice is known, these cover first paint. -->
+<meta name="theme-color" content="#12121f" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#eceef6" media="(prefers-color-scheme: light)">
+<meta name="description" content="Write, hear and share music notation on your phone. Works offline once opened, and installs to the home screen.">
+<!-- Share previews. og:image is left out on purpose: crawlers want an
+     absolute URL, and the app must not hard-code the host it is served from. -->
+<meta property="og:type" content="website">
+<meta property="og:title" content="mõdScore">
+<meta property="og:description" content="Write, hear and share music notation on your phone.">
+<meta name="twitter:card" content="summary">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="apple-touch-icon" href="icon-180.png">
-<title>MōdScore</title>
+<title>mõdScore</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%20100%20100'%3E%3Crect%20width='100'%20height='100'%20rx='22'%20fill='%2312121f'/%3E%3Ctext%20x='50'%20y='70'%20font-family='Arial,Helvetica,sans-serif'%20font-size='58'%20font-weight='800'%20fill='%23e94560'%20text-anchor='middle'%3EM%3C/text%3E%3C/svg%3E">
 <style>
 /* ═══════════════════════════════════════════════════════
@@ -48,9 +58,11 @@
   --border2:#333;
   --paper:#f4efe4;     /* the score's page — stays paper in both themes */
 
-  /* ── Text ── */
+  /* ── Text ── muted2/muted3 carry the small uppercase labels, hints and
+     inactive tabs; at #667/#778 they measured 3.0 and 3.9 : 1 on the panels,
+     under the 4.5 small text needs. Raised to clear it. */
   --text:#e0e4ef; --text2:#dde; --text3:#ccd; --text4:#d5d8e5;
-  --muted:#889; --muted2:#667; --muted3:#778; --muted4:#aab; --muted5:#99a;
+  --muted:#889; --muted2:#84849c; --muted3:#8a8aa2; --muted4:#aab; --muted5:#99a;
 
   /* ── Semantic accents ── */
   --accent:#e94560;    /* primary / selected */
@@ -59,6 +71,7 @@
   --ok:#219a53; --ok-bg:#0d2f1f; --ok-fg:#6fcf97;
   --warn:#c96a12; --danger:#e74c3c; --rec:#c0392b; --rec-fg:#ff8a8a;
   --gold:#f0c040; --violet:#9b59b6; --green:#22a35c; --sky:#9bd;
+  --tp-bg:#d9dcea; --tp-fg:#12121f; --rec-dot:#d63a2b;   /* transport buttons */
   --dot:#334;          /* inactive part indicator */
   --rest-btn:#3a3f55;  /* rest key, held apart from the pitch keys */
 
@@ -82,9 +95,12 @@ body.light{
   --surf3:#dde0ee; --surf4:#fff; --ctl:#ccd1e2; --ctl2:#d3d7e6;
   --border:#c1c6dc; --border2:#b4b9d0;
   --text:#1b1d2b; --text2:#262938; --text3:#2f3245; --text4:#2a2d3d;
-  --muted:#5c6078; --muted2:#6b6f87; --muted3:#5c6078; --muted4:#3c3f54; --muted5:#6b6f87;
-  --info-bg:#dbe7f5; --ok-bg:#d9f0e3; --sky:#2b6ca3; --gold:#7d5600;
+  --muted:#5c6078; --muted2:#585c74; --muted3:#5c6078; --muted4:#3c3f54; --muted5:#6b6f87;
+  /* info-fg is the focus ring and some labels: the dark theme's #5dade2 was
+     2.1 : 1 on these light panels, too faint to find keyboard focus by. */
+  --info-bg:#dbe7f5; --info-fg:#21689f; --ok-bg:#d9f0e3; --sky:#2b6ca3; --gold:#7d5600;
   --rec-fg:#a3251a; --ok-fg:#1c6b41;
+  --tp-bg:#262938; --tp-fg:#f4f5fa; --rec-dot:#ff6b5e;
   --dot:#a9aec6; --rest-btn:#8d93ad;
   --ch-bg-l:87%; --ch-7-l:81%; --ch-bd-l:52%; --ch-fg-l:30%;
 }
@@ -137,19 +153,40 @@ body { font-family:-apple-system,BlinkMacSystemFont,sans-serif; background:var(-
    target, ~14 controls can never fit across a phone, and wrapping cost three
    rows (~250px of a 667px screen) — vertical space the staff needs more. */
 #toolbar { display:flex; gap:4px; padding:calc(5px + env(safe-area-inset-top,0px)) 7px 5px; background:var(--surf3); flex-shrink:0; align-items:center; flex-wrap:nowrap; overflow-x:auto; -webkit-overflow-scrolling:touch; }
+/* On a phone the row runs off the right edge with nothing to say it scrolls.
+   This fade is the row's last item, made sticky to the right edge: while
+   there is more to the right it sits over the cut-off controls; scrolled to
+   the end it falls back into its own empty slot and shows nothing. Pure CSS,
+   so it can never fall out of step with the scroll position. */
+#toolbar::after{ content:''; position:sticky; right:-7px; flex:0 0 32px; align-self:stretch; margin:-5px -7px -5px 0;
+  background:linear-gradient(to right, transparent, var(--surf3) 85%); pointer-events:none; }
 /* 44x44 is the smallest reliably tappable target on a touch screen. These
    used to be flex:1 with max-width:60px, which on a 375px-wide phone
    collapsed them to 18px across — narrower than the glyph inside them. */
 .tb { flex:0 0 auto; padding:8px 4px; border:none; border-radius:7px; font-size:14px; font-weight:700; cursor:pointer; min-width:44px; min-height:44px; touch-action:manipulation; }
+/* Three kinds of button, told apart by treatment rather than by six
+   unrelated fills (it was green play, red stop, dark-red record, orange
+   undo, purple clear, blue-on-grey for the rest):
+   - transport (play/stop/record): one inverted family, so the three read
+     as a unit. Record is the only red, and only its dot until it is armed.
+   - tools: neutral. A tool that is switched on (loop, copy) takes the
+     accent as a ring, which is also the first time loop showed its state.
+   - destructive (clear): an outline in the danger colour, not a loud fill
+     that out-shouts play.
+   Disabled drops to an outline at low contrast; it used to be the orange
+   undo fill at 30% opacity, which read as brown rather than off. */
+.tb{ background:var(--ctl); color:var(--text3); }
 .tb:active{opacity:.75;}
-.tb:disabled{opacity:.3;cursor:default;}
-.play{background:var(--green);color:#fff;} .stop{background:var(--danger);color:#fff;}
-.undo{background:var(--warn);color:#fff;} .clear{background:var(--violet);color:#fff;}
-.rec{background:var(--rec);color:#fff;}
+@media (hover:hover){ .tb:not(:disabled):hover{ filter:brightness(1.1); } }
+.tb.tp{ background:var(--tp-bg); color:var(--tp-fg); }
+.tb.rec{ color:var(--rec-dot); font-size:17px; }
+.tb.on{ color:var(--accent); box-shadow:inset 0 0 0 2px var(--accent); }
+.tb.clear{ background:transparent; color:var(--danger); box-shadow:inset 0 0 0 1.5px currentColor; }
+.tb:disabled{ background:transparent; color:var(--muted2); box-shadow:inset 0 0 0 1px var(--border); opacity:.7; cursor:default; }
 /* The brighter fill and ring are what mark "armed" when the OS asks for
    reduced motion — the pulse alone would leave recording and idle identical,
    since both are already red. */
-.rec.recording{background:#ff5140;box-shadow:0 0 0 3px rgba(255,81,64,.45);animation:recPulse 1s ease-in-out infinite;}
+.tb.rec.recording{background:#ff5140;color:#fff;box-shadow:0 0 0 3px rgba(255,81,64,.45);animation:recPulse 1s ease-in-out infinite;}
 @keyframes recPulse{0%,100%{opacity:1;}50%{opacity:.45;}}
 #bpm-wrap{display:flex;align-items:center;gap:3px;font-size:12px;color:var(--muted);margin-left:4px;}
 #bpm-inp{width:46px;background:var(--ctl);border:none;border-radius:5px;color:var(--text2);padding:4px 5px;font-size:14px;}
@@ -162,8 +199,14 @@ body { font-family:-apple-system,BlinkMacSystemFont,sans-serif; background:var(-
 #save-warn{background:var(--danger);color:#fff;}
 
 #tab-bar{display:flex;background:var(--surf);border-top:1px solid var(--border);flex-shrink:0;}
-.tab-btn{flex:1;padding:11px 1px;border:none;background:transparent;color:var(--muted3);font-size:11.5px;font-weight:700;cursor:pointer;border-bottom:2px solid transparent;white-space:nowrap;text-transform:uppercase;letter-spacing:.5px;}
+.tab-btn{flex:1;padding:11px 1px;border:none;background:transparent;color:var(--muted3);font-size:13px;font-weight:600;cursor:pointer;border-bottom:2px solid transparent;white-space:nowrap;}
 .tab-btn.on{color:var(--accent);border-bottom-color:var(--accent);}
+/* Tracked capitals made "INSTRUMENTS" and "MARKINGS" run into each other on
+   a 390px phone. Sentence case is narrower and easier to read, and below
+   420px (and in the landscape rail) the two long names give way to short
+   ones; the full name stays on the button's aria-label. */
+.tab-btn .sm{display:none;}
+@media (max-width:419px){ .tab-btn .lg{display:none;} .tab-btn .sm{display:inline;} }
 
 /* Collapsed controls (landscape / more staff room): hide the tall control
    stack. The rail wraps the tab bar, every panel and the chord palette, so
@@ -186,9 +229,9 @@ body { font-family:-apple-system,BlinkMacSystemFont,sans-serif; background:var(-
     grid-template-areas:"tbar tbar" "qedit qedit" "score rail" "ngrid ngrid";
   }
   #toolbar{ grid-area:tbar; }
-  /* Five labels have to share the rail's width — the portrait letter-spacing
-     is what pushes "SONGS" off the end. */
-  .tab-btn{ font-size:9.5px; letter-spacing:0; padding:11px 1px; }
+  /* Five labels have to share the rail's width. */
+  .tab-btn{ font-size:11px; padding:11px 1px; }
+  .tab-btn .lg{display:none;} .tab-btn .sm{display:inline;}
   #quick-edit-bar{ grid-area:qedit; }
   #score-wrap{ grid-area:score; min-height:0; }
   #control-rail{ grid-area:rail; border-left:1px solid var(--border); }
@@ -292,7 +335,10 @@ body { font-family:-apple-system,BlinkMacSystemFont,sans-serif; background:var(-
 /* Brand wordmark — shown on the Songs tab rather than the always-visible
    toolbar, so it never competes with the score for space on a small screen. */
 #brand{text-align:center;padding:6px 0 12px;}
-#brand-mark{font-size:26px;font-weight:800;letter-spacing:.5px;background:linear-gradient(90deg,var(--green),var(--gold),var(--accent));-webkit-background-clip:text;background-clip:text;color:transparent;}
+/* Branded like its sibling mõdRïff: solid lettering, the second word in italic, and the same rainbow as a
+   thin line under it (it was gradient-filled text, which matched nothing else). */
+#brand-mark{font-size:26px;font-weight:800;letter-spacing:.2px;color:var(--text);display:inline-block;padding-bottom:6px;background:linear-gradient(90deg,#ff5a5f,#ff9a3c,#ffd23f,#5fdc6a,#2ad4c8,#3a9bff,#b46bff) left bottom/100% 3px no-repeat;}
+#brand-mark i{font-style:italic;}
 #brand-tag{font-size:10px;color:var(--muted2);letter-spacing:1.5px;text-transform:uppercase;margin-top:2px;}
 
 /* Diatonic chord palette — always visible */
@@ -425,18 +471,18 @@ body { font-family:-apple-system,BlinkMacSystemFont,sans-serif; background:var(-
 </div>
 
 <div id="toolbar">
-  <button class="tb play"  onclick="playScore()">▶</button>
-  <button class="tb stop"  onclick="stopScore()">■</button>
-  <button class="tb rec"   id="rec-btn" onclick="toggleRecord()" title="Record from a MIDI keyboard (2-bar count-in + metronome)">⏺</button>
-  <button class="tb" id="loop-btn" onclick="toggleLoop()" style="background:var(--ctl);color:var(--sky);" title="Loop playback, for drilling a passage" aria-label="Loop playback">⟳</button>
-  <button class="tb undo"  id="undo-btn" onclick="undo()" title="Undo (Ctrl/Cmd+Z)">↶</button>
-  <button class="tb undo"  id="redo-btn" onclick="redo()" title="Redo (Ctrl/Cmd+Shift+Z)">↷</button>
+  <button class="tb tp play"  onclick="playScore()">▶&#xFE0E;</button>
+  <button class="tb tp stop"  onclick="stopScore()">■</button>
+  <button class="tb tp rec"   id="rec-btn" onclick="toggleRecord()" title="Record from a MIDI keyboard (2-bar count-in + metronome)">●</button>
+  <button class="tb" id="loop-btn" onclick="toggleLoop()" title="Loop playback, for drilling a passage" aria-label="Loop playback">⟳</button>
+  <button class="tb"  id="undo-btn" onclick="undo()" title="Undo (Ctrl/Cmd+Z)">↶</button>
+  <button class="tb"  id="redo-btn" onclick="redo()" title="Redo (Ctrl/Cmd+Shift+Z)">↷</button>
   <button class="tb clear" onclick="clearAll()" title="Clear all notes">✕</button>
-  <button class="tb" id="copy-toggle-btn" onclick="toggleCopyMode()" style="background:var(--ctl);color:var(--sky);">✂</button>
-  <button class="tb" id="help-btn" onclick="startTour()" style="background:var(--ctl);color:var(--sky);">?</button>
-  <button class="tb" id="collapse-btn" onclick="toggleControls()" style="background:var(--ctl);color:var(--sky);" title="Hide/show controls">▼</button>
-  <button class="tb" id="zoom-out" onclick="stepZoom(-1)" style="background:var(--ctl);color:var(--sky);" title="Make the staff smaller" aria-label="Zoom the staff out">−</button>
-  <button class="tb" id="zoom-in"  onclick="stepZoom(1)"  style="background:var(--ctl);color:var(--sky);" title="Make the staff bigger" aria-label="Zoom the staff in">+</button>
+  <button class="tb" id="copy-toggle-btn" onclick="toggleCopyMode()">✂&#xFE0E;</button>
+  <button class="tb" id="help-btn" onclick="startTour()">?</button>
+  <button class="tb" id="collapse-btn" onclick="toggleControls()" title="Hide/show controls">▼</button>
+  <button class="tb" id="zoom-out" onclick="stepZoom(-1)" title="Make the staff smaller" aria-label="Zoom the staff out">−</button>
+  <button class="tb" id="zoom-in"  onclick="stepZoom(1)"  title="Make the staff bigger" aria-label="Zoom the staff in">+</button>
   <div id="bpm-wrap"><span>BPM</span><input type="number" id="bpm-inp" value="80" min="20" max="320"></div>
   <span class="pill" id="proj-pill" onclick="switchTab('proj')">Song</span>
   <span class="pill" id="part-pill" onclick="switchTab('parts')" style="color:var(--gold);max-width:110px;overflow:hidden;text-overflow:ellipsis;" title="Instrument you're writing to — tap to switch">Treble · Piano</span>
@@ -454,9 +500,9 @@ body { font-family:-apple-system,BlinkMacSystemFont,sans-serif; background:var(-
 
 <div id="tab-bar">
   <button class="tab-btn on"  onclick="switchTab('notes')">Notes</button>
-  <button class="tab-btn"     onclick="switchTab('parts')">Instruments</button>
-  <button class="tab-btn"     onclick="switchTab('markings')">Markings</button>
-  <button class="tab-btn"     onclick="switchTab('score')">Key/Time</button>
+  <button class="tab-btn"     onclick="switchTab('parts')" aria-label="Instruments"><span class="lg">Instruments</span><span class="sm">Parts</span></button>
+  <button class="tab-btn"     onclick="switchTab('markings')" aria-label="Markings"><span class="lg">Markings</span><span class="sm">Marks</span></button>
+  <button class="tab-btn"     onclick="switchTab('score')" aria-label="Key and time"><span class="lg">Key / time</span><span class="sm">Key/time</span></button>
   <button class="tab-btn"     onclick="switchTab('proj')">Songs</button>
 </div>
 
@@ -673,10 +719,10 @@ body { font-family:-apple-system,BlinkMacSystemFont,sans-serif; background:var(-
 
 <!-- Files / projects panel -->
 <div id="panel-proj" class="panel">
-  <div id="brand"><div id="brand-mark">MōdScore</div><div id="brand-tag">Mobile Music Notation</div></div>
+  <div id="brand"><div id="brand-mark" aria-label="mõdScore">mõd<i>Score</i></div><div id="brand-tag">Mobile Music Notation</div></div>
   <div class="row" style="gap:6px">
     <button class="chip on2" onclick="newProjectPrompt()" style="font-size:11px">+ New Song</button>
-    <button class="chip" id="theme-btn" onclick="toggleTheme()" style="font-size:11px" title="Switch between the dark and light interface">☀ Light mode</button>
+    <button class="chip" id="theme-btn" onclick="toggleTheme()" style="font-size:11px" title="Switch between the dark and light interface">☀&#xFE0E; Light mode</button>
   </div>
   <div class="sec">Backup — save a song file to your device</div>
   <div class="row" style="gap:6px">
@@ -752,7 +798,7 @@ body { font-family:-apple-system,BlinkMacSystemFont,sans-serif; background:var(-
 <!-- MIDI record settings — opened by the ⏺ toolbar button. -->
 <div id="rec-sheet">
   <div id="rec-sheet-card">
-    <div id="rec-sheet-title">⏺ Record from a MIDI keyboard</div>
+    <div id="rec-sheet-title">● Record from a MIDI keyboard</div>
     <div id="rec-no-midi" class="hint" style="color:var(--rec-fg);display:none">No MIDI keyboard detected. Connect one and it'll be picked up automatically — the MIDI pill in the toolbar turns green.</div>
     <div class="row">
       <span class="lbl">Grid</span>
@@ -762,7 +808,7 @@ body { font-family:-apple-system,BlinkMacSystemFont,sans-serif; background:var(-
       <button class="chip rec-grid-btn" data-grid="8t"  onclick="setRecGrid('8t')"  style="font-size:10px">♪3</button>
       <button class="chip rec-grid-btn" data-grid="16t" onclick="setRecGrid('16t')" style="font-size:10px">♬3</button>
     </div>
-    <div class="hint">Sets the quantize grid your playing snaps to. Starting gives you 2 bars of metronome count-in, then it records whatever you play until you tap ⏺ again.</div>
+    <div class="hint">Sets the quantize grid your playing snaps to. Starting gives you 2 bars of metronome count-in, then it records whatever you play until you tap ● again.</div>
     <div id="rec-status" aria-live="polite"></div>
     <div id="rec-sheet-btns">
       <button class="chip" onclick="closeRecSheet()">Cancel</button>
@@ -782,10 +828,10 @@ body { font-family:-apple-system,BlinkMacSystemFont,sans-serif; background:var(-
 // A missing engine used to be invisible; say so instead of rendering nothing.
 if(typeof Vex==='undefined'||typeof Tone==='undefined'){
   document.body.innerHTML='<div style="padding:28px;font:15px/1.5 -apple-system,BlinkMacSystemFont,sans-serif;color:var(--text)">'
-    +'<h2 style="color:var(--accent);margin-bottom:10px">MōdScore could not start</h2>'
+    +'<h2 style="color:var(--accent);margin-bottom:10px">mõdScore could not start</h2>'
     +'<p>The notation and audio engines failed to load. If you opened this file directly from disk, serve the folder over HTTP instead — the <code>lib/</code> folder has to load alongside this page.</p>'
     +'<p style="margin-top:10px"><a href="" onclick="location.reload();return false" style="color:var(--info-fg)">Reload</a></p></div>';
-  throw new Error('MōdScore: VexFlow/Tone failed to load');
+  throw new Error('mõdScore: VexFlow/Tone failed to load');
 }
 </script>
 <script src="js/core.js"></script>

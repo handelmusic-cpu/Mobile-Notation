@@ -1,5 +1,5 @@
 // ═══════════════════════════════════════════════════════════════════════
-// MōdScore — Storage, dialogs, instrument and key data, transposition, shared state
+// mõdScore — Storage, dialogs, instrument and key data, transposition, shared state
 // ═══════════════════════════════════════════════════════════════════════
 // Part of a single shared script, split across files so a change to one
 // concern is not a change inside a five-thousand-line file. These load as

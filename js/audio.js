@@ -1,5 +1,5 @@
 // ═══════════════════════════════════════════════════════════════════════
-// MōdScore — MIDI in, recording, the performance layer, playback and audition
+// mõdScore — MIDI in, recording, the performance layer, playback and audition
 // ═══════════════════════════════════════════════════════════════════════
 // Part of a single shared script, split across files so a change to one
 // concern is not a change inside a five-thousand-line file. These load as
@@ -121,7 +121,7 @@ function updateRecUI(){
   const btn=document.getElementById('rec-btn');
   const status=document.getElementById('rec-status');
   if(btn) btn.classList.toggle('recording',recState!=='idle');
-  if(status) status.textContent = recState==='recording' ? '● Recording — tap ⏺ again to stop' : (recState==='idle' ? '' : status.textContent);
+  if(status) status.textContent = recState==='recording' ? '● Recording — tap ● again to stop' : (recState==='idle' ? '' : status.textContent);
 }
 function updateRecCountUI(n,total){
   const status=document.getElementById('rec-status');
@@ -734,7 +734,7 @@ async function playScore(){
   // unreachable, which left the play button stuck on '…' forever. Cap the
   // wait; getSampler()'s fallback voice covers whatever didn't arrive.
   try{ await Promise.race([Tone.loaded(), new Promise(r=>setTimeout(r,4000))]); }catch(e){}
-  if(playBtn)playBtn.textContent='▶';
+  if(playBtn)playBtn.textContent='▶\uFE0E';
   stopScore(true);playing=true;
   Tone.getTransport().bpm.value=bpm;Tone.getTransport().cancel();
 
@@ -881,5 +881,5 @@ function stopScore(s){
   _activeVoices.forEach(x=>{try{x.releaseAll?.();}catch(e){}});
   _activeVoices=[];playing=false;
   stopPlayhead();
-  const playBtn=document.querySelector('.tb.play');if(playBtn)playBtn.textContent='▶';
+  const playBtn=document.querySelector('.tb.play');if(playBtn)playBtn.textContent='▶\uFE0E';
 }
