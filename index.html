@@ -153,6 +153,13 @@ body { font-family:-apple-system,BlinkMacSystemFont,sans-serif; background:var(-
    target, ~14 controls can never fit across a phone, and wrapping cost three
    rows (~250px of a 667px screen) — vertical space the staff needs more. */
 #toolbar { display:flex; gap:4px; padding:calc(5px + env(safe-area-inset-top,0px)) 7px 5px; background:var(--surf3); flex-shrink:0; align-items:center; flex-wrap:nowrap; overflow-x:auto; -webkit-overflow-scrolling:touch; }
+/* On a phone the row runs off the right edge with nothing to say it scrolls.
+   This fade is the row's last item, made sticky to the right edge: while
+   there is more to the right it sits over the cut-off controls; scrolled to
+   the end it falls back into its own empty slot and shows nothing. Pure CSS,
+   so it can never fall out of step with the scroll position. */
+#toolbar::after{ content:''; position:sticky; right:-7px; flex:0 0 32px; align-self:stretch; margin:-5px -7px -5px 0;
+  background:linear-gradient(to right, transparent, var(--surf3) 85%); pointer-events:none; }
 /* 44x44 is the smallest reliably tappable target on a touch screen. These
    used to be flex:1 with max-width:60px, which on a 375px-wide phone
    collapsed them to 18px across — narrower than the glyph inside them. */
