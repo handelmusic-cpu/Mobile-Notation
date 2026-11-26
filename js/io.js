@@ -415,7 +415,9 @@ function buildTrack(events){
   const len=data.length;
   return [0x4D,0x54,0x72,0x6B,(len>>24)&255,(len>>16)&255,(len>>8)&255,len&255,...data];
 }
-function exportMIDI(){
+// The song as a Standard MIDI File, every part or only the ones listed by index. The .mid
+// download and the handoff to mõdRïff (one part) both build it here, so they agree.
+function scoreMidiBytes(only){
   const PPQ=480;
   const bpm=parseInt(document.getElementById('bpm-inp').value)||80;
   const tracks=[];
@@ -456,6 +458,7 @@ function exportMIDI(){
   // Part tracks
   let chNext=0;
   parts.forEach((part,pi)=>{
+    if(only && !only.includes(pi)) return;
     const inst=IMAP[part.instId]||IMAP['piano'];
     const vels=velocityMap(part);
     const raw=[];
@@ -518,10 +521,22 @@ function exportMIDI(){
   });
   const ntrk=tracks.length;
   const header=[0x4D,0x54,0x68,0x64,0,0,0,6,0,1,(ntrk>>8)&255,ntrk&255,(PPQ>>8)&255,PPQ&255];
-  const u8=new Uint8Array([...header,...tracks.flat()]);
-  const blob=new Blob([u8],{type:'audio/midi'});
+  return new Uint8Array([...header,...tracks.flat()]);
+}
+function exportMIDI(){
+  const blob=new Blob([scoreMidiBytes()],{type:'audio/midi'});
   const name=songFileName();
   deliverFile(blob,name+'.mid',name+' (MIDI)').then(how=>{ if(how==='downloaded') toast('Saved '+name+'.mid to your device.'); });
+}
+// Hands the part being edited to mõdRïff's melody roll (see js/suite.js). Synchronous on
+// purpose: Safari only lets a click open a tab if nothing was awaited first.
+function openPartInRiff(){
+  const part=parts[apIdx];
+  if(!part || !part.notes.some(n=>!n.rest && (n.midiVals||[]).length)){ toast('This part has no notes yet.'); return; }
+  const song=(projects.find(p=>p.id===currentProjId)?.name)||'Song';
+  try{
+    ModSuite.send('play',{kind:'midi',from:'score',title:song+': '+part.name,data:scoreMidiBytes([apIdx])});
+  }catch(e){ sheetTell('Could not open mõdRïff', e.message); }
 }
 
 // ═══════════════════════════════════════════════════════
@@ -856,7 +871,7 @@ function parseMIDI(buf){
   for(let t=0;t<ntrk;t++){
     if(rstr(4)!=='MTrk')throw new Error('Bad MIDI track');
     const len=rd32(); const end=p+len;
-    let tick=0, running=0; const events=[];
+    let tick=0, running=0; const events=[]; let name='';
     while(p<end){
       tick+=vlqRead();
       let status=dv.getUint8(p);
@@ -867,14 +882,15 @@ function parseMIDI(buf){
         else if(mt===0x58){const nn=dv.getUint8(p),dd=dv.getUint8(p+1);timeSig=nn+'/'+Math.pow(2,dd);}
         // First key signature wins: sf is sharps (+) or flats (−), mi 1 for minor.
         else if(mt===0x59&&ml>=2&&!keySig){keySig={fifths:dv.getInt8(p),mode:dv.getUint8(p+1)?'minor':'major'};}
+        else if(mt===0x03&&!name){ try{ name=new TextDecoder().decode(new Uint8Array(buf,p,ml)).trim(); }catch(e){} }
         p=ms+ml;
       } else if(status===0xF0||status===0xF7){ const sl=vlqRead(); p+=sl; }
-      else if(type===0x90||type===0x80){ const note=rd8(),vel=rd8(); events.push({tick,on:(type===0x90&&vel>0),note}); }
+      else if(type===0x90||type===0x80){ const note=rd8(),vel=rd8(); events.push({tick,on:(type===0x90&&vel>0),note,ch:status&15}); }
       else if(type===0xA0||type===0xB0||type===0xE0){ p+=2; }
       else if(type===0xC0||type===0xD0){ p+=1; }
       else { p++; }
     }
-    p=end; if(events.length)tracks.push(events);
+    p=end; if(events.length){ events.name=name; events.drums=events.every(e=>e.ch===9); tracks.push(events); }
   }
   return {ppq,tempo,timeSig,keySig,tracks};
 }
@@ -885,8 +901,11 @@ function midiToData(parsed){
   const kd=parsed.keySig?KMAP[keyId]:null;
   const preferFlat=!!kd&&FLAT_KEYS.includes(kd.vfSig);
   const ppq=parsed.ppq||480, tol=ppq*0.12;
-  const outParts=[];
+  const outParts=[], droppedDrums=[];
   parsed.tracks.forEach(events=>{
+    // A drum track (all on channel 10) would come in as pitched notes on a treble staff:
+    // a kick on C2, a hi-hat on F#2. It is left out, and the import says so.
+    if(events.drums){ droppedDrums.push(events.name||'Drums'); return; }
     const active={}, notes=[];
     events.forEach(e=>{
       if(e.on){(active[e.note]=active[e.note]||[]).push(e.tick);}
@@ -908,9 +927,12 @@ function midiToData(parsed){
       nd.push({keys:res.map(r=>r.name+'/'+r.oct),dur:beatsToDur(dur/ppq),vfAccs:res.map(r=>r.vfAcc),midiVals:midis,rest:false,lyric:null,dyn:null,arts:[],tempo:null});
       cursor=start+dur; i=j;
     }
-    outParts.push({notes:nd});
+    // A track name becomes the part name (a Bounce names its tracks Melody, Bass…); a long
+    // one, like a whole chart title, would crowd the staff label, so it falls back.
+    const nm=(events.name||'').trim();
+    outParts.push({notes:nd,name:nm.length<=24?nm:''});
   });
-  return {bpm,timeSig:parsed.timeSig,keyId,parts:outParts};
+  return {bpm,timeSig:parsed.timeSig,keyId,parts:outParts,droppedDrums};
 }
 
 // ---- MusicXML ----
@@ -1083,6 +1105,7 @@ async function unzipMXL(buf){
 }
 
 function importToProject(name,data){
+  if((!data.parts.length||!data.parts.some(p=>p.notes.length))&&data.droppedDrums&&data.droppedDrums.length)throw new Error('This file only has drums, and mõdScore brings in pitched parts only.');
   if(!data.parts.length||!data.parts.some(p=>p.notes.length))throw new Error('No notes found in file');
   const newParts=data.parts.filter(p=>p.notes.length).map((pp,i)=>{
     let clef=pp.staff==='2'?'bass':pp.staff==='1'?'treble':null;
@@ -1096,6 +1119,7 @@ function importToProject(name,data){
   const id='p'+Date.now();
   projects.push({id,name:name||'Imported',data:proj,updated:Date.now()});
   currentProjId=id; saveAll(); applyProject(proj); resetHistory(); renderProjectsList(); switchTab('notes');
+  if(data.droppedDrums&&data.droppedDrums.length) toast('Left out the drums ('+data.droppedDrums.join(', ')+'): this version of mõdScore only brings in pitched parts from MIDI.');
   // An import is the song the person wants open now. Without this, a song imported before
   // the database finished opening (a handoff from another mõd app arrives at boot) was
   // replaced a moment later by the song that was open last time.
