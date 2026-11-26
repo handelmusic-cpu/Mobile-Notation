@@ -138,7 +138,8 @@ function syncKeyTimeUI(){
 function applyTheme(light){
   document.body.classList.toggle('light',!!light);
   const btn=document.getElementById('theme-btn');
-  if(btn) btn.textContent=light?'☾ Dark mode':'☀ Light mode';
+  // U+FE0E asks for the text glyph: iOS otherwise draws ☀ and ▶ as emoji.
+  if(btn) btn.textContent=light?'☾ Dark mode':'☀\uFE0E Light mode';
   // The browser chrome / Android status bar follows theme-color. The head
   // tags follow the OS setting, which is wrong once the user has picked the
   // other theme, so collapse them to one tag carrying the theme in use.
@@ -612,7 +613,7 @@ function renderDiatonicChords(){
     btn.className='dchord-btn dc-'+funcs[deg];
     const top=document.createElement('div');
     top.className='dchord-7';
-    top.textContent=chord7Mode?'▶ 7th':'7th';
+    top.textContent=chord7Mode?'▶\uFE0E 7th':'7th';
     top.addEventListener('click', e=>{e.stopPropagation();enterDiatonicChord(deg,kd,true);});
     const bot=document.createElement('div');
     bot.className='dchord-triad';
