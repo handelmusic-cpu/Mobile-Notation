@@ -1088,6 +1088,10 @@ function importToProject(name,data){
   const id='p'+Date.now();
   projects.push({id,name:name||'Imported',data:proj,updated:Date.now()});
   currentProjId=id; saveAll(); applyProject(proj); resetHistory(); renderProjectsList(); switchTab('notes');
+  // An import is the song the person wants open now. Without this, a song imported before
+  // the database finished opening (a handoff from another mõd app arrives at boot) was
+  // replaced a moment later by the song that was open last time.
+  _wantedProjId=id; bootAppliedId=id;
 }
 function importFile(kind){
   const inp=document.getElementById('import-file');
