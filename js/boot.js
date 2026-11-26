@@ -204,7 +204,21 @@ applyPitchView(pitchView);
 render();
 initMidi();
 document.getElementById('bpm-inp').addEventListener('change',scheduleAutosave);
-if(!safeStore.get('mn_tutorial_seen')) setTimeout(startTour, 500);
+// A song handed over by another mõd app arrives in the link (#mod=…, see js/suite.js) and
+// opens as a new song. The tour waits for another visit rather than covering it.
+let _handoff=null;
+try{ _handoff=window.ModSuite ? ModSuite.receive() : null; }catch(e){}
+if(_handoff){
+  try{
+    const name=_handoff.title||('From '+(_handoff.fromName||'another mõd app'));
+    if(_handoff.kind==='midi') importToProject(name, midiToData(parseMIDI(_handoff.data.buffer.slice(_handoff.data.byteOffset,_handoff.data.byteOffset+_handoff.data.byteLength))));
+    else if(_handoff.kind==='musicxml') importToProject(name, parseMusicXML(_handoff.data));
+    else throw new Error('This version of mõdScore can\'t open "'+_handoff.kind+'" yet.');
+    // mõdRïff titles its charts "mõdRïff: A♭ - D♭ - …"; don't say the app's name twice.
+    const from=_handoff.fromName||'another mõd app';
+    toast(name.startsWith(from)?'Opened '+name:'Opened from '+from+': '+name);
+  }catch(e){ sheetTell('Could not open the song', e.message); console.error(e); }
+} else if(!safeStore.get('mn_tutorial_seen')) setTimeout(startTour, 500);
 
 // Register the worker last, so a failure here can never hold up the app.
 // Opened straight off disk there is no worker (and no origin to scope one

@@ -17,7 +17,7 @@
 // Versioned separately on purpose. Bumping the shell must not throw away tens
 // of megabytes of downloaded instruments that have not changed — and on a
 // phone on rehearsal-room wifi, re-fetching them is the expensive part.
-const SHELL = 'modscore-shell-v6';
+const SHELL = 'modscore-shell-v7';
 const SAMPLES = 'modscore-samples-v1';
 
 const SHELL_FILES = [
@@ -33,6 +33,7 @@ const SHELL_FILES = [
   './js/audio.js',
   './js/io.js',
   './js/boot.js',
+  './js/suite.js',
   './icon-180.png',
   './icon-192.png',
   './icon-512.png',
