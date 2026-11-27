@@ -189,6 +189,41 @@ const MAJ_ROMANS= ['I','ii','iii','IV','V','vi','vii°'];
 const MIN_ROMANS= ['i','ii°','III','iv','v','VI','VII'];
 
 const NOTE_SEMI = {C:0,D:2,E:4,F:5,G:7,A:9,B:11};
+
+// ── Drum set notation ───────────────────────────────────────────────────────
+// A Drum Set part is one 5-line percussion staff (read at treble-clef positions) where the
+// height of a note says which drum it is, in the usual layout: kick in the bottom space,
+// snare in the third, toms around it, cymbals above with x noteheads. midiVals hold that
+// staff position. GM_TO_DRUM_POS places each General MIDI drum (a .mid's channel 10, and
+// every kit in mõdRïff) on it; DRUM_POS_TO_GM writes a position back out as a GM drum.
+const DRUM_POS={kick:65, floorTom:69, snare:72, midTom:74, highTom:76, ride:77, hat:79, crash:81, pedalHat:62, perc:83};
+const GM_TO_DRUM_POS={
+  35:65, 36:65,                       // kicks
+  37:72, 38:72, 39:72, 40:72,         // side stick, snare, clap, electric snare
+  41:69, 43:69,                       // floor toms
+  45:74, 47:74,                       // low and low-mid toms
+  48:76, 50:76,                       // high toms
+  42:79, 46:79, 44:62,                // closed and open hi-hat; pedal hi-hat under the staff
+  51:77, 53:77, 59:77,                // rides, ride bell
+  49:81, 57:81, 52:81, 55:81,         // crashes, china, splash
+};
+// Hand percussion (tambourine, cowbell, congas, shakers…) has no fixed place on a kit staff;
+// it goes on one line above it, x-headed.
+function gmToDrumPos(gm){ return GM_TO_DRUM_POS[gm]!=null ? GM_TO_DRUM_POS[gm] : DRUM_POS.perc; }
+const DRUM_POS_TO_GM={62:44, 65:36, 69:43, 72:38, 74:47, 76:50, 77:51, 79:42, 81:49, 83:56};
+// x noteheads: cymbals, hi-hats and the hand-percussion line.
+const DRUM_X_POS=new Set([DRUM_POS.pedalHat, DRUM_POS.ride, DRUM_POS.hat, DRUM_POS.crash, DRUM_POS.perc]);
+const DRUM_POS_NAME={62:['D',4],65:['F',4],69:['A',4],72:['C',5],74:['D',5],76:['E',5],77:['F',5],79:['G',5],81:['A',5],83:['B',5]};
+// A staff position as the GM drum a .mid should carry, by the same ranges playback uses
+// (drumsetHit), so a note between the standard places still lands on the drum it sounds as.
+// Anything under middle C was stored before this layout and is written as it is.
+function drumPosToGm(m){
+  if(m<60) return m;
+  if(DRUM_POS_TO_GM[m]!=null) return DRUM_POS_TO_GM[m];
+  if(m<=66) return 36; if(m<=70) return 43; if(m<=73) return 38; if(m<=75) return 47;
+  if(m<=76) return 50; if(m<=78) return 51; if(m<=80) return 42; if(m<=82) return 49;
+  return 56;
+}
 function accSemi(acc){return acc==='#'?1:acc==='b'?-1:acc==='##'?2:acc==='bb'?-2:0;}
 function noteToMidi(name, acc, oct){ return (oct+1)*12 + NOTE_SEMI[name] + accSemi(acc); }
 
@@ -354,7 +389,12 @@ function writtenSemis(p){ return pitchView==='written'?isTransposing(p):0; }
 // key — which is what the whole song used to be.
 function concertFifths(mi){ return MAJOR_TO_FIFTHS[KMAP[keyAt(mi||0)]?.vfSig]??0; }
 function partFifths(p,mi){ return transposeFifths(concertFifths(mi),writtenSemis(p)); }
-function partVfSig(p,mi){ return FIFTHS_TO_MAJOR[String(partFifths(p,mi))]||'C'; }
+// Percussion staves carry no key signature: the notes are drums, not pitches, and a drum set
+// imported in A♭ drew four flats in front of the kit.
+function partVfSig(p,mi){
+  const inst=IMAP[p?.instId]; if(inst&&(inst.unpitched||inst.drumset||inst.pitchedDrum)) return 'C';
+  return FIFTHS_TO_MAJOR[String(partFifths(p,mi))]||'C';
+}
 function partScale(p,mi){
   const s=writtenSemis(p);
   const kd=KMAP[keyAt(mi||0)]||KEYS_DATA[0];

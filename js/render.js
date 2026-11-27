@@ -781,7 +781,10 @@ function drawVoice(ctx,stave,noteData,mw,VF,partIdx,partOffset,clef,part,ts,mi){
       // 't<N>' (our tuplet marker) isn't a VexFlow duration token, so strip it here.
       // Written pitch for a transposing part; the stored spelling otherwise.
       const disp=part?displayKeys(n,part,mi):{keys:n.keys,vfAccs:n.vfAccs};
-      const sn=new StaveNote({keys:disp.keys,duration:stripTuplet(n.dur),clef});
+      // On a drum set staff, cymbals and hi-hats are written with x noteheads (DRUM_X_POS).
+      let keys=disp.keys;
+      if(part && IMAP[part.instId]?.drumset && !n.rest) keys=keys.map((k,i)=>DRUM_X_POS.has((n.midiVals||[])[i])?k+'/x2':k);
+      const sn=new StaveNote({keys,duration:stripTuplet(n.dur),clef});
       if(isSelected) sn.setStyle({fillStyle:'#2980b9',strokeStyle:'#2980b9'});
       else if(inCopyRange) sn.setStyle({fillStyle:'#27ae60',strokeStyle:'#27ae60'});
       const accs=disp.vfAccs||[];
