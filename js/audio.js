@@ -642,13 +642,33 @@ function getDrumset(){
   // Hi-hat/cymbal: high-passed short noise so it reads as metal, not a snare.
   const hatFilter=new Tone.Filter(7000,'highpass').connect(getMasterBus());
   const hat  =new Tone.NoiseSynth({noise:{type:'white'},envelope:{attack:.001,decay:.045,sustain:0,release:.02},volume:-13}).connect(hatFilter);
-  _drumset={kick,tom,snare,hat,voices:[kick,tom,snare,hat]};
+  // Ride and crash: the same metal, left to ring.
+  const cymFilter=new Tone.Filter(5000,'highpass').connect(getMasterBus());
+  const cym  =new Tone.NoiseSynth({noise:{type:'white'},envelope:{attack:.001,decay:.6,sustain:0,release:.3},volume:-17}).connect(cymFilter);
+  _drumset={kick,tom,snare,hat,cym,voices:[kick,tom,snare,hat,cym]};
   return _drumset;
 }
 // Route one drum-set note (by MIDI/staff height) to its voice and strike it.
 function drumsetHit(midi,dur,time,vel){
   const d=getDrumset();
   try{
+    // From middle C up, a note is where drum notation writes it (DRUM_POS in core.js): kick
+    // in the bottom space, snare in the third, toms around it, cymbals above. Every note on
+    // the staff used to play as a hi-hat, since all of them sit above MIDI 59. The old
+    // ranges below are kept for anything stored under middle C.
+    if(midi>=60){
+      if(midi===DRUM_POS.pedalHat)      d.hat.triggerAttackRelease(dur,time,vel*0.7);
+      else if(midi<=66)                 d.kick.triggerAttackRelease('C1',dur,time,vel);
+      else if(midi<=70)                 d.tom.triggerAttackRelease('F1',dur,time,vel);
+      else if(midi<=73)                 d.snare.triggerAttackRelease(dur,time,vel);
+      else if(midi<=74)                 d.tom.triggerAttackRelease('A1',dur,time,vel);
+      else if(midi<=76)                 d.tom.triggerAttackRelease('D2',dur,time,vel);
+      else if(midi===DRUM_POS.ride || midi===78) d.cym.triggerAttackRelease(dur,time,vel*0.7);
+      else if(midi<=80)                 d.hat.triggerAttackRelease(dur,time,vel*0.85);
+      else if(midi<=82)                 d.cym.triggerAttackRelease(dur,time,vel);
+      else                              d.tom.triggerAttackRelease('G3',Math.min(dur,0.08),time,vel*0.6);
+      return;
+    }
     if(midi<=41)      d.kick.triggerAttackRelease('C1',dur,time,vel);
     else if(midi<=45) d.tom.triggerAttackRelease('G1',dur,time,vel);
     else if(midi<=52) d.tom.triggerAttackRelease('C2',dur,time,vel);

@@ -499,6 +499,8 @@ function scoreMidiBytes(only){
         bt+=beats;
       });
     });
+    // A drum set's notes are staff positions; a .mid wants the GM drum each one is.
+    if(inst.drumset) raw.forEach(e=>{ e.midi=drumPosToGm(e.midi); });
     raw.sort((a,b)=> a.tick-b.tick || a.on-b.on);
     // Percussion belongs on channel 10 (index 9) or a DAW plays the drums back
     // as piano notes. Everything else takes the next melodic channel.
@@ -894,6 +896,31 @@ function parseMIDI(buf){
   }
   return {ppq,tempo,timeSig,keySig,tracks};
 }
+// A channel-10 track as a Drum Set part. Hits are snapped to a sixteenth-note grid and hits at
+// the same moment are one stroke (a chord on the staff). A stroke lasts until the next one,
+// written as the stroke then rests (a drum doesn't sustain, and the bars must add up), and
+// the last runs to the end of its bar.
+function drumTrackToPart(events,ppq,timeSig){
+  // Sixteenths: mõdRïff's drum grid. A swung or played-in hit lands on the nearest one rather
+  // than spelling the swing out in 32nds.
+  const grid=ppq/4, at=new Map();
+  events.forEach(e=>{ if(!e.on) return; const t=Math.round(e.tick/grid)*grid; if(!at.has(t)) at.set(t,new Set()); at.get(t).add(gmToDrumPos(e.note)); });
+  const starts=[...at.keys()].sort((a,b)=>a-b);
+  if(!starts.length) return null;
+  const [num,den]=String(timeSig||'4/4').split('/').map(Number);
+  const barTicks=Math.round((num||4)*(4/(den||4))*ppq);
+  const rests=beats=>beatsToDurs(beats).map(d=>({keys:['b/4'],dur:d+'r',vfAccs:[null],midiVals:[],rest:true,lyric:null,dyn:null,arts:[],tempo:null}));
+  const nd=[];
+  if(starts[0]>0) nd.push(...rests(starts[0]/ppq));
+  starts.forEach((t,i)=>{
+    const end=i+1<starts.length ? starts[i+1] : Math.ceil((t+1)/barTicks)*barTicks;
+    const [first,...more]=beatsToDurs((end-t)/ppq);
+    const pos=[...at.get(t)].sort((a,b)=>a-b);
+    nd.push({keys:pos.map(m=>DRUM_POS_NAME[m][0]+'/'+DRUM_POS_NAME[m][1]),dur:first,vfAccs:pos.map(()=>null),midiVals:pos,rest:false,lyric:null,dyn:null,arts:[],tempo:null});
+    if(more.length){ const left=(end-t)/ppq-durBeats(first); if(left>1e-6) nd.push(...rests(left)); }
+  });
+  return {notes:nd,name:(events.name||'').trim().length<=24&&(events.name||'').trim()?events.name.trim():'Drums',drums:true};
+}
 function midiToData(parsed){
   const bpm=Math.max(20,Math.min(320,Math.round(60000000/parsed.tempo)));
   let keyId='C';
@@ -901,11 +928,12 @@ function midiToData(parsed){
   const kd=parsed.keySig?KMAP[keyId]:null;
   const preferFlat=!!kd&&FLAT_KEYS.includes(kd.vfSig);
   const ppq=parsed.ppq||480, tol=ppq*0.12;
-  const outParts=[], droppedDrums=[];
+  const outParts=[];
   parsed.tracks.forEach(events=>{
-    // A drum track (all on channel 10) would come in as pitched notes on a treble staff:
-    // a kick on C2, a hi-hat on F#2. It is left out, and the import says so.
-    if(events.drums){ droppedDrums.push(events.name||'Drums'); return; }
+    // A drum track (all on channel 10) becomes a Drum Set part: each General MIDI drum on
+    // its place on the kit staff (gmToDrumPos). It used to be left out, and before that came
+    // in as pitched notes on a treble staff (a kick on C2, a hi-hat on F#2).
+    if(events.drums){ const dp=drumTrackToPart(events,ppq,parsed.timeSig); if(dp) outParts.push(dp); return; }
     const active={}, notes=[];
     events.forEach(e=>{
       if(e.on){(active[e.note]=active[e.note]||[]).push(e.tick);}
@@ -932,7 +960,7 @@ function midiToData(parsed){
     const nm=(events.name||'').trim();
     outParts.push({notes:nd,name:nm.length<=24?nm:''});
   });
-  return {bpm,timeSig:parsed.timeSig,keyId,parts:outParts,droppedDrums};
+  return {bpm,timeSig:parsed.timeSig,keyId,parts:outParts};
 }
 
 // ---- MusicXML ----
@@ -1105,9 +1133,9 @@ async function unzipMXL(buf){
 }
 
 function importToProject(name,data){
-  if((!data.parts.length||!data.parts.some(p=>p.notes.length))&&data.droppedDrums&&data.droppedDrums.length)throw new Error('This file only has drums, and mõdScore brings in pitched parts only.');
   if(!data.parts.length||!data.parts.some(p=>p.notes.length))throw new Error('No notes found in file');
   const newParts=data.parts.filter(p=>p.notes.length).map((pp,i)=>{
+    if(pp.drums) return {id:i+1,name:pp.name||'Drums',instId:'drumset',clef:'percussion',notes:pp.notes,hairpins:[],transpose:0};
     let clef=pp.staff==='2'?'bass':pp.staff==='1'?'treble':null;
     if(!clef){const mids=pp.notes.flatMap(n=>n.midiVals);const avg=mids.length?mids.reduce((a,b)=>a+b,0)/mids.length:64;clef=avg<57?'bass':'treble';}
     // Use the name the file gave the part where there is one, rather than
@@ -1119,7 +1147,7 @@ function importToProject(name,data){
   const id='p'+Date.now();
   projects.push({id,name:name||'Imported',data:proj,updated:Date.now()});
   currentProjId=id; saveAll(); applyProject(proj); resetHistory(); renderProjectsList(); switchTab('notes');
-  if(data.droppedDrums&&data.droppedDrums.length) toast('Left out the drums ('+data.droppedDrums.join(', ')+'): this version of mõdScore only brings in pitched parts from MIDI.');
+
   // An import is the song the person wants open now. Without this, a song imported before
   // the database finished opening (a handoff from another mõd app arrives at boot) was
   // replaced a moment later by the song that was open last time.
