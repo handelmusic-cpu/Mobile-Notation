@@ -914,7 +914,7 @@ await run('drums', async () => {
     const Q = 480, dr = [], bs = [];
     const hit = (n, t) => { dr.push({ t, o: 0, b: [0x99, n, 100] }); dr.push({ t: t + 60, o: -1, b: [0x89, n, 0] }); };
     for (let e = 0; e < 8; e++) hit(42, e * Q / 2);
-    hit(36, 0); hit(36, 2 * Q); hit(38, Q); hit(38, 3 * Q); hit(49, 0);
+    hit(36, 0); hit(36, 2 * Q); hit(38, Q); hit(38, 3 * Q); hit(49, 0); hit(57, 3 * Q);
     bs.push({ t: 0, o: 0, b: [0x90, 44, 90] }); bs.push({ t: 4 * Q, o: -1, b: [0x80, 44, 0] });
     const conductor = [0x4d, 0x54, 0x72, 0x6b, 0, 0, 0, 17, 0, 0xff, 0x51, 3, 0x07, 0xa1, 0x20, 0, 0xff, 0x59, 2, 0xfc, 0, 0, 0xff, 0x2f, 0];
     const bytes = new Uint8Array([0x4d, 0x54, 0x68, 0x64, 0, 0, 0, 6, 0, 1, 0, 3, 1, 0xe0, ...conductor, ...trk('Bass', bs), ...trk('Drums', dr)]);
@@ -925,26 +925,31 @@ await run('drums', async () => {
     // Playback: which voice each written position strikes.
     const kit = getDrumset(), heard = {};
     ['kick', 'tom', 'snare', 'hat', 'cym'].forEach(k => { kit[k].triggerAttackRelease = () => { heard[window.__m] = k; }; });
-    [65, 69, 72, 74, 76, 77, 79, 81, 62, 40].forEach(m => { window.__m = m; drumsetHit(m, 0.1, 0, 1); });
+    [65, 69, 72, 74, 76, 77, 79, 81, 83, 62, 40].forEach(m => { window.__m = m; drumsetHit(m, 0.1, 0, 1); });
     // Export: the drum set goes out on channel 10 as GM drums.
     const out = parseMIDI(scoreMidiBytes().buffer).tracks.find(t => t.drums);
+    // Stems: every stem on the drum staff points up (its tip above its notehead).
+    await new Promise(r => setTimeout(r, 100));
+    const crash2 = d ? d.notes.find(n => (n.midiVals || []).includes(83)) : null;
     return {
       parts: parts.map(x => x.name + ':' + x.instId + ':' + x.clef),
       first: d ? d.notes.slice(0, 4).map(n => (n.rest ? 'r' : n.midiVals.join('+')) + '/' + n.dur).join(' ') : null,
       count: d ? d.notes.filter(n => !n.rest).length : 0,
       sig: d ? partVfSig(d, 0) : null, pitchedSig: partVfSig(parts.find(x => x.instId !== 'drumset'), 0),
+      crash2: crash2 ? crash2.keys.join('+') : null,
       heard, exported: out ? [...new Set(out.filter(e => e.on).map(e => e.note))].sort((a, b) => a - b) : null,
     };
   });
   ok('a channel-10 track comes in as a Drum Set part on the percussion staff',
      r.parts.includes('Drums:drumset:percussion') && r.parts.some(x => x.startsWith('Bass:')), JSON.stringify(r.parts));
-  ok('each drum is on its place on the kit staff (kick F4, snare C5, hat G5, crash A5)',
+  ok('each drum is on its place on the kit staff (kick F4, snare C5, hat G5, crash 1 A5)',
      r.first === '65+79+81/8 79/8 72+79/8 79/8', r.first);
   ok('every hit of the bar is there', r.count === 8, `${r.count} strokes`);
   ok('a drum staff has no key signature; the pitched part keeps the key', r.sig === 'C' && r.pitchedSig === 'Ab', `${r.sig} / ${r.pitchedSig}`);
   // 40 is below middle C: stored before the kit layout, it keeps the old mapping (\u226441 kick).
-  ok('each position plays its own drum, and an old note below middle C keeps its old sound', JSON.stringify(r.heard) === JSON.stringify({ 40: 'kick', 62: 'hat', 65: 'kick', 69: 'tom', 72: 'snare', 74: 'tom', 76: 'tom', 77: 'cym', 79: 'hat', 81: 'cym' }), JSON.stringify(r.heard));
-  ok('the drum set exports as the GM drums it came in as', JSON.stringify(r.exported) === '[36,38,42,49]', JSON.stringify(r.exported));
+  ok('each position plays its own drum, and an old note below middle C keeps its old sound', JSON.stringify(r.heard) === JSON.stringify({ 40: 'kick', 62: 'hat', 65: 'kick', 69: 'tom', 72: 'snare', 74: 'tom', 76: 'tom', 77: 'cym', 79: 'hat', 81: 'cym', 83: 'cym' }), JSON.stringify(r.heard));
+  ok('crash 2 is above the ledger line (B5), apart from crash 1', !!r.crash2 && r.crash2.includes('B/5'), r.crash2);
+  ok('the drum set exports as the GM drums it came in as', JSON.stringify(r.exported) === '[36,38,42,49,57]', JSON.stringify(r.exported));
   ok('drums: no page errors', p._errs.length === 0, p._errs[0] || '');
   await p.context().close();
 });

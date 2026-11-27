@@ -783,8 +783,11 @@ function drawVoice(ctx,stave,noteData,mw,VF,partIdx,partOffset,clef,part,ts,mi){
       const disp=part?displayKeys(n,part,mi):{keys:n.keys,vfAccs:n.vfAccs};
       // On a drum set staff, cymbals and hi-hats are written with x noteheads (DRUM_X_POS).
       let keys=disp.keys;
-      if(part && IMAP[part.instId]?.drumset && !n.rest) keys=keys.map((k,i)=>DRUM_X_POS.has((n.midiVals||[])[i])?k+'/x2':k);
-      const sn=new StaveNote({keys,duration:stripTuplet(n.dur),clef});
+      const kit=!!(part && IMAP[part.instId]?.drumset);
+      if(kit && !n.rest) keys=keys.map((k,i)=>DRUM_X_POS.has((n.midiVals||[])[i])?k+'/x2':k);
+      // Drum music is written stems up, whatever the height (VexFlow would turn a high
+      // cymbal's stem down).
+      const sn=new StaveNote(kit&&!n.rest?{keys,duration:stripTuplet(n.dur),clef,stem_direction:1,auto_stem:false}:{keys,duration:stripTuplet(n.dur),clef});
       if(isSelected) sn.setStyle({fillStyle:'#2980b9',strokeStyle:'#2980b9'});
       else if(inCopyRange) sn.setStyle({fillStyle:'#27ae60',strokeStyle:'#27ae60'});
       const accs=disp.vfAccs||[];
@@ -863,7 +866,9 @@ function drawVoice(ctx,stave,noteData,mw,VF,partIdx,partOffset,clef,part,ts,mi){
     const leftUsed=Math.max(0,stave.getNoteStartX()-stave.getX());
     new Formatter().joinVoices([voice]).format([voice],Math.max(60,mw-leftUsed-26));
     const beamable=vfNotes.filter((_,i)=>{const b=decomposeDur(noteData[i].dur).base;return !noteData[i].rest&&['8','16','32'].includes(b);});
-    const beams=beamable.length>=2?Beam.generateBeams(beamable):[];
+    // A drum staff keeps its stems up under the beams too (generateBeams would re-pick them).
+    const kitPart=!!(part && IMAP[part.instId]?.drumset);
+    const beams=beamable.length>=2?Beam.generateBeams(beamable,kitPart?{stem_direction:1}:undefined):[];
     voice.draw(ctx,stave);
     beams.forEach(b=>b.setContext(ctx).draw());
     tuplets.forEach(t=>{ try{ t.setContext(ctx).draw(); }catch(e){} });

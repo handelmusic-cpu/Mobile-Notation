@@ -193,10 +193,12 @@ const NOTE_SEMI = {C:0,D:2,E:4,F:5,G:7,A:9,B:11};
 // ── Drum set notation ───────────────────────────────────────────────────────
 // A Drum Set part is one 5-line percussion staff (read at treble-clef positions) where the
 // height of a note says which drum it is, in the usual layout: kick in the bottom space,
-// snare in the third, toms around it, cymbals above with x noteheads. midiVals hold that
+// snare in the third, toms around it, cymbals above with x noteheads: the common drum key
+// (hi-hat with foot D4, bass F4, floor tom A4, snare C5, tom 2 D5, tom 1 E5, ride F5,
+// hi-hat G5, crash 1 A5, crash 2 B5). midiVals hold that
 // staff position. GM_TO_DRUM_POS places each General MIDI drum (a .mid's channel 10, and
 // every kit in mõdRïff) on it; DRUM_POS_TO_GM writes a position back out as a GM drum.
-const DRUM_POS={kick:65, floorTom:69, snare:72, midTom:74, highTom:76, ride:77, hat:79, crash:81, pedalHat:62, perc:83};
+const DRUM_POS={kick:65, floorTom:69, snare:72, midTom:74, highTom:76, ride:77, hat:79, crash:81, crash2:83, pedalHat:62, perc:84};
 const GM_TO_DRUM_POS={
   35:65, 36:65,                       // kicks
   37:72, 38:72, 39:72, 40:72,         // side stick, snare, clap, electric snare
@@ -205,15 +207,16 @@ const GM_TO_DRUM_POS={
   48:76, 50:76,                       // high toms
   42:79, 46:79, 44:62,                // closed and open hi-hat; pedal hi-hat under the staff
   51:77, 53:77, 59:77,                // rides, ride bell
-  49:81, 57:81, 52:81, 55:81,         // crashes, china, splash
+  49:81, 52:81, 55:81,                // crash 1 on the ledger line; china and splash with it
+  57:83,                              // crash 2 above the ledger line
 };
 // Hand percussion (tambourine, cowbell, congas, shakers…) has no fixed place on a kit staff;
-// it goes on one line above it, x-headed.
+// it goes on one line above crash 2 (C6), x-headed.
 function gmToDrumPos(gm){ return GM_TO_DRUM_POS[gm]!=null ? GM_TO_DRUM_POS[gm] : DRUM_POS.perc; }
-const DRUM_POS_TO_GM={62:44, 65:36, 69:43, 72:38, 74:47, 76:50, 77:51, 79:42, 81:49, 83:56};
+const DRUM_POS_TO_GM={62:44, 65:36, 69:43, 72:38, 74:47, 76:50, 77:51, 79:42, 81:49, 83:57, 84:56};
 // x noteheads: cymbals, hi-hats and the hand-percussion line.
-const DRUM_X_POS=new Set([DRUM_POS.pedalHat, DRUM_POS.ride, DRUM_POS.hat, DRUM_POS.crash, DRUM_POS.perc]);
-const DRUM_POS_NAME={62:['D',4],65:['F',4],69:['A',4],72:['C',5],74:['D',5],76:['E',5],77:['F',5],79:['G',5],81:['A',5],83:['B',5]};
+const DRUM_X_POS=new Set([DRUM_POS.pedalHat, DRUM_POS.ride, DRUM_POS.hat, DRUM_POS.crash, DRUM_POS.crash2, DRUM_POS.perc]);
+const DRUM_POS_NAME={62:['D',4],65:['F',4],69:['A',4],72:['C',5],74:['D',5],76:['E',5],77:['F',5],79:['G',5],81:['A',5],83:['B',5],84:['C',6]};
 // A staff position as the GM drum a .mid should carry, by the same ranges playback uses
 // (drumsetHit), so a note between the standard places still lands on the drum it sounds as.
 // Anything under middle C was stored before this layout and is written as it is.
@@ -222,6 +225,7 @@ function drumPosToGm(m){
   if(DRUM_POS_TO_GM[m]!=null) return DRUM_POS_TO_GM[m];
   if(m<=66) return 36; if(m<=70) return 43; if(m<=73) return 38; if(m<=75) return 47;
   if(m<=76) return 50; if(m<=78) return 51; if(m<=80) return 42; if(m<=82) return 49;
+  if(m<=83) return 57;
   return 56;
 }
 function accSemi(acc){return acc==='#'?1:acc==='b'?-1:acc==='##'?2:acc==='bb'?-2:0;}

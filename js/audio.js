@@ -665,7 +665,7 @@ function drumsetHit(midi,dur,time,vel){
       else if(midi<=76)                 d.tom.triggerAttackRelease('D2',dur,time,vel);
       else if(midi===DRUM_POS.ride || midi===78) d.cym.triggerAttackRelease(dur,time,vel*0.7);
       else if(midi<=80)                 d.hat.triggerAttackRelease(dur,time,vel*0.85);
-      else if(midi<=82)                 d.cym.triggerAttackRelease(dur,time,vel);
+      else if(midi<=83)                 d.cym.triggerAttackRelease(dur,time,vel);
       else                              d.tom.triggerAttackRelease('G3',Math.min(dur,0.08),time,vel*0.6);
       return;
     }
